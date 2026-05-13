@@ -98,7 +98,8 @@
     "typescript": "^5.7.3"
   },
   "engines": {
-    "node": "20.x"
+    "node": "20.x",
+    "pnpm": "10.11.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
