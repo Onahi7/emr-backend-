@@ -1,0 +1,802 @@
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { Visit, VisitStatusEnum, VisitTypeEnum } from '../database/schemas/visit.schema';
+import { Patient } from '../database/schemas/patient.schema';
+import { Doctor } from '../database/schemas/doctor.schema';
+import { IdSequence } from '../database/schemas/id-sequence.schema';
+import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
+import { Queue, QueueStatusEnum, PriorityLevelEnum } from '../database/schemas/queue.schema';
+import { CreateVisitDto } from './dto/create-visit.dto';
+import { UpdateVisitDto } from './dto/update-visit.dto';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+
+@Injectable()
+export class VisitsService {
+  private readonly logger = new Logger(VisitsService.name);
+
+  constructor(
+    @InjectModel(Visit.name) private visitModel: Model<Visit>,
+    @InjectModel(Patient.name) private patientModel: Model<Patient>,
+    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
+    @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
+    @InjectModel(Payment.name) private paymentModel: Model<Payment>,
+    @InjectModel(Queue.name) private queueModel: Model<Queue>,
+    private realtimeGateway: RealtimeGateway,
+  ) {}
+
+  /**
+   * Generate unique visit number in format: VIS-YYYYMMDD-XXXX
+   */
+  private async generateVisitNumber(): Promise<string> {
+    const now = new Date();
+    const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const sequenceId = `visit_number_${datePart}`;
+
+    const sequence = await this.idSequenceModel.findByIdAndUpdate(
+      sequenceId,
+      {
+        $inc: { currentValue: 1 },
+        $setOnInsert: { prefix: 'VIS', datePart },
+      },
+      { upsert: true, new: true },
+    );
+
+    const paddedValue = sequence.currentValue.toString().padStart(4, '0');
+    return `VIS-${datePart}-${paddedValue}`;
+  }
+
+  /**
+   * Create a new visit (Reception registers patient)
+   */
+  async create(createVisitDto: CreateVisitDto): Promise<Visit> {
+    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy } = createVisitDto;
+
+    // Verify patient exists
+    const patient = await this.patientModel.findById(patientId);
+    if (!patient) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    // Verify doctor exists if provided
+    if (doctorId) {
+      const doctor = await this.doctorModel.findById(doctorId);
+      if (!doctor) {
+        throw new NotFoundException('Doctor not found');
+      }
+    }
+
+    // Generate visit number
+    const visitNumber = await this.generateVisitNumber();
+
+    const visit = new this.visitModel({
+      visitNumber,
+      patientId: new Types.ObjectId(patientId),
+      doctorId: doctorId ? new Types.ObjectId(doctorId) : undefined,
+      visitType: visitType || VisitTypeEnum.NEW,
+      consultationFee,
+      chiefComplaint,
+      notes,
+      status: VisitStatusEnum.WAITING_PAYMENT,
+      consultationPaid: false,
+      registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
+    });
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Visit created: ${savedVisit.visitNumber}`);
+
+    // Emit real-time event
+    this.realtimeGateway.emitToAll('visit:created', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Find all visits with optional filters
+   */
+  async findAll(query: any = {}): Promise<Visit[]> {
+    return this.visitModel
+      .find(query)
+      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('doctorId', 'fullName')
+      .populate('registeredBy', 'fullName')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  /**
+   * Find visit by ID
+   */
+  async findById(id: string): Promise<Visit> {
+    const visit = await this.visitModel
+      .findById(id)
+      .populate('patientId')
+      .populate('doctorId')
+      .populate('registeredBy')
+      .exec();
+
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+    return visit;
+  }
+
+  /**
+   * Find visits by patient ID
+   */
+  async findByPatient(patientId: string): Promise<Visit[]> {
+    return this.visitModel
+      .find({ patientId: new Types.ObjectId(patientId) })
+      .populate('doctorId', 'fullName')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  /**
+   * Get doctor queue - visits waiting for consultation
+   */
+  async getDoctorQueue(doctorId?: string): Promise<Visit[]> {
+    const query: any = {
+      status: { $in: [VisitStatusEnum.IN_QUEUE, VisitStatusEnum.IN_CONSULTATION] },
+      consultationPaid: true,
+    };
+
+    if (doctorId) {
+      query.doctorId = new Types.ObjectId(doctorId);
+    }
+
+    return this.visitModel
+      .find(query)
+      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('doctorId', 'fullName')
+      .sort({ createdAt: 1 }) // FCFS order
+      .exec();
+  }
+
+  /**
+   * Get visits awaiting lab payment
+   */
+  async getAwaitingLabPayment(): Promise<Visit[]> {
+    return this.visitModel
+      .find({ status: VisitStatusEnum.AWAITING_LAB })
+      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('doctorId', 'fullName')
+      .sort({ createdAt: 1 })
+      .exec();
+  }
+
+  /**
+   * Get visits awaiting pharmacy payment
+   */
+  async getAwaitingPharmacyPayment(): Promise<Visit[]> {
+    return this.visitModel
+      .find({ status: VisitStatusEnum.AWAITING_PHARMACY })
+      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('doctorId', 'fullName')
+      .sort({ createdAt: 1 })
+      .exec();
+  }
+
+  /**
+   * Get visits awaiting dispensing (pharmacy paid, pharmacist to dispense)
+   */
+  async getAwaitingDispensing(): Promise<Visit[]> {
+    return this.visitModel
+      .find({ status: VisitStatusEnum.AWAITING_DISPENSING })
+      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('doctorId', 'fullName')
+      .sort({ createdAt: 1 })
+      .exec();
+  }
+
+  /**
+   * Get doctor dashboard data — active patients + results ready for a specific doctor
+   */
+  async getDoctorDashboard(doctorId: string): Promise<{
+    waitingQueue: Visit[];
+    activePatients: Visit[];
+    resultsReady: Visit[];
+    incomingReferrals: Visit[];
+    todayStats: { seen: number; waiting: number; completed: number };
+  }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const doctorObjectId = new Types.ObjectId(doctorId);
+
+    const [waitingQueue, activePatients, resultsReady, incomingReferrals, todaySeen, todayWaiting, todayCompleted] =
+      await Promise.all([
+        // All paid patients waiting in queue (not yet assigned to a doctor)
+        this.visitModel
+          .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ createdAt: 1 })
+          .exec(),
+        // This doctor's patients currently in consultation
+        this.visitModel
+          .find({ status: VisitStatusEnum.IN_CONSULTATION, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
+          .sort({ consultationStartedAt: 1 })
+          .exec(),
+        // Patients with results ready for this doctor to review
+        this.visitModel
+          .find({ status: VisitStatusEnum.RESULTS_READY, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
+          .exec(),
+        // Incoming referrals for this specialist
+        this.visitModel
+          .find({
+            referredToSpecialistId: doctorObjectId,
+            status: VisitStatusEnum.REFERRED,
+          })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('doctorId', 'fullName specialty')
+          .sort({ referredAt: -1 })
+          .exec(),
+        // Today's stats
+        this.visitModel.countDocuments({
+          doctorId: doctorObjectId,
+          createdAt: { $gte: today, $lt: tomorrow },
+          status: { $in: [VisitStatusEnum.IN_CONSULTATION, VisitStatusEnum.COMPLETED, VisitStatusEnum.AWAITING_LAB, VisitStatusEnum.AWAITING_PHARMACY, VisitStatusEnum.AWAITING_RESULTS, VisitStatusEnum.RESULTS_READY, VisitStatusEnum.AWAITING_DISPENSING] },
+        }),
+        this.visitModel.countDocuments({
+          createdAt: { $gte: today, $lt: tomorrow },
+          status: VisitStatusEnum.IN_QUEUE,
+        }),
+        this.visitModel.countDocuments({
+          doctorId: doctorObjectId,
+          createdAt: { $gte: today, $lt: tomorrow },
+          status: VisitStatusEnum.COMPLETED,
+        }),
+      ]);
+
+    return {
+      waitingQueue,
+      activePatients,
+      resultsReady,
+      incomingReferrals,
+      todayStats: {
+        seen: todaySeen,
+        waiting: todayWaiting,
+        completed: todayCompleted,
+      },
+    };
+  }
+
+  /**
+   * Reception dashboard — aggregated view of all pending actions + today's stats
+   */
+  async getReceptionDashboard(): Promise<{
+    pendingConsultationPayments: Visit[];
+    pendingLabPayments: Visit[];
+    pendingPharmacyPayments: Visit[];
+    doctorQueue: Visit[];
+    todayStats: {
+      totalVisits: number;
+      consultationsPaid: number;
+      awaitingLab: number;
+      awaitingPharmacy: number;
+      completed: number;
+      cancelled: number;
+    };
+  }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayFilter = { createdAt: { $gte: today, $lt: tomorrow } };
+
+    const [
+      pendingConsultationPayments,
+      pendingLabPayments,
+      pendingPharmacyPayments,
+      doctorQueue,
+      totalVisits,
+      consultationsPaid,
+      awaitingLab,
+      awaitingPharmacy,
+      completed,
+      cancelled,
+    ] = await Promise.all([
+      this.visitModel
+        .find({ status: VisitStatusEnum.WAITING_PAYMENT })
+        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .sort({ createdAt: 1 })
+        .exec(),
+      this.visitModel
+        .find({ status: VisitStatusEnum.AWAITING_LAB })
+        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('doctorId', 'fullName')
+        .sort({ createdAt: 1 })
+        .exec(),
+      this.visitModel
+        .find({ status: VisitStatusEnum.AWAITING_PHARMACY })
+        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('doctorId', 'fullName')
+        .sort({ createdAt: 1 })
+        .exec(),
+      this.visitModel
+        .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true })
+        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('doctorId', 'fullName')
+        .sort({ createdAt: 1 })
+        .exec(),
+      this.visitModel.countDocuments(todayFilter),
+      this.visitModel.countDocuments({ ...todayFilter, consultationPaid: true }),
+      this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.AWAITING_LAB }),
+      this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.AWAITING_PHARMACY }),
+      this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.COMPLETED }),
+      this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.CANCELLED }),
+    ]);
+
+    return {
+      pendingConsultationPayments,
+      pendingLabPayments,
+      pendingPharmacyPayments,
+      doctorQueue,
+      todayStats: {
+        totalVisits,
+        consultationsPaid,
+        awaitingLab,
+        awaitingPharmacy,
+        completed,
+        cancelled,
+      },
+    };
+  }
+
+  /**
+   * Update visit
+   */
+  async update(id: string, updateVisitDto: UpdateVisitDto): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    Object.assign(visit, updateVisitDto);
+    const savedVisit = await visit.save();
+
+    this.logger.log(`Visit updated: ${savedVisit.visitNumber} - Status: ${savedVisit.status}`);
+    this.realtimeGateway.emitToAll('visit:updated', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Mark consultation as paid and route to nurse triage
+   */
+  async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.consultationPaid) {
+      throw new BadRequestException('Consultation already paid');
+    }
+
+    visit.consultationPaid = true;
+    visit.status = VisitStatusEnum.AWAITING_TRIAGE;
+    visit.checkedInAt = new Date();
+
+    const savedVisit = await visit.save();
+    await this.paymentModel.create({
+      visitId: new Types.ObjectId(id),
+      paymentType: PaymentTypeEnum.CONSULTATION,
+      amount: visit.consultationFee,
+      paymentMethod,
+      receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
+      notes: `Consultation payment for visit ${visit.visitNumber}`,
+    });
+    this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (awaiting triage)`);
+
+    // Auto-create queue entry for nurse triage
+    try {
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
+      const queueCount = await this.queueModel.countDocuments({
+        createdAt: {
+          $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+          $lt: new Date(new Date().setHours(23, 59, 59, 999)),
+        },
+      });
+      const lastQueue = await this.queueModel.findOne().sort({ queueOrder: -1 }).exec();
+      const queueOrder = lastQueue ? lastQueue.queueOrder + 1 : 1;
+
+      await this.queueModel.create({
+        queueNumber: `Q-${dateStr}-${String(queueCount + 1).padStart(4, '0')}`,
+        patientId: savedVisit.patientId,
+        visitId: savedVisit._id,
+        status: QueueStatusEnum.WAITING,
+        priority: PriorityLevelEnum.NORMAL,
+        queueOrder,
+      });
+    } catch (queueErr) {
+      this.logger.warn(`Failed to auto-create queue entry for visit ${savedVisit.visitNumber}: ${queueErr}`);
+    }
+
+    this.realtimeGateway.emitToAll('visit:consultation_paid', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Nurse triage — record vitals, priority, and move to doctor queue
+   */
+  async completeTriage(
+    id: string,
+    data: {
+      temperature?: number;
+      bloodPressure?: string;
+      heartRate?: number;
+      respiratoryRate?: number;
+      weight?: number;
+      height?: number;
+      oxygenSaturation?: number;
+      triagePriority?: string;
+      triageNotes?: string;
+      chiefComplaint?: string;
+    },
+    nurseId?: string,
+  ): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) throw new NotFoundException('Visit not found');
+
+    if (visit.status !== VisitStatusEnum.AWAITING_TRIAGE) {
+      throw new BadRequestException('Visit is not awaiting triage');
+    }
+
+    Object.assign(visit, {
+      ...data,
+      status: VisitStatusEnum.IN_QUEUE,
+      triagedAt: new Date(),
+      triagedBy: nurseId ? new Types.ObjectId(nurseId) : undefined,
+    });
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Triage complete for visit: ${savedVisit.visitNumber}`);
+
+    // Update queue priority if urgent
+    if (data.triagePriority && (data.triagePriority === 'urgent' || data.triagePriority === 'emergency' || data.triagePriority === 'high')) {
+      await this.queueModel.updateOne(
+        { visitId: new Types.ObjectId(id) },
+        { priority: data.triagePriority === 'emergency' ? PriorityLevelEnum.URGENT : PriorityLevelEnum[data.triagePriority.toUpperCase()] || PriorityLevelEnum.HIGH },
+      );
+    }
+
+    this.realtimeGateway.emitToAll('visit:triage_completed', savedVisit);
+    return savedVisit;
+  }
+
+  /**
+   * Get visits awaiting triage
+   */
+  async getAwaitingTriage(): Promise<Visit[]> {
+    return this.visitModel
+      .find({ status: VisitStatusEnum.AWAITING_TRIAGE })
+      .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
+      .sort({ createdAt: 1 })
+      .exec();
+  }
+
+  /**
+   * Doctor refers patient to a specialist
+   */
+  async referToSpecialist(
+    id: string,
+    data: { specialistId: string; reason: string; notes?: string },
+    doctorId?: string,
+  ): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) throw new NotFoundException('Visit not found');
+
+    visit.referredToSpecialistId = new Types.ObjectId(data.specialistId);
+    visit.referralReason = data.reason;
+    visit.referralNotes = data.notes;
+    visit.referredAt = new Date();
+    visit.status = VisitStatusEnum.REFERRED;
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Visit ${savedVisit.visitNumber} referred to specialist ${data.specialistId}`);
+
+    this.realtimeGateway.emitToAll('visit:referred', savedVisit);
+    return savedVisit;
+  }
+
+  /**
+   * Get visits referred to a specific specialist (incoming referrals)
+   */
+  async getSpecialistReferrals(specialistId: string): Promise<Visit[]> {
+    return this.visitModel
+      .find({
+        referredToSpecialistId: new Types.ObjectId(specialistId),
+        status: VisitStatusEnum.REFERRED,
+      })
+      .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
+      .populate('doctorId', 'fullName specialty')
+      .sort({ referredAt: -1 })
+      .exec();
+  }
+
+  /**
+   * Specialist accepts referral - starts consultation
+   */
+  async acceptReferral(id: string, specialistId: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) throw new NotFoundException('Visit not found');
+    if (visit.status !== VisitStatusEnum.REFERRED) {
+      throw new BadRequestException('Visit is not a referral');
+    }
+
+    visit.doctorId = new Types.ObjectId(specialistId);
+    visit.status = VisitStatusEnum.IN_CONSULTATION;
+    visit.consultationStartedAt = new Date();
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Specialist accepted referral: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:accepted', savedVisit);
+    return savedVisit;
+  }
+
+  /**
+   * Doctor accepts patient - start consultation
+   */
+  async acceptPatient(id: string, doctorId: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.status !== VisitStatusEnum.IN_QUEUE) {
+      throw new BadRequestException('Visit is not in queue');
+    }
+
+    visit.status = VisitStatusEnum.IN_CONSULTATION;
+    visit.doctorId = new Types.ObjectId(doctorId);
+    visit.consultationStartedAt = new Date();
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Doctor accepted visit: ${savedVisit.visitNumber}`);
+
+    this.realtimeGateway.emitToAll('visit:accepted', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Doctor orders lab tests - move to awaiting lab payment
+   */
+  async orderLab(id: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.status !== VisitStatusEnum.IN_CONSULTATION) {
+      throw new BadRequestException('Visit is not in consultation');
+    }
+
+    visit.status = VisitStatusEnum.AWAITING_LAB;
+    const savedVisit = await visit.save();
+
+    this.logger.log(`Lab ordered for visit: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:lab_ordered', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Doctor prescribes medication - move to awaiting pharmacy payment
+   */
+  async prescribeMedication(id: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.status !== VisitStatusEnum.IN_CONSULTATION) {
+      throw new BadRequestException('Visit is not in consultation');
+    }
+
+    visit.status = VisitStatusEnum.AWAITING_PHARMACY;
+    const savedVisit = await visit.save();
+
+    this.logger.log(`Medication prescribed for visit: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:pharmacy_ordered', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Lab payment confirmed - move to awaiting results
+   */
+  async markLabPaid(id: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.status !== VisitStatusEnum.AWAITING_LAB) {
+      throw new BadRequestException('Visit is not awaiting lab payment');
+    }
+
+    visit.status = VisitStatusEnum.AWAITING_RESULTS;
+    const savedVisit = await visit.save();
+
+    this.logger.log(`Lab paid for visit: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:lab_paid', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Pharmacy payment confirmed - ready for dispensing
+   */
+  async markPharmacyPaid(id: string, paymentMethod = 'cash', receivedBy?: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.status !== VisitStatusEnum.AWAITING_PHARMACY) {
+      throw new BadRequestException('Visit is not awaiting pharmacy payment');
+    }
+
+    visit.status = VisitStatusEnum.AWAITING_DISPENSING;
+    const savedVisit = await visit.save();
+
+    // Record payment
+    await this.paymentModel.create({
+      visitId: new Types.ObjectId(id),
+      paymentType: PaymentTypeEnum.PRESCRIPTION,
+      amount: 0, // Amount tracked on the prescription/order itself
+      paymentMethod,
+      receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
+      notes: `Pharmacy payment confirmed for visit ${visit.visitNumber}`,
+    });
+
+    this.logger.log(`Pharmacy paid for visit: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:pharmacy_paid', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Pharmacist has dispensed all drugs - move visit to completed
+   */
+  async markDispensed(id: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    if (visit.status !== VisitStatusEnum.AWAITING_DISPENSING) {
+      throw new BadRequestException('Visit is not awaiting dispensing');
+    }
+
+    visit.status = VisitStatusEnum.COMPLETED;
+    visit.dischargedAt = new Date();
+    const savedVisit = await visit.save();
+
+    this.logger.log(`Drugs dispensed, visit completed: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:dispensed', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Results released - doctor can review
+   */
+  async resultsReleased(id: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    visit.status = VisitStatusEnum.RESULTS_READY;
+    const savedVisit = await visit.save();
+
+    this.logger.log(`Results released for visit: ${savedVisit.visitNumber}`);
+    this.realtimeGateway.emitToAll('visit:results_ready', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Complete visit
+   */
+  async complete(id: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    visit.status = VisitStatusEnum.COMPLETED;
+    visit.dischargedAt = new Date();
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Visit completed: ${savedVisit.visitNumber}`);
+
+    this.realtimeGateway.emitToAll('visit:completed', savedVisit);
+
+    return savedVisit;
+  }
+
+  /**
+   * Cancel visit
+   */
+  async cancel(id: string, reason: string, cancelledBy: string): Promise<Visit> {
+    const visit = await this.visitModel.findById(id);
+    if (!visit) {
+      throw new NotFoundException('Visit not found');
+    }
+
+    visit.status = VisitStatusEnum.CANCELLED;
+    visit.cancelledAt = new Date();
+    visit.cancelledBy = new Types.ObjectId(cancelledBy);
+    visit.cancellationReason = reason;
+
+    const savedVisit = await visit.save();
+    this.logger.log(`Visit cancelled: ${savedVisit.visitNumber}`);
+
+    return savedVisit;
+  }
+
+  /**
+   * Get visit statistics for dashboard
+   */
+  async getStats(date?: string) {
+    const query: any = {};
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      query.createdAt = { $gte: startOfDay, $lte: endOfDay };
+    }
+
+    const [
+      totalVisits,
+      waitingPayment,
+      inQueue,
+      inConsultation,
+      awaitingLab,
+      awaitingPharmacy,
+      awaitingDispensing,
+      awaitingResults,
+      resultsReady,
+      completed,
+      cancelled,
+    ] = await Promise.all([
+      this.visitModel.countDocuments(query),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.WAITING_PAYMENT }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.IN_QUEUE }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.IN_CONSULTATION }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_LAB }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_PHARMACY }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_DISPENSING }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_RESULTS }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.RESULTS_READY }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.COMPLETED }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.CANCELLED }),
+    ]);
+
+    return {
+      totalVisits,
+      waitingPayment,
+      inQueue,
+      inConsultation,
+      awaitingLab,
+      awaitingPharmacy,
+      awaitingDispensing,
+      awaitingResults,
+      resultsReady,
+      completed,
+      cancelled,
+    };
+  }
+}

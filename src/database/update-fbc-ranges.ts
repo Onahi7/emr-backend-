@@ -1,0 +1,789 @@
+import { getModelToken } from '@nestjs/mongoose';
+import { NestFactory } from '@nestjs/core';
+import { Model } from 'mongoose';
+import { AppModule } from '../app.module';
+import { TestCatalog, TestCategoryEnum } from './schemas/test-catalog.schema';
+
+type GenderValue = 'M' | 'F' | 'all';
+
+type ReferenceRangeRow = {
+  ageGroup: string;
+  ageMin: number;
+  ageMax?: number;
+  gender: GenderValue;
+  range: string;
+  unit: string;
+  criticalLow?: string;
+  criticalHigh?: string;
+};
+
+type FbcDefinition = {
+  code: string;
+  name: string;
+  unit: string;
+  referenceRange: string;
+  criticalLow?: string;
+  criticalHigh?: string;
+  referenceRanges: ReferenceRangeRow[];
+};
+
+const FBC_DEFINITIONS: FbcDefinition[] = [
+  {
+    code: 'WBC',
+    name: 'White Blood Cell Count',
+    unit: 'x10⁹/L',
+    referenceRange: '3.50-9.50',
+    criticalLow: '2.0',
+    criticalHigh: '30.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '4.00-20.00',
+        unit: 'x10⁹/L',
+        criticalLow: '2.0',
+        criticalHigh: '30.0',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '4.00-12.00',
+        unit: 'x10⁹/L',
+        criticalLow: '2.0',
+        criticalHigh: '30.0',
+      },
+      {
+        ageGroup: 'Adult Female',
+        ageMin: 13,
+        gender: 'F',
+        range: '3.50-9.50',
+        unit: 'x10⁹/L',
+        criticalLow: '2.0',
+        criticalHigh: '30.0',
+      },
+      {
+        ageGroup: 'Adult Male',
+        ageMin: 13,
+        gender: 'M',
+        range: '4.00-11.00',
+        unit: 'x10⁹/L',
+        criticalLow: '2.0',
+        criticalHigh: '30.0',
+      },
+    ],
+  },
+  {
+    code: 'NEUTA',
+    name: 'Neutrophils #',
+    unit: 'x10⁹/L',
+    referenceRange: '1.80-6.30',
+    criticalLow: '1.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '1.60-16.00',
+        unit: 'x10⁹/L',
+        criticalLow: '1.0',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '2.00-8.00',
+        unit: 'x10⁹/L',
+        criticalLow: '1.0',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '1.80-6.30',
+        unit: 'x10⁹/L',
+        criticalLow: '1.0',
+      },
+    ],
+  },
+  {
+    code: 'LYMPHA',
+    name: 'Lymphocytes #',
+    unit: 'x10⁹/L',
+    referenceRange: '1.10-3.20',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '0.40-12.00',
+        unit: 'x10⁹/L',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '0.80-7.00',
+        unit: 'x10⁹/L',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '1.10-3.20',
+        unit: 'x10⁹/L',
+      },
+    ],
+  },
+  {
+    code: 'MONOA',
+    name: 'Monocytes #',
+    unit: 'x10⁹/L',
+    referenceRange: '0.10-0.60',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '0.12-2.50',
+        unit: 'x10⁹/L',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '0.12-1.20',
+        unit: 'x10⁹/L',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '0.10-0.60',
+        unit: 'x10⁹/L',
+      },
+    ],
+  },
+  {
+    code: 'EOSA',
+    name: 'Eosinophils #',
+    unit: 'x10⁹/L',
+    referenceRange: '0.00-0.50',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '0.02-0.80',
+        unit: 'x10⁹/L',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '0.02-0.80',
+        unit: 'x10⁹/L',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '0.02-0.52',
+        unit: 'x10⁹/L',
+      },
+    ],
+  },
+  {
+    code: 'BASOA',
+    name: 'Basophils #',
+    unit: 'x10⁹/L',
+    referenceRange: '0.00-0.10',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '0.00-0.10',
+        unit: 'x10⁹/L',
+      },
+    ],
+  },
+  {
+    code: 'NEUT',
+    name: 'Neutrophils %',
+    unit: '%',
+    referenceRange: '40.0-75.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '40-80',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '50-70',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '40-75',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'LYMPH',
+    name: 'Lymphocytes %',
+    unit: '%',
+    referenceRange: '20.0-50.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '10-60',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '20-60',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '20-50',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'MONO',
+    name: 'Monocytes %',
+    unit: '%',
+    referenceRange: '3.0-10.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '3-13',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '3-12',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '3-10',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'EOS',
+    name: 'Eosinophils %',
+    unit: '%',
+    referenceRange: '0.4-8.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '0.5-5.0',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '0.5-5.0',
+        unit: '%',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '0.4-8.0',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'BASO',
+    name: 'Basophils %',
+    unit: '%',
+    referenceRange: '0.0-1.0',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '0.0-1.0',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'RBC',
+    name: 'Red Blood Cell Count',
+    unit: 'x10¹²/L',
+    referenceRange: '3.80-5.10',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '3.50-7.00',
+        unit: 'x10¹²/L',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '3.50-5.20',
+        unit: 'x10¹²/L',
+      },
+      {
+        ageGroup: 'Adult Female',
+        ageMin: 13,
+        gender: 'F',
+        range: '3.80-5.10',
+        unit: 'x10¹²/L',
+      },
+      {
+        ageGroup: 'Adult Male',
+        ageMin: 13,
+        gender: 'M',
+        range: '4.50-5.90',
+        unit: 'x10¹²/L',
+      },
+    ],
+  },
+  {
+    code: 'HB',
+    name: 'Hemoglobin',
+    unit: 'g/dL',
+    referenceRange: '11.5-15.0',
+    criticalLow: '7.0',
+    criticalHigh: '20.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '17.0-20.0',
+        unit: 'g/dL',
+        criticalLow: '7.0',
+        criticalHigh: '24.0',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '12.0-16.0',
+        unit: 'g/dL',
+        criticalLow: '7.0',
+        criticalHigh: '20.0',
+      },
+      {
+        ageGroup: 'Adult Female',
+        ageMin: 13,
+        gender: 'F',
+        range: '11.5-15.0',
+        unit: 'g/dL',
+        criticalLow: '7.0',
+        criticalHigh: '20.0',
+      },
+      {
+        ageGroup: 'Adult Male',
+        ageMin: 13,
+        gender: 'M',
+        range: '13.5-17.5',
+        unit: 'g/dL',
+        criticalLow: '7.0',
+        criticalHigh: '20.0',
+      },
+    ],
+  },
+  {
+    code: 'HCT',
+    name: 'Hematocrit',
+    unit: '%',
+    referenceRange: '35.0-45.0',
+    criticalLow: '20',
+    criticalHigh: '60',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '38.0-68.0',
+        unit: '%',
+        criticalLow: '20',
+        criticalHigh: '70',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '35.0-49.0',
+        unit: '%',
+        criticalLow: '20',
+        criticalHigh: '60',
+      },
+      {
+        ageGroup: 'Adult Female',
+        ageMin: 13,
+        gender: 'F',
+        range: '35.0-45.0',
+        unit: '%',
+        criticalLow: '20',
+        criticalHigh: '60',
+      },
+      {
+        ageGroup: 'Adult Male',
+        ageMin: 13,
+        gender: 'M',
+        range: '40.0-54.0',
+        unit: '%',
+        criticalLow: '20',
+        criticalHigh: '60',
+      },
+    ],
+  },
+  {
+    code: 'MCV',
+    name: 'Mean Corpuscular Volume',
+    unit: 'fL',
+    referenceRange: '82.0-100.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '95.0-125.0',
+        unit: 'fL',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '80.0-100.0',
+        unit: 'fL',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '82.0-100.0',
+        unit: 'fL',
+      },
+    ],
+  },
+  {
+    code: 'MCH',
+    name: 'Mean Corpuscular Hemoglobin',
+    unit: 'pg',
+    referenceRange: '27.0-34.0',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '30.0-42.0',
+        unit: 'pg',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '27.0-34.0',
+        unit: 'pg',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '27.0-34.0',
+        unit: 'pg',
+      },
+    ],
+  },
+  {
+    code: 'MCHC',
+    name: 'Mean Corpuscular Hemoglobin Concentration',
+    unit: 'g/L',
+    referenceRange: '316-354',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '300-340',
+        unit: 'g/L',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '310-370',
+        unit: 'g/L',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '316-354',
+        unit: 'g/L',
+      },
+    ],
+  },
+  {
+    code: 'RDWCV',
+    name: 'Red Cell Distribution Width - CV',
+    unit: '%',
+    referenceRange: '11.0-16.0',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '11.0-16.0',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'RDWSD',
+    name: 'Red Cell Distribution Width - SD',
+    unit: 'fL',
+    referenceRange: '35.0-56.0',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '35.0-56.0',
+        unit: 'fL',
+      },
+    ],
+  },
+  {
+    code: 'PLT',
+    name: 'Platelet Count',
+    unit: 'x10⁹/L',
+    referenceRange: '125-350',
+    criticalLow: '50',
+    criticalHigh: '1000',
+    referenceRanges: [
+      {
+        ageGroup: 'Neonatal (0-7 days)',
+        ageMin: 0,
+        ageMax: 0.02,
+        gender: 'all',
+        range: '100-300',
+        unit: 'x10⁹/L',
+        criticalLow: '50',
+        criticalHigh: '1000',
+      },
+      {
+        ageGroup: 'Pediatric (7d-13yr)',
+        ageMin: 0.02,
+        ageMax: 13,
+        gender: 'all',
+        range: '100-300',
+        unit: 'x10⁹/L',
+        criticalLow: '50',
+        criticalHigh: '1000',
+      },
+      {
+        ageGroup: 'Adult',
+        ageMin: 13,
+        gender: 'all',
+        range: '125-350',
+        unit: 'x10⁹/L',
+        criticalLow: '50',
+        criticalHigh: '1000',
+      },
+    ],
+  },
+  {
+    code: 'MPV',
+    name: 'Mean Platelet Volume',
+    unit: 'fL',
+    referenceRange: '6.5-12.0',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '6.5-12.0',
+        unit: 'fL',
+      },
+    ],
+  },
+  {
+    code: 'PDW',
+    name: 'Platelet Distribution Width',
+    unit: 'fL',
+    referenceRange: '9.0-17.0',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '9.0-17.0',
+        unit: 'fL',
+      },
+    ],
+  },
+  {
+    code: 'PLTCT',
+    name: 'Plateletcrit',
+    unit: 'ml/L',
+    referenceRange: '1.08-2.82',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '1.08-2.82',
+        unit: 'ml/L',
+      },
+    ],
+  },
+  {
+    code: 'PLCR',
+    name: 'Platelet Large Cell Ratio',
+    unit: '%',
+    referenceRange: '11.0-45.0',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '11.0-45.0',
+        unit: '%',
+      },
+    ],
+  },
+  {
+    code: 'PLCC',
+    name: 'Platelet Large Cell Count',
+    unit: 'x10⁹/L',
+    referenceRange: '30-90',
+    referenceRanges: [
+      {
+        ageGroup: 'All ages',
+        ageMin: 0,
+        gender: 'all',
+        range: '30-90',
+        unit: 'x10⁹/L',
+      },
+    ],
+  },
+];
+
+async function updateFbcRanges() {
+  const app = await NestFactory.createApplicationContext(AppModule);
+  const testCatalogModel = app.get<Model<TestCatalog>>(
+    getModelToken(TestCatalog.name),
+  );
+
+  console.log('\n🩸 Updating FBC reference ranges...\n');
+
+  try {
+    for (const test of FBC_DEFINITIONS) {
+      const updateResult = await testCatalogModel.updateOne(
+        { code: test.code },
+        {
+          $set: {
+            name: test.name,
+            category: TestCategoryEnum.HEMATOLOGY,
+            sampleType: 'blood',
+            unit: test.unit,
+            price: 0,
+            isActive: false,
+            turnaroundTime: 30,
+            referenceRange: test.referenceRange,
+            referenceRanges: test.referenceRanges,
+          },
+          $setOnInsert: {
+            code: test.code,
+            description: 'FBC component test',
+          },
+        },
+        { upsert: true },
+      );
+
+      if (updateResult.upsertedCount > 0) {
+        console.log(`  ✅ ${test.code} inserted with updated reference ranges`);
+        continue;
+      }
+
+      if (updateResult.modifiedCount > 0) {
+        console.log(`  ✅ ${test.code} updated`);
+      } else {
+        console.log(`  ✓  ${test.code} already up to date`);
+      }
+    }
+
+    console.log('\n✅ FBC reference range sync completed.\n');
+  } finally {
+    await app.close();
+  }
+}
+
+updateFbcRanges()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error('❌ FBC range update failed:', error);
+    process.exit(1);
+  });

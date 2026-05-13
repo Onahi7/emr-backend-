@@ -1,0 +1,69 @@
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from '../app.module';
+import { Model } from 'mongoose';
+import { TestCatalog } from './schemas/test-catalog.schema';
+
+async function seedTestCatalog() {
+  const app = await NestFactory.createApplicationContext(AppModule);
+  
+  const testCatalogModel = app.get<Model<TestCatalog>>('TestCatalogModel');
+
+  console.log('Starting comprehensive test catalog seeding with age/gender-specific ranges...');
+
+  // Clear existing test catalog
+  await testCatalogModel.deleteMany({});
+  console.log('Cleared existing test catalog');
+
+  const tests = [
+    // ==================== HAEMATOLOGY (ZYBIO ZS-2) ====================
+    {
+      code: 'HB',
+      name: 'Hemoglobin',
+      category: 'hematology',
+      price: 50,
+      sampleType: 'blood',
+      turnaroundTime: 60,
+      isActive: true,
+      description: 'Hemoglobin concentration measurement',
+      unit: 'g/dL',
+      referenceRanges: [
+        { ageGroup: 'Newborn (0-2 weeks)', ageMin: 0, ageMax: 0.04, gender: 'all', range: '14.5-22.5', unit: 'g/dL', criticalLow: '7.0', criticalHigh: '20.0' },
+        { ageGroup: '2 weeks - 1 month', ageMin: 0.04, ageMax: 0.08, gender: 'all', range: '12.0-20.0', unit: 'g/dL' },
+        { ageGroup: '1-2 months', ageMin: 0.08, ageMax: 0.17, gender: 'all', range: '10.0-18.0', unit: 'g/dL' },
+        { ageGroup: '2-6 months', ageMin: 0.17, ageMax: 0.5, gender: 'all', range: '9.5-14.0', unit: 'g/dL' },
+        { ageGroup: '6 months - 2 years', ageMin: 0.5, ageMax: 2, gender: 'all', range: '10.5-13.5', unit: 'g/dL' },
+        { ageGroup: '2-6 years', ageMin: 2, ageMax: 6, gender: 'all', range: '11.5-13.5', unit: 'g/dL' },
+        { ageGroup: '6-12 years', ageMin: 6, ageMax: 12, gender: 'all', range: '11.5-15.5', unit: 'g/dL' },
+        { ageGroup: '12-18 years', ageMin: 12, ageMax: 18, gender: 'M', range: '13.0-16.0', unit: 'g/dL' },
+        { ageGroup: '12-18 years', ageMin: 12, ageMax: 18, gender: 'F', range: '12.0-16.0', unit: 'g/dL' },
+        { ageGroup: 'Adult (18-65 years)', ageMin: 18, ageMax: 65, gender: 'M', range: '13.5-18.0', unit: 'g/dL', criticalLow: '7.0', criticalHigh: '20.0' },
+        { ageGroup: 'Adult (18-65 years)', ageMin: 18, ageMax: 65, gender: 'F', range: '12.0-16.0', unit: 'g/dL', criticalLow: '7.0', criticalHigh: '20.0' },
+        { ageGroup: 'Elderly (>65 years)', ageMin: 65, gender: 'M', range: '12.0-17.0', unit: 'g/dL' },
+        { ageGroup: 'Elderly (>65 years)', ageMin: 65, gender: 'F', range: '11.0-15.0', unit: 'g/dL' },
+        { ageGroup: 'Pregnancy', gender: 'F', pregnancy: true, range: '11.0-14.0', unit: 'g/dL' },
+      ],
+    },
+    {
+      code: 'HCT',
+      name: 'Hematocrit',
+      category: 'hematology',
+      price: 50,
+      sampleType: 'blood',
+      turnaroundTime: 60,
+      isActive: true,
+      description: 'Packed cell volume',
+      unit: '%',
+      referenceRanges: [
+        { ageGroup: 'Newborn', ageMin: 0, ageMax: 0.08, gender: 'all', range: '44-64', unit: '%', criticalLow: '20', criticalHigh: '60' },
+        { ageGroup: '1 month', ageMin: 0.08, ageMax: 0.17, gender: 'all', range: '31-55', unit: '%' },
+        { ageGroup: '6 months - 2 years', ageMin: 0.5, ageMax: 2, gender: 'all', range: '33-39', unit: '%' },
+        { ageGroup: '2-6 years', ageMin: 2, ageMax: 6, gender: 'all', range: '34-40', unit: '%' },
+        { ageGroup: '6-12 years', ageMin: 6, ageMax: 12, gender: 'all', range: '35-45', unit: '%' },
+        { ageGroup: '12-18 years', ageMin: 12, ageMax: 18, gender: 'M', range: '37-49', unit: '%' },
+        { ageGroup: '12-18 years', ageMin: 12, ageMax: 18, gender: 'F', range: '36-46', unit: '%' },
+        { ageGroup: 'Adult (18-65 years)', ageMin: 18, ageMax: 65, gender: 'M', range: '40-54', unit: '%', criticalLow: '20', criticalHigh: '60' },
+        { ageGroup: 'Adult (18-65 years)', ageMin: 18, ageMax: 65, gender: 'F', range: '36-48', unit: '%', criticalLow: '20', criticalHigh: '60' },
+        { ageGroup: 'Elderly (>65 years)', ageMin: 65, gender: 'M', range: '37-51', unit: '%' },
+        { ageGroup: 'Elderly (>65 years)', ageMin: 65, gender: 'F', range: '34-46', unit: '%' },
+      ],
+    },
