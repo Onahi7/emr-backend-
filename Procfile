@@ -1,2 +1,2 @@
-release: npm run build
-web: npm run start:prod
+release: pnpm run build
+web: pnpm run start:prod
