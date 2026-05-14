@@ -102,6 +102,7 @@ export class AdmissionsService {
       .populate('nursingNotes.authoredBy', 'full_name')
       .populate('carePlan.createdBy', 'full_name')
       .populate('incidents.reportedBy', 'full_name')
+      .populate('shiftHandovers.handedOverBy', 'full_name')
       .exec();
     if (!admission) throw new NotFoundException('Admission not found');
     const clinicalNotes = await this.soapNoteModel
@@ -155,6 +156,8 @@ export class AdmissionsService {
 
     admission.medicationLog.push({
       ...med,
+      medicationId: med.medicationId ? new Types.ObjectId(med.medicationId) : undefined,
+      prescriptionId: med.prescriptionId ? new Types.ObjectId(med.prescriptionId) : undefined,
       administeredBy: administeredBy ? new Types.ObjectId(administeredBy) : undefined,
       administeredAt: new Date(),
     } as any);
@@ -241,6 +244,29 @@ export class AdmissionsService {
       treatmentPlan: note.plan,
     });
     this.realtimeGateway.emitToAll('admission:note_added', saved);
+    return saved;
+  }
+
+  // ---------- Shift handover ----------
+  async addShiftHandover(id: string, handover: any, handedOverBy?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findById(id);
+    if (!admission) throw new NotFoundException('Admission not found');
+    this.ensureActive(admission);
+
+    admission.shiftHandovers.push({
+      ...handover,
+      handedOverBy: handedOverBy ? new Types.ObjectId(handedOverBy) : undefined,
+      handedOverAt: new Date(),
+    } as any);
+
+    admission.nursingNotes.push({
+      narrative: `SHIFT HANDOVER (${handover.shift}): ${handover.conditionSummary || ''} ${handover.tasksForNextShift ? `Tasks: ${handover.tasksForNextShift}` : ''}`.trim(),
+      authoredBy: handedOverBy ? new Types.ObjectId(handedOverBy) : undefined,
+      authoredAt: new Date(),
+    } as any);
+
+    const saved = await admission.save();
+    this.realtimeGateway.emitToAll('admission:handover_added', saved);
     return saved;
   }
 

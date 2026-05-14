@@ -114,6 +114,13 @@ export class AdmissionsController {
     return this.admissionsService.addNursingNote(id, note, req.user?.userId);
   }
 
+  // ---------- Shift handover ----------
+  @Post(':id/shift-handovers')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
+  addShiftHandover(@Param('id') id: string, @Body() handover: any, @Request() req: any) {
+    return this.admissionsService.addShiftHandover(id, handover, req.user?.userId);
+  }
+
   // ---------- Care plan ----------
   @Post(':id/care-plan')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)

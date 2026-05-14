@@ -112,6 +112,25 @@ export class IncidentReport {
 }
 export const IncidentReportSchema = SchemaFactory.createForClass(IncidentReport);
 
+@Schema({ _id: false, timestamps: false })
+export class ShiftHandover {
+  @Prop({ required: true })
+  shift: string; // morning, afternoon, night
+
+  @Prop() conditionSummary?: string;
+  @Prop() latestVitalsSummary?: string;
+  @Prop() pendingLabs?: string;
+  @Prop() medicationsDue?: string;
+  @Prop() fluidBalanceConcern?: string;
+  @Prop() risksAndAllergies?: string;
+  @Prop() tasksForNextShift?: string;
+  @Prop() receivingNurse?: string;
+  @Prop() notes?: string;
+  @Prop({ type: Types.ObjectId, ref: 'Profile' }) handedOverBy?: Types.ObjectId;
+  @Prop({ default: () => new Date() }) handedOverAt: Date;
+}
+export const ShiftHandoverSchema = SchemaFactory.createForClass(ShiftHandover);
+
 // ---------- Admission ----------
 
 @Schema({ timestamps: true, collection: 'admissions' })
@@ -193,6 +212,9 @@ export class Admission extends Document {
 
   @Prop({ type: [IncidentReportSchema], default: [] })
   incidents: IncidentReport[];
+
+  @Prop({ type: [ShiftHandoverSchema], default: [] })
+  shiftHandovers: ShiftHandover[];
 
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   admittedBy?: Types.ObjectId;
