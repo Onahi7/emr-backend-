@@ -83,7 +83,7 @@ export class PrescriptionsService {
       .find(query)
       .populate('patientId', 'patientId firstName lastName')
       .populate('doctorId', 'fullName')
-      .populate('items.medicationId', 'name')
+      .populate('items.medicationId', 'name stockQuantity unitPrice medicationCode dosageForm strength')
       .sort({ createdAt: -1 })
       .exec();
   }

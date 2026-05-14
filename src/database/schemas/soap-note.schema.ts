@@ -19,8 +19,8 @@ export class SoapNote extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Consultation' })
   consultationId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor', required: true })
-  doctorId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  doctorId?: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(SoapNoteTypeEnum) })
   noteType: SoapNoteTypeEnum;

@@ -8,6 +8,7 @@ import {
 } from '../database/schemas/admission.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { IdSequence } from '../database/schemas/id-sequence.schema';
+import { SoapNote, SoapNoteTypeEnum } from '../database/schemas/soap-note.schema';
 import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -19,6 +20,7 @@ export class AdmissionsService {
     @InjectModel(Admission.name) private admissionModel: Model<Admission>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
     @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
+    @InjectModel(SoapNote.name) private soapNoteModel: Model<SoapNote>,
     private realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -102,7 +104,17 @@ export class AdmissionsService {
       .populate('incidents.reportedBy', 'full_name')
       .exec();
     if (!admission) throw new NotFoundException('Admission not found');
-    return admission;
+    const clinicalNotes = await this.soapNoteModel
+      .find({ patientId: admission.patientId, ...(admission.visitId ? { visitId: admission.visitId } : {}) })
+      .populate('doctorId', 'fullName')
+      .populate('nurseId', 'full_name fullName')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return {
+      ...admission.toObject(),
+      clinicalNotes,
+    } as any;
   }
 
   async update(id: string, data: any): Promise<Admission> {
@@ -217,6 +229,17 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
+    await this.soapNoteModel.create({
+      patientId: saved.patientId,
+      visitId: saved.visitId,
+      nurseId: authoredBy ? new Types.ObjectId(authoredBy) : undefined,
+      noteType: SoapNoteTypeEnum.NURSE_NOTE,
+      chiefComplaint: note.subjective || note.narrative,
+      historyPresentIllness: note.subjective,
+      physicalExamination: note.objective,
+      diagnosis: note.assessment,
+      treatmentPlan: note.plan,
+    });
     this.realtimeGateway.emitToAll('admission:note_added', saved);
     return saved;
   }

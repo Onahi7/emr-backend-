@@ -24,12 +24,6 @@ export class SoapNotesController {
     return this.soapNotesService.findAll();
   }
 
-  @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  findById(@Param('id') id: string) {
-    return this.soapNotesService.findById(id);
-  }
-
   @Get('patient/:patientId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   findByPatient(@Param('patientId') patientId: string) {
@@ -46,6 +40,12 @@ export class SoapNotesController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
   findByVisit(@Param('visitId') visitId: string) {
     return this.soapNotesService.findByVisit(visitId);
+  }
+
+  @Get(':id')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
+  findById(@Param('id') id: string) {
+    return this.soapNotesService.findById(id);
   }
 
   @Patch(':id')

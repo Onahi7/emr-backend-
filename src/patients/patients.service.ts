@@ -415,6 +415,18 @@ export class PatientsService {
       .sort({ createdAt: -1 })
       .exec();
 
+    // Get admissions with ward nursing records for follow-up and future reference
+    const Admission = this.patientModel.db.model('Admission');
+    const admissions = await Admission.find({ patientId: new Types.ObjectId(patientId) })
+      .populate('doctorId', 'fullName specialty')
+      .populate('primaryNurseId', 'full_name')
+      .populate('vitalsLog.recordedBy', 'full_name')
+      .populate('medicationLog.administeredBy', 'full_name')
+      .populate('fluidBalance.recordedBy', 'full_name')
+      .populate('nursingNotes.authoredBy', 'full_name')
+      .sort({ admittedAt: -1 })
+      .exec();
+
     // Get vitals history from SOAP notes
     const vitalsHistory = soapNotes
       .filter((note: any) => note.vitalSigns)
@@ -430,11 +442,13 @@ export class PatientsService {
       prescriptions,
       soapNotes,
       orders: ordersWithDetails,
+      admissions,
       notes,
       vitalsHistory,
       summary: {
         totalConsultations: consultations.length,
         totalPrescriptions: prescriptions.length,
+        totalAdmissions: admissions.length,
         totalLabOrders: orders.length,
         pendingLabOrders: orders.filter((o: any) => o.status !== 'completed').length,
         lastVisit: consultations.length > 0 ? (consultations[0] as any).createdAt : null,

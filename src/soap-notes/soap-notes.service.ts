@@ -17,7 +17,7 @@ export class SoapNotesService {
       patientId: new Types.ObjectId(createSoapNoteDto.patientId),
       consultationId: createSoapNoteDto.consultationId ? new Types.ObjectId(createSoapNoteDto.consultationId) : undefined,
       visitId: createSoapNoteDto.visitId ? new Types.ObjectId(createSoapNoteDto.visitId) : undefined,
-      doctorId: new Types.ObjectId(createSoapNoteDto.doctorId),
+      doctorId: createSoapNoteDto.doctorId ? new Types.ObjectId(createSoapNoteDto.doctorId) : undefined,
       nurseId: createSoapNoteDto.nurseId ? new Types.ObjectId(createSoapNoteDto.nurseId) : undefined,
     });
     return soapNote.save();
@@ -28,6 +28,7 @@ export class SoapNotesService {
       .find(query)
       .populate('patientId', 'firstName lastName patientId')
       .populate('doctorId', 'fullName')
+      .populate('nurseId', 'full_name fullName')
       .populate('consultationId', 'consultationNumber')
       .sort({ createdAt: -1 })
       .exec();
@@ -38,6 +39,7 @@ export class SoapNotesService {
       .findById(id)
       .populate('patientId')
       .populate('doctorId')
+      .populate('nurseId')
       .populate('consultationId')
       .exec();
     if (!soapNote) {
@@ -50,6 +52,7 @@ export class SoapNotesService {
     return this.soapNoteModel
       .find({ patientId: new Types.ObjectId(patientId) })
       .populate('doctorId', 'fullName')
+      .populate('nurseId', 'full_name fullName')
       .populate('consultationId', 'consultationNumber')
       .sort({ createdAt: -1 })
       .exec();
@@ -59,6 +62,7 @@ export class SoapNotesService {
     return this.soapNoteModel
       .find({ consultationId: new Types.ObjectId(consultationId) })
       .populate('doctorId', 'fullName')
+      .populate('nurseId', 'full_name fullName')
       .exec();
   }
 
@@ -66,6 +70,7 @@ export class SoapNotesService {
     return this.soapNoteModel
       .find({ visitId: new Types.ObjectId(visitId) })
       .populate('doctorId', 'fullName')
+      .populate('nurseId', 'full_name fullName')
       .sort({ createdAt: -1 })
       .exec();
   }

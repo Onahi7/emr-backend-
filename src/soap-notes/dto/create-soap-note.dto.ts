@@ -15,8 +15,8 @@ export class CreateSoapNoteDto {
   visitId?: string;
 
   @IsMongoId()
-  @IsNotEmpty()
-  doctorId: string;
+  @IsOptional()
+  doctorId?: string;
 
   @IsEnum(SoapNoteTypeEnum)
   @IsOptional()
