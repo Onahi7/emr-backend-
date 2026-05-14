@@ -60,7 +60,7 @@ export class VisitsController {
    * GET /visits/doctor-queue
    */
   @Get('doctor-queue')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   getDoctorQueue(@Query('doctorId') doctorId?: string) {
     return this.visitsService.getDoctorQueue(doctorId);
   }

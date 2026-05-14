@@ -107,6 +107,7 @@ export class AdminService {
         newPatientsToday,
         totalVisitsToday,
         visitsWaitingPayment: visitStatusMap[VisitStatusEnum.WAITING_PAYMENT] || 0,
+        visitsAwaitingTriage: visitStatusMap[VisitStatusEnum.AWAITING_TRIAGE] || 0,
         visitsInQueue: visitStatusMap[VisitStatusEnum.IN_QUEUE] || 0,
         visitsInConsultation: visitStatusMap[VisitStatusEnum.IN_CONSULTATION] || 0,
         visitsAwaitingLab: visitStatusMap[VisitStatusEnum.AWAITING_LAB] || 0,

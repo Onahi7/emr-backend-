@@ -28,10 +28,10 @@ export class ResultsController {
   /**
    * Create a new result (manual entry)
    * POST /results
-   * Requires: lab_tech, receptionist, or admin role
+   * Requires: lab_tech or admin role
    */
   @Post()
-  @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   create(@Body() createResultDto: CreateResultDto, @Request() req: any) {
     const userId = req.user?.userId;
     const userRoles = req.user?.roles || [];
@@ -41,10 +41,10 @@ export class ResultsController {
   /**
    * Create multiple results in bulk (much faster)
    * POST /results/bulk
-   * Requires: lab_tech, receptionist, or admin role
+   * Requires: lab_tech or admin role
    */
   @Post('bulk')
-  @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   createBulk(@Body() createResultDtos: CreateResultDto[], @Request() req: any) {
     const userId = req.user?.userId;
     const userRoles = req.user?.roles || [];
@@ -122,10 +122,10 @@ export class ResultsController {
   /**
    * Update a result
    * PATCH /results/:id
-   * Requires: lab_tech, receptionist, or admin role
+   * Requires: lab_tech or admin role
    */
   @Patch(':id')
-  @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   update(@Param('id') id: string, @Body() updateResultDto: UpdateResultDto) {
     return this.resultsService.update(id, updateResultDto);
   }

@@ -24,13 +24,13 @@ export class SamplesController {
   constructor(private readonly samplesService: SamplesService) {}
 
   @Post()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async create(@Body() createSampleDto: CreateSampleDto, @Request() req: any) {
     return this.samplesService.create(createSampleDto, req.user?.userId);
   }
 
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async findAll(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -44,7 +44,7 @@ export class SamplesController {
   }
 
   @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async findOne(@Param('id') id: string) {
     return this.samplesService.findOne(id);
   }

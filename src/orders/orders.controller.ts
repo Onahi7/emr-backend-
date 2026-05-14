@@ -81,13 +81,13 @@ export class OrdersController {
   }
 
   @Get('pending-collection')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async getPendingCollection() {
     return this.ordersService.getPendingCollection();
   }
 
   @Get('pending-results')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async getPendingResults() {
     return this.ordersService.getPendingResults();
   }
@@ -162,7 +162,7 @@ export class OrdersController {
   }
 
   @Post(':id/collect')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async collect(@Param('id') id: string, @Request() req: any) {
     return this.ordersService.collect(id, req.user?.userId);
   }

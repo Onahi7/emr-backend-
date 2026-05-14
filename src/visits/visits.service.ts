@@ -149,7 +149,7 @@ export class VisitsService {
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
-      .sort({ createdAt: 1 }) // FCFS order
+      .sort({ triagedAt: 1, createdAt: 1 }) // FCFS after nurse vitals/triage
       .exec();
   }
 
@@ -212,7 +212,7 @@ export class VisitsService {
         this.visitModel
           .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true })
           .populate('patientId', 'patientId firstName lastName age gender phone')
-          .sort({ createdAt: 1 })
+          .sort({ triagedAt: 1, createdAt: 1 })
           .exec(),
         // This doctor's patients currently in consultation
         this.visitModel
@@ -367,7 +367,7 @@ export class VisitsService {
   }
 
   /**
-   * Mark consultation as paid and route to the doctor queue.
+   * Mark consultation as paid and route to nurse vitals/triage.
    */
   async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string): Promise<Visit> {
     const visit = await this.visitModel.findById(id);
@@ -380,7 +380,7 @@ export class VisitsService {
     }
 
     visit.consultationPaid = true;
-    visit.status = VisitStatusEnum.IN_QUEUE;
+    visit.status = VisitStatusEnum.AWAITING_TRIAGE;
     visit.checkedInAt = new Date();
 
     const savedVisit = await visit.save();
@@ -392,9 +392,9 @@ export class VisitsService {
       receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
       notes: `Consultation payment for visit ${visit.visitNumber}`,
     });
-    this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (doctor queue)`);
+    this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (awaiting triage)`);
 
-    // Auto-create queue entry for doctor FCFS queue
+    // Auto-create queue entry for nurse triage/vitals.
     try {
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
@@ -411,7 +411,7 @@ export class VisitsService {
         queueNumber: `Q-${dateStr}-${String(queueCount + 1).padStart(4, '0')}`,
         patientId: savedVisit.patientId,
         visitId: savedVisit._id,
-        status: QueueStatusEnum.WAITING,
+        status: QueueStatusEnum.WITH_NURSE,
         priority: PriorityLevelEnum.NORMAL,
         queueOrder,
       });
@@ -460,13 +460,20 @@ export class VisitsService {
     const savedVisit = await visit.save();
     this.logger.log(`Triage complete for visit: ${savedVisit.visitNumber}`);
 
-    // Update queue priority if urgent
-    if (data.triagePriority && (data.triagePriority === 'urgent' || data.triagePriority === 'emergency' || data.triagePriority === 'high')) {
-      await this.queueModel.updateOne(
-        { visitId: new Types.ObjectId(id) },
-        { priority: data.triagePriority === 'emergency' ? PriorityLevelEnum.URGENT : PriorityLevelEnum[data.triagePriority.toUpperCase()] || PriorityLevelEnum.HIGH },
-      );
-    }
+    const triagePriority =
+      data.triagePriority && (data.triagePriority === 'urgent' || data.triagePriority === 'emergency' || data.triagePriority === 'high')
+        ? data.triagePriority === 'emergency'
+          ? PriorityLevelEnum.URGENT
+          : PriorityLevelEnum[data.triagePriority.toUpperCase()] || PriorityLevelEnum.HIGH
+        : undefined;
+
+    await this.queueModel.updateOne(
+      { visitId: new Types.ObjectId(id) },
+      {
+        status: QueueStatusEnum.WAITING,
+        ...(triagePriority ? { priority: triagePriority } : {}),
+      },
+    );
 
     this.realtimeGateway.emitToAll('visit:triage_completed', savedVisit);
     return savedVisit;
@@ -561,6 +568,15 @@ export class VisitsService {
 
     const savedVisit = await visit.save();
     this.logger.log(`Doctor accepted visit: ${savedVisit.visitNumber}`);
+
+    await this.queueModel.updateOne(
+      { visitId: new Types.ObjectId(id) },
+      {
+        status: QueueStatusEnum.WITH_DOCTOR,
+        doctorId: new Types.ObjectId(doctorId),
+        doctorCalledAt: new Date(),
+      },
+    );
 
     this.realtimeGateway.emitToAll('visit:accepted', savedVisit);
 
@@ -762,6 +778,7 @@ export class VisitsService {
     const [
       totalVisits,
       waitingPayment,
+      awaitingTriage,
       inQueue,
       inConsultation,
       awaitingLab,
@@ -774,6 +791,7 @@ export class VisitsService {
     ] = await Promise.all([
       this.visitModel.countDocuments(query),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.WAITING_PAYMENT }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_TRIAGE }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.IN_QUEUE }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.IN_CONSULTATION }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_LAB }),
@@ -788,6 +806,7 @@ export class VisitsService {
     return {
       totalVisits,
       waitingPayment,
+      awaitingTriage,
       inQueue,
       inConsultation,
       awaitingLab,

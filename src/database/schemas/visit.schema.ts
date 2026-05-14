@@ -3,8 +3,8 @@ import { Document, Types } from 'mongoose';
 
 export enum VisitStatusEnum {
   WAITING_PAYMENT = 'waiting_payment',           // Created, consultation fee not yet paid
-  AWAITING_TRIAGE = 'awaiting_triage',           // Optional nurse vitals/triage step
-  IN_QUEUE = 'in_queue',                         // Paid, waiting for doctor
+  AWAITING_TRIAGE = 'awaiting_triage',           // Paid, waiting for nurse vitals/triage
+  IN_QUEUE = 'in_queue',                         // Triage completed, waiting for doctor
   IN_CONSULTATION = 'in_consultation',           // Doctor accepted, in consultation
   AWAITING_LAB = 'awaiting_lab',                // Doctor ordered lab, awaiting payment
   AWAITING_PHARMACY = 'awaiting_pharmacy',      // Doctor prescribed, awaiting payment

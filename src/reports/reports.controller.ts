@@ -94,10 +94,10 @@ export class ReportsController {
    * GET /api/reports/lab-results/507f1f77bcf86cd799439011
    * 
    * @security JWT authentication required
-   * @roles Admin, Lab Technician, Receptionist
+   * @roles Admin, Lab Technician, Doctor
    */
   @Get('lab-results/:orderId')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   async getLabResultReport(
     @Param('orderId') orderId: string,
     @Req() req: any,
