@@ -73,7 +73,7 @@ export class AdmissionsService {
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions dateOfBirth')
       .populate('doctorId', 'fullName specialty')
-      .populate('primaryNurseId', 'full_name')
+      .populate('primaryNurseId', 'fullName')
       .sort({ admittedAt: -1 })
       .exec();
   }
@@ -95,20 +95,20 @@ export class AdmissionsService {
       .findById(id)
       .populate('patientId')
       .populate('doctorId')
-      .populate('primaryNurseId', 'full_name')
-      .populate('vitalsLog.recordedBy', 'full_name')
-      .populate('medicationLog.administeredBy', 'full_name')
-      .populate('fluidBalance.recordedBy', 'full_name')
-      .populate('nursingNotes.authoredBy', 'full_name')
-      .populate('carePlan.createdBy', 'full_name')
-      .populate('incidents.reportedBy', 'full_name')
-      .populate('shiftHandovers.handedOverBy', 'full_name')
+      .populate('primaryNurseId', 'fullName')
+      .populate('vitalsLog.recordedBy', 'fullName')
+      .populate('medicationLog.administeredBy', 'fullName')
+      .populate('fluidBalance.recordedBy', 'fullName')
+      .populate('nursingNotes.authoredBy', 'fullName')
+      .populate('carePlan.createdBy', 'fullName')
+      .populate('incidents.reportedBy', 'fullName')
+      .populate('shiftHandovers.handedOverBy', 'fullName')
       .exec();
     if (!admission) throw new NotFoundException('Admission not found');
     const clinicalNotes = await this.soapNoteModel
       .find({ patientId: admission.patientId, ...(admission.visitId ? { visitId: admission.visitId } : {}) })
       .populate('doctorId', 'fullName')
-      .populate('nurseId', 'full_name fullName')
+      .populate('nurseId', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
 

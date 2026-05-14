@@ -47,29 +47,45 @@ export class PanelInterpretationsController {
   }
 
   /**
-   * Generate AI interpretation for a panel
+   * Generate AI interpretation for a panel — generates and persists in one call
    * POST /panel-interpretations/ai-generate
    */
   @Post('ai-generate')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async generateAiInterpretation(
     @Body() body: { orderId: string; panel: PanelResults },
+    @Req() req: AuthenticatedRequest,
   ) {
     const interpretation = await this.aiInterpretationService.generateInterpretation(
       body.orderId,
       body.panel,
     );
+
+    // Persist the result
+    await this.panelInterpretationsService.upsert(
+      {
+        orderId: body.orderId,
+        panelCode: body.panel.panelCode,
+        panelName: body.panel.panelName,
+        interpretation,
+        aiProvider: this.aiInterpretationService.getProviderName(),
+        aiGeneratedAt: new Date().toISOString(),
+      },
+      req.user.userId,
+    );
+
     return { interpretation };
   }
 
   /**
-   * Generate AI interpretations for all panels in an order
+   * Generate AI interpretations for all panels in an order — generates and persists each
    * POST /panel-interpretations/ai-generate-all
    */
   @Post('ai-generate-all')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async generateAllAiInterpretations(
     @Body() body: { orderId: string; panels: PanelResults[] },
+    @Req() req: AuthenticatedRequest,
   ) {
     const results = [];
     for (const panel of body.panels) {
@@ -78,19 +94,22 @@ export class PanelInterpretationsController {
           body.orderId,
           panel,
         );
-        results.push({
-          panelCode: panel.panelCode,
-          panelName: panel.panelName,
-          interpretation,
-          success: true,
-        });
+
+        await this.panelInterpretationsService.upsert(
+          {
+            orderId: body.orderId,
+            panelCode: panel.panelCode,
+            panelName: panel.panelName,
+            interpretation,
+            aiProvider: this.aiInterpretationService.getProviderName(),
+            aiGeneratedAt: new Date().toISOString(),
+          },
+          req.user.userId,
+        );
+
+        results.push({ panelCode: panel.panelCode, panelName: panel.panelName, interpretation, success: true });
       } catch (error) {
-        results.push({
-          panelCode: panel.panelCode,
-          panelName: panel.panelName,
-          error: error.message,
-          success: false,
-        });
+        results.push({ panelCode: panel.panelCode, panelName: panel.panelName, error: error.message, success: false });
       }
     }
     return results;

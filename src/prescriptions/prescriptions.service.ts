@@ -3,9 +3,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Prescription, PrescriptionStatusEnum } from '../database/schemas/prescription.schema';
 import { Medication } from '../database/schemas/medication.schema';
+import { StockMovement, StockMovementTypeEnum } from '../database/schemas/stock-movement.schema';
 import { Consultation } from '../database/schemas/consultation.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
@@ -13,10 +15,62 @@ export class PrescriptionsService {
   constructor(
     @InjectModel(Prescription.name) private prescriptionModel: Model<Prescription>,
     @InjectModel(Medication.name) private medicationModel: Model<Medication>,
+    @InjectModel(StockMovement.name) private stockMovementModel: Model<StockMovement>,
     @InjectModel(Consultation.name) private consultationModel: Model<Consultation>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     private realtimeGateway: RealtimeGateway,
   ) {}
+
+  /**
+   * Auto-generate patient-facing label instructions from structured fields
+   * when the doctor hasn't written them explicitly.
+   *
+   * Examples:
+   *   oral    → "Take 1 tablet by mouth 3 times daily for 7 days"
+   *   topical → "Apply 500mg to the affected area twice daily for 2 weeks"
+   *   ophthalmic → "Instil 1 drop into the affected eye(s) every 6 hours for 5 days"
+   *   IV      → "500mg intravenously every 8 hours for 3 days — administer as directed"
+   */
+  private generateLabelInstructions(item: {
+    dosage: string;
+    frequency: string;
+    duration: string;
+    route?: string;
+    instructions?: string;
+  }): string {
+    // If the doctor already wrote instructions, use them as-is
+    if (item.instructions?.trim()) {
+      return item.instructions.trim();
+    }
+
+    const { dosage, frequency, duration, route } = item;
+
+    switch (route) {
+      case 'oral':
+      case 'sublingual':
+        return `Take ${dosage} by ${route === 'sublingual' ? 'placing under the tongue' : 'mouth'} ${frequency} for ${duration}`;
+      case 'topical':
+        return `Apply ${dosage} to the affected area ${frequency} for ${duration}`;
+      case 'ophthalmic':
+        return `Instil ${dosage} into the affected eye(s) ${frequency} for ${duration}`;
+      case 'otic':
+        return `Instil ${dosage} into the affected ear(s) ${frequency} for ${duration}`;
+      case 'nasal':
+        return `Spray ${dosage} into each nostril ${frequency} for ${duration}`;
+      case 'inhalation':
+        return `Inhale ${dosage} ${frequency} for ${duration}`;
+      case 'rectal':
+        return `Insert ${dosage} rectally ${frequency} for ${duration}`;
+      case 'intravenous':
+        return `${dosage} intravenously ${frequency} for ${duration} — administer as directed by healthcare provider`;
+      case 'intramuscular':
+        return `${dosage} by intramuscular injection ${frequency} for ${duration} — administer as directed`;
+      case 'subcutaneous':
+        return `${dosage} by subcutaneous injection ${frequency} for ${duration} — administer as directed`;
+      default:
+        return `${dosage} ${frequency} for ${duration}`;
+    }
+  }
 
   async create(createPrescriptionDto: CreatePrescriptionDto): Promise<Prescription> {
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
@@ -31,6 +85,10 @@ export class PrescriptionsService {
       const consultation = await this.consultationModel.findById(consultationId);
       if (!consultation) {
         throw new NotFoundException('Consultation not found');
+      }
+      // Ensure the consultation belongs to the same patient
+      if (consultation.patientId.toString() !== patientId) {
+        throw new BadRequestException('Consultation does not belong to the specified patient');
       }
     }
 
@@ -65,6 +123,9 @@ export class PrescriptionsService {
       items: items.map((item) => ({
         ...item,
         medicationId: new Types.ObjectId(item.medicationId),
+        // Always store resolved label instructions so the pharmacist
+        // and the dispensing label always have clear patient directions
+        instructions: this.generateLabelInstructions(item),
       })),
       status: PrescriptionStatusEnum.PENDING,
       notes,
@@ -127,7 +188,11 @@ export class PrescriptionsService {
       .exec();
   }
 
-  async dispense(id: string, dispensedBy: string): Promise<Prescription> {
+  async dispense(
+    id: string,
+    dispensedBy: string,
+    dto?: DispensePrescriptionDto,
+  ): Promise<Prescription> {
     const prescription = await this.prescriptionModel.findById(id);
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
@@ -141,29 +206,51 @@ export class PrescriptionsService {
       throw new BadRequestException('Prescription must be paid before dispensing');
     }
 
-    // Check stock availability before deducting (atomic check)
+    // Atomically deduct stock for each item using findOneAndUpdate with a
+    // stock-sufficiency condition. This prevents the race condition where two
+    // concurrent dispenses both pass the read-check but both deduct.
     for (const item of prescription.items) {
-      const medication = await this.medicationModel.findById(item.medicationId);
-      if (!medication) {
-        throw new NotFoundException(`Medication not found: ${item.medicationName}`);
-      }
-      if (medication.stockQuantity < item.quantity) {
+      const updated = await this.medicationModel.findOneAndUpdate(
+        {
+          _id: item.medicationId,
+          stockQuantity: { $gte: item.quantity }, // only update if enough stock
+        },
+        { $inc: { stockQuantity: -item.quantity } },
+        { new: true },
+      );
+
+      if (!updated) {
+        // Either medication not found or insufficient stock at deduction time
+        const med = await this.medicationModel.findById(item.medicationId).lean();
+        if (!med) {
+          throw new NotFoundException(`Medication not found: ${item.medicationName}`);
+        }
         throw new BadRequestException(
-          `Insufficient stock for ${medication.name}. Available: ${medication.stockQuantity}, Required: ${item.quantity}`,
+          `Insufficient stock for ${med.name}. ` +
+          `Available: ${med.stockQuantity}, Required: ${item.quantity}`,
         );
       }
-    }
 
-    // Deduct stock for each item
-    for (const item of prescription.items) {
-      await this.medicationModel.findByIdAndUpdate(item.medicationId, {
-        $inc: { stockQuantity: -item.quantity },
+      // Create StockMovement audit record for this dispense
+      const stockBefore = updated.stockQuantity + item.quantity; // before deduction
+      await this.stockMovementModel.create({
+        medicationId: item.medicationId,
+        movementType: StockMovementTypeEnum.DISPENSE,
+        quantity: -item.quantity,
+        prescriptionId: prescription._id,
+        stockBefore,
+        stockAfter: updated.stockQuantity,
+        notes: `Dispensed for prescription ${prescription.prescriptionNumber}`,
+        performedBy: new Types.ObjectId(dispensedBy),
       });
     }
 
     prescription.status = PrescriptionStatusEnum.DISPENSED;
     prescription.dispensedBy = new Types.ObjectId(dispensedBy);
     prescription.dispensedAt = new Date();
+    if (dto?.dispensingNotes) {
+      prescription.dispensingNotes = dto.dispensingNotes;
+    }
 
     const savedPrescription = await prescription.save();
     const populatedPrescription = await this.findById(savedPrescription._id.toString());

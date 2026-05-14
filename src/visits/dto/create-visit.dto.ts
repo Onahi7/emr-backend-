@@ -1,12 +1,12 @@
-import { IsString, IsEnum, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { VisitTypeEnum } from '../../database/schemas/visit.schema';
 
 export class CreateVisitDto {
-  @IsString()
+  @IsMongoId()
   patientId: string;
 
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   doctorId?: string;
 
   @IsOptional()
@@ -26,6 +26,6 @@ export class CreateVisitDto {
   notes?: string;
 
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   registeredBy?: string;
 }

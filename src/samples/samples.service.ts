@@ -68,6 +68,12 @@ export class SamplesService {
       throw new NotFoundException(`Order with ID ${createSampleDto.orderId} not found`);
     }
 
+    // Verify the patientId in the request matches the order's actual patient
+    // This prevents a sample being recorded against the wrong patient
+    if (order.patientId.toString() !== createSampleDto.patientId) {
+      throw new BadRequestException('Patient ID does not match the order');
+    }
+
     // Check if order is in a valid state for sample collection
     if (order.status === OrderStatusEnum.CANCELLED) {
       throw new BadRequestException('Cannot collect samples for a cancelled order');

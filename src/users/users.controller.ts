@@ -11,6 +11,7 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -53,25 +54,33 @@ export class UsersController {
   }
 
   /**
-   * Get user by ID
+   * Get user by ID — admin sees any user; others can only see themselves
    * GET /users/:id
-   * Requirements: 17.1
    */
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    // Non-admins can only fetch their own profile
+    const userRoles: string[] = req.user?.roles || [];
+    if (!userRoles.includes(UserRoleEnum.ADMIN) && req.user?.userId !== id) {
+      throw new ForbiddenException('Access denied');
+    }
     return this.usersService.findOne(id);
   }
 
   /**
-   * Update user profile
+   * Update user profile — admin can update anyone; users can only update themselves
    * PATCH /users/:id
-   * Requirements: 17.2
    */
   @Patch(':id')
   async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Request() req: any,
   ) {
+    const userRoles: string[] = req.user?.roles || [];
+    if (!userRoles.includes(UserRoleEnum.ADMIN) && req.user?.userId !== id) {
+      throw new ForbiddenException('Access denied');
+    }
     return this.usersService.update(id, updateUserDto);
   }
 

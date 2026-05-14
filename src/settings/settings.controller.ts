@@ -15,22 +15,25 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 
 @Controller('settings')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
-  @Get(':key')
-  async getSetting(@Param('key') key: string) {
-    return this.settingsService.getSetting(key);
-  }
-
+  /**
+   * Get all settings — admin only (may contain sensitive config)
+   * GET /settings
+   */
   @Get()
+  @Roles(UserRoleEnum.ADMIN)
   async getAllSettings() {
     return this.settingsService.getAllSettings();
   }
 
+  /**
+   * Upsert a setting — admin only
+   * POST /settings
+   */
   @Post()
-  @UseGuards(RolesGuard)
   @Roles(UserRoleEnum.ADMIN)
   async updateSetting(@Body() dto: UpdateSettingsDto, @Request() req: any) {
     return this.settingsService.updateSetting(
@@ -41,13 +44,17 @@ export class SettingsController {
     );
   }
 
+  /**
+   * Get/update connection config — literal sub-path MUST come before :key
+   * GET /settings/connection/config
+   */
   @Get('connection/config')
+  @Roles(UserRoleEnum.ADMIN)
   async getConnectionConfig() {
     return this.settingsService.getSetting('connection_config');
   }
 
   @Post('connection/config')
-  @UseGuards(RolesGuard)
   @Roles(UserRoleEnum.ADMIN)
   async updateConnectionConfig(@Body() config: any, @Request() req: any) {
     return this.settingsService.updateSetting(
@@ -56,5 +63,15 @@ export class SettingsController {
       req.user.userId,
       'Backend connection configuration',
     );
+  }
+
+  /**
+   * Get a single setting by key — admin only
+   * GET /settings/:key  (must be LAST — catches everything not matched above)
+   */
+  @Get(':key')
+  @Roles(UserRoleEnum.ADMIN)
+  async getSetting(@Param('key') key: string) {
+    return this.settingsService.getSetting(key);
   }
 }

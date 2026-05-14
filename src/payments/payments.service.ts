@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
-import { Order, PaymentStatusEnum } from '../database/schemas/order.schema';
+import { Order, PaymentStatusEnum, OrderStatusEnum } from '../database/schemas/order.schema';
 import { Consultation } from '../database/schemas/consultation.schema';
 import { Prescription } from '../database/schemas/prescription.schema';
 
@@ -32,9 +32,23 @@ export class PaymentsService {
     if ((paymentType === PaymentTypeEnum.LAB_ORDER || paymentType === PaymentTypeEnum.PHARMACY_ORDER) && orderId) {
       const order = await this.orderModel.findById(orderId);
       if (!order) throw new NotFoundException('Order not found');
-      order.paymentStatus = PaymentStatusEnum.PAID;
-      order.amountPaid = (order.amountPaid || 0) + amount;
-      order.balance = order.total - order.amountPaid;
+
+      // Accumulate payment correctly — do not overwrite amountPaid
+      order.amountPaid = Math.round(((order.amountPaid || 0) + amount) * 100) / 100;
+      order.balance = Math.round((order.total - order.amountPaid) * 100) / 100;
+
+      if (order.amountPaid >= order.total) {
+        order.paymentStatus = PaymentStatusEnum.PAID;
+        order.balance = 0;
+      } else if (order.amountPaid > 0) {
+        order.paymentStatus = PaymentStatusEnum.PARTIAL;
+      }
+
+      // Advance order status once any payment is received
+      if (order.status === OrderStatusEnum.AWAITING_PAYMENT) {
+        order.status = OrderStatusEnum.PENDING_COLLECTION;
+      }
+
       await order.save();
     }
 

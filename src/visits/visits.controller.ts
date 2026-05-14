@@ -265,6 +265,7 @@ export class VisitsController {
 
   /**
    * Nurse completes triage — moves from AWAITING_TRIAGE to IN_QUEUE
+   * Optionally assigns a doctor during triage
    * PATCH /visits/:id/triage
    */
   @Patch(':id/triage')
@@ -282,10 +283,25 @@ export class VisitsController {
       triagePriority?: string;
       triageNotes?: string;
       chiefComplaint?: string;
+      doctorId?: string; // Optional: assign to a specific doctor
     },
     @Request() req: any,
   ) {
     return this.visitsService.completeTriage(id, body, req.user?.userId);
+  }
+
+  /**
+   * Nurse assigns or reassigns a queued patient to a specific doctor
+   * PATCH /visits/:id/assign-doctor
+   */
+  @Patch(':id/assign-doctor')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
+  assignDoctorFromQueue(
+    @Param('id') id: string,
+    @Body() body: { doctorId: string },
+    @Request() req: any,
+  ) {
+    return this.visitsService.assignDoctorFromQueue(id, body.doctorId, req.user?.userId);
   }
 
   /**

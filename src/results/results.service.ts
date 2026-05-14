@@ -324,6 +324,16 @@ export class ResultsService {
   ): Promise<Result> {
     const isReceptionistEntry = userRoles.includes(UserRoleEnum.RECEPTIONIST);
     const orderObjectId = new Types.ObjectId(createResultDto.orderId);
+
+    // Verify the order exists and is not cancelled/completed
+    const order = await this.orderModel.findById(orderObjectId).select('status patientId').lean();
+    if (!order) {
+      throw new NotFoundException(`Order ${createResultDto.orderId} not found`);
+    }
+    if (order.status === 'cancelled') {
+      throw new BadRequestException('Cannot enter results for a cancelled order');
+    }
+
     const resolvedReferenceRange = await this.resolveReferenceRangeForResult(
       orderObjectId,
       createResultDto.testCode,
@@ -468,13 +478,15 @@ export class ResultsService {
     // Execute bulk write operation
     await this.resultModel.bulkWrite(bulkOps);
 
-    // Fetch the saved results to return them
-    const orderIds = [...new Set(createResultDtos.map(dto => dto.orderId))];
-    const savedTestCodes = createResultDtos.map(dto => dto.testCode);
-    
+    // Fetch the saved results — scope by BOTH orderId AND testCode per dto
+    // to avoid returning results from other orders that share the same test codes
+    const fetchConditions = createResultDtos.map(dto => ({
+      orderId: new Types.ObjectId(dto.orderId),
+      testCode: dto.testCode,
+    }));
+
     const savedResults = await this.resultModel.find({
-      orderId: { $in: orderIds.map(id => new Types.ObjectId(id)) },
-      testCode: { $in: savedTestCodes },
+      $or: fetchConditions,
     }).exec();
 
     // Emit real-time events for all results

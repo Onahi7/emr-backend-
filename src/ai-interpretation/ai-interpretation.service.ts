@@ -2,7 +2,6 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import { PanelInterpretationsService } from '../panel-interpretations/panel-interpretations.service';
 
 export interface ResultItem {
   testCode: string;
@@ -32,7 +31,6 @@ export class AiInterpretationService implements OnModuleInit {
   constructor(
     private httpService: HttpService,
     private configService: ConfigService,
-    private panelInterpretationsService: PanelInterpretationsService,
   ) {}
 
   onModuleInit() {
@@ -57,7 +55,8 @@ export class AiInterpretationService implements OnModuleInit {
   }
 
   /**
-   * Generate AI interpretation for a panel's results
+   * Generate AI interpretation for a panel's results.
+   * Returns the interpretation string — the caller is responsible for persisting it.
    */
   async generateInterpretation(
     orderId: string,
@@ -68,7 +67,6 @@ export class AiInterpretationService implements OnModuleInit {
     try {
       let interpretation: string;
 
-      // Try providers in order of preference
       if (this.openRouterApiKey) {
         interpretation = await this.callOpenRouter(prompt);
       } else if (this.groqApiKey) {
@@ -78,19 +76,6 @@ export class AiInterpretationService implements OnModuleInit {
       } else {
         throw new Error('No AI API key configured');
       }
-
-      // Save the interpretation to the database
-      await this.panelInterpretationsService.upsert(
-        {
-          orderId,
-          panelCode: panelResults.panelCode,
-          panelName: panelResults.panelName,
-          interpretation,
-          aiProvider: this.defaultProvider,
-          aiGeneratedAt: new Date().toISOString(),
-        },
-        undefined,
-      );
 
       return interpretation;
     } catch (error) {

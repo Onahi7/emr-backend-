@@ -146,7 +146,7 @@ export class InventoryService {
     return this.stockMovementModel
       .find(query)
       .populate('medicationId', 'name medicationCode dosageForm strength')
-      .populate('performedBy', 'full_name email')
+      .populate('performedBy', 'fullName email')
       .populate('supplierId', 'name')
       .sort({ createdAt: -1 })
       .limit(filters.limit || 200)

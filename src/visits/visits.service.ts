@@ -133,7 +133,10 @@ export class VisitsService {
   }
 
   /**
-   * Get doctor queue - visits waiting for consultation
+   * Get doctor queue - visits waiting for consultation.
+   * If doctorId is provided, returns only visits assigned to that doctor
+   * plus unassigned visits (so doctors can see walk-ins with no assignment).
+   * Nurses see the full queue regardless.
    */
   async getDoctorQueue(doctorId?: string): Promise<Visit[]> {
     const query: any = {
@@ -142,13 +145,18 @@ export class VisitsService {
     };
 
     if (doctorId) {
-      query.doctorId = new Types.ObjectId(doctorId);
+      // Show visits explicitly assigned to this doctor OR unassigned (doctorId not set)
+      query.$or = [
+        { doctorId: new Types.ObjectId(doctorId) },
+        { doctorId: { $exists: false } },
+        { doctorId: null },
+      ];
     }
 
     return this.visitModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
-      .populate('doctorId', 'fullName')
+      .populate('doctorId', 'fullName specialty')
       .sort({ triagedAt: 1, createdAt: 1 }) // FCFS after nurse vitals/triage
       .exec();
   }
@@ -425,7 +433,7 @@ export class VisitsService {
   }
 
   /**
-   * Nurse triage — record vitals, priority, and move to doctor queue
+   * Nurse triage — record vitals, priority, optionally assign a doctor, and move to doctor queue
    */
   async completeTriage(
     id: string,
@@ -440,6 +448,7 @@ export class VisitsService {
       triagePriority?: string;
       triageNotes?: string;
       chiefComplaint?: string;
+      doctorId?: string; // Nurse can assign a specific doctor during triage
     },
     nurseId?: string,
   ): Promise<Visit> {
@@ -450,15 +459,29 @@ export class VisitsService {
       throw new BadRequestException('Visit is not awaiting triage');
     }
 
+    // Validate doctor if provided
+    if (data.doctorId) {
+      if (!Types.ObjectId.isValid(data.doctorId)) {
+        throw new BadRequestException('Invalid doctor ID');
+      }
+      const doctor = await this.doctorModel.findById(data.doctorId);
+      if (!doctor) throw new NotFoundException('Doctor not found');
+    }
+
+    const { doctorId, ...vitalsAndTriage } = data;
+
     Object.assign(visit, {
-      ...data,
+      ...vitalsAndTriage,
+      ...(doctorId ? { doctorId: new Types.ObjectId(doctorId) } : {}),
       status: VisitStatusEnum.IN_QUEUE,
       triagedAt: new Date(),
       triagedBy: nurseId ? new Types.ObjectId(nurseId) : undefined,
     });
 
     const savedVisit = await visit.save();
-    this.logger.log(`Triage complete for visit: ${savedVisit.visitNumber}`);
+    this.logger.log(
+      `Triage complete for visit: ${savedVisit.visitNumber}${doctorId ? ` → assigned to doctor ${doctorId}` : ''}`,
+    );
 
     const triagePriority =
       data.triagePriority && (data.triagePriority === 'urgent' || data.triagePriority === 'emergency' || data.triagePriority === 'high')
@@ -472,10 +495,60 @@ export class VisitsService {
       {
         status: QueueStatusEnum.WAITING,
         ...(triagePriority ? { priority: triagePriority } : {}),
+        ...(doctorId ? { doctorId: new Types.ObjectId(doctorId) } : {}),
       },
     );
 
     this.realtimeGateway.emitToAll('visit:triage_completed', savedVisit);
+    return savedVisit;
+  }
+
+  /**
+   * Nurse assigns (or reassigns) a patient in the queue to a specific doctor.
+   * Works on visits in IN_QUEUE status — can be called after triage to redirect a patient.
+   */
+  async assignDoctorFromQueue(
+    id: string,
+    doctorId: string,
+    nurseId?: string,
+  ): Promise<Visit> {
+    if (!Types.ObjectId.isValid(doctorId)) {
+      throw new BadRequestException('Invalid doctor ID');
+    }
+
+    const visit = await this.visitModel.findById(id);
+    if (!visit) throw new NotFoundException('Visit not found');
+
+    if (visit.status !== VisitStatusEnum.IN_QUEUE) {
+      throw new BadRequestException(
+        `Cannot reassign doctor — visit is currently '${visit.status}', must be 'in_queue'`,
+      );
+    }
+
+    const doctor = await this.doctorModel.findById(doctorId);
+    if (!doctor) throw new NotFoundException('Doctor not found');
+
+    const previousDoctorId = visit.doctorId?.toString();
+    visit.doctorId = new Types.ObjectId(doctorId);
+    const savedVisit = await visit.save();
+
+    // Keep queue entry in sync
+    await this.queueModel.updateOne(
+      { visitId: new Types.ObjectId(id) },
+      { doctorId: new Types.ObjectId(doctorId) },
+    );
+
+    this.logger.log(
+      `Nurse ${nurseId ?? 'unknown'} reassigned visit ${savedVisit.visitNumber} ` +
+        `from doctor ${previousDoctorId ?? 'unassigned'} → ${doctorId}`,
+    );
+
+    this.realtimeGateway.emitToAll('visit:doctor_assigned', {
+      visit: savedVisit,
+      doctorId,
+      assignedBy: nurseId,
+    });
+
     return savedVisit;
   }
 

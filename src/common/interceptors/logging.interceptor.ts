@@ -39,7 +39,7 @@ export class LoggingInterceptor implements NestInterceptor {
 
     // Extract user info if available (will be set by auth guard)
     const user = (request as any).user;
-    const userId = user?.sub || user?.id || 'Anonymous';
+    const userId = user?.userId || user?.sub || 'Anonymous';
 
     const startTime = Date.now();
 

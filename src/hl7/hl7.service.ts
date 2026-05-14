@@ -426,6 +426,40 @@ export class Hl7Service {
   }
 
   /**
+   * Validate machine and dispatch message — used by the unguarded machine-receive endpoint.
+   * Keeps DB access out of the controller layer.
+   */
+  async receiveMachineMessage(
+    machineId: string,
+    message: string,
+    protocol?: string,
+  ): Promise<{ success: boolean; ack: string; resultsStored: number }> {
+    const machine = await this.machineModel.findById(machineId).lean();
+    if (!machine) {
+      throw new BadRequestException('Invalid machine ID');
+    }
+
+    const detectedProtocol = protocol || machine.protocol || 'HL7';
+
+    let result: { ack: string; results: any[] };
+    if (detectedProtocol === 'HL7') {
+      result = await this.processHL7Message(message, machineId);
+    } else if (detectedProtocol === 'ASTM') {
+      result = await this.processASTMMessage(message, machineId);
+    } else if (detectedProtocol === 'LIS2-A2' || detectedProtocol === 'LIS2_A2') {
+      result = await this.processLIS2A2Message(message, machineId);
+    } else {
+      throw new BadRequestException(`Unsupported protocol: ${detectedProtocol}`);
+    }
+
+    return {
+      success: true,
+      ack: result.ack,
+      resultsStored: result.results.length,
+    };
+  }
+
+  /**
    * Find order by order ID or patient ID
    */
   private async findOrder(

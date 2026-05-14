@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, UseGuards, Request } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -61,8 +62,12 @@ export class PrescriptionsController {
    */
   @Patch(':id/dispense')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST)
-  dispense(@Param('id') id: string, @Request() req: any) {
-    return this.prescriptionsService.dispense(id, req.user?.userId);
+  dispense(
+    @Param('id') id: string,
+    @Body() dto: DispensePrescriptionDto,
+    @Request() req: any,
+  ) {
+    return this.prescriptionsService.dispense(id, req.user?.userId, dto);
   }
 
   /**

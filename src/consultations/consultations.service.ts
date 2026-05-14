@@ -5,12 +5,14 @@ import { Consultation, ConsultationStatusEnum, ConsultationTypeEnum } from '../d
 import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { Patient } from '../database/schemas/patient.schema';
+import { Doctor } from '../database/schemas/doctor.schema';
 
 @Injectable()
 export class ConsultationsService {
   constructor(
     @InjectModel(Consultation.name) private consultationModel: Model<Consultation>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
+    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
   ) {}
 
   async create(createConsultationDto: CreateConsultationDto): Promise<Consultation> {
@@ -20,6 +22,15 @@ export class ConsultationsService {
     const patient = await this.patientModel.findById(patientId);
     if (!patient) {
       throw new NotFoundException('Patient not found');
+    }
+
+    // Verify doctor exists
+    if (!Types.ObjectId.isValid(doctorId)) {
+      throw new BadRequestException('Invalid doctor ID');
+    }
+    const doctor = await this.doctorModel.findById(doctorId);
+    if (!doctor) {
+      throw new NotFoundException('Doctor not found');
     }
 
     // Generate consultation number

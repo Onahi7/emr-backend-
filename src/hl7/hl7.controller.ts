@@ -9,9 +9,6 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Machine } from '../database/schemas/machine.schema';
 import { Hl7Service } from './hl7.service';
 import { TcpListenerService } from './tcp-listener.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,7 +21,6 @@ export class Hl7Controller {
   constructor(
     private readonly hl7Service: Hl7Service,
     private readonly tcpListenerService: TcpListenerService,
-    @InjectModel(Machine.name) private machineModel: Model<Machine>,
   ) {}
 
   @Post('receive')
@@ -70,34 +66,11 @@ export class Hl7Controller {
       throw new BadRequestException('x-machine-id header is required');
     }
 
-    const machine = await this.machineModel.findById(machineId);
-    if (!machine) {
-      throw new BadRequestException('Invalid machine ID');
-    }
-
-    const { message, protocol } = body;
-    if (!message) {
+    if (!body.message) {
       throw new BadRequestException('Message is required');
     }
 
-    const detectedProtocol = protocol || machine.protocol || 'HL7';
-
-    let result;
-    if (detectedProtocol === 'HL7') {
-      result = await this.hl7Service.processHL7Message(message, machineId);
-    } else if (detectedProtocol === 'ASTM') {
-      result = await this.hl7Service.processASTMMessage(message, machineId);
-    } else if (detectedProtocol === 'LIS2-A2' || detectedProtocol === 'LIS2_A2') {
-      result = await this.hl7Service.processLIS2A2Message(message, machineId);
-    } else {
-      throw new BadRequestException('Unsupported protocol');
-    }
-
-    return {
-      success: true,
-      ack: result.ack,
-      resultsStored: result.results.length,
-    };
+    return this.hl7Service.receiveMachineMessage(machineId, body.message, body.protocol);
   }
 
   @Get('logs')

@@ -28,7 +28,7 @@ export class SoapNotesService {
       .find(query)
       .populate('patientId', 'firstName lastName patientId')
       .populate('doctorId', 'fullName')
-      .populate('nurseId', 'full_name fullName')
+      .populate('nurseId', 'fullName')
       .populate('consultationId', 'consultationNumber')
       .sort({ createdAt: -1 })
       .exec();
@@ -52,7 +52,7 @@ export class SoapNotesService {
     return this.soapNoteModel
       .find({ patientId: new Types.ObjectId(patientId) })
       .populate('doctorId', 'fullName')
-      .populate('nurseId', 'full_name fullName')
+      .populate('nurseId', 'fullName')
       .populate('consultationId', 'consultationNumber')
       .sort({ createdAt: -1 })
       .exec();
@@ -62,7 +62,7 @@ export class SoapNotesService {
     return this.soapNoteModel
       .find({ consultationId: new Types.ObjectId(consultationId) })
       .populate('doctorId', 'fullName')
-      .populate('nurseId', 'full_name fullName')
+      .populate('nurseId', 'fullName')
       .exec();
   }
 
@@ -70,7 +70,7 @@ export class SoapNotesService {
     return this.soapNoteModel
       .find({ visitId: new Types.ObjectId(visitId) })
       .populate('doctorId', 'fullName')
-      .populate('nurseId', 'full_name fullName')
+      .populate('nurseId', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
   }

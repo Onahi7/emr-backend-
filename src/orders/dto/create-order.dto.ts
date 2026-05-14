@@ -7,6 +7,7 @@ import {
   ValidateNested,
   Min,
   ArrayMinSize,
+  IsMongoId,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -17,7 +18,7 @@ import {
 } from '../../database/schemas/order.schema';
 
 export class OrderTestDto {
-  @IsString()
+  @IsMongoId()
   testId: string;
 
   @IsString()
@@ -49,11 +50,11 @@ export class InitialPaymentDto {
 }
 
 export class CreateOrderDto {
-  @IsString()
+  @IsMongoId()
   patientId: string;
 
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   visitId?: string;
 
   @IsOptional()
@@ -65,7 +66,7 @@ export class CreateOrderDto {
   referredByDoctor?: string;
 
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   doctorId?: string;
 
   @IsArray()

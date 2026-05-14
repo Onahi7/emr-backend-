@@ -7,6 +7,21 @@ export enum PrescriptionStatusEnum {
   CANCELLED = 'cancelled',
 }
 
+export enum RouteOfAdministrationEnum {
+  ORAL = 'oral',
+  SUBLINGUAL = 'sublingual',
+  TOPICAL = 'topical',
+  INTRAVENOUS = 'intravenous',
+  INTRAMUSCULAR = 'intramuscular',
+  SUBCUTANEOUS = 'subcutaneous',
+  INHALATION = 'inhalation',
+  RECTAL = 'rectal',
+  OPHTHALMIC = 'ophthalmic',
+  OTIC = 'otic',
+  NASAL = 'nasal',
+  OTHER = 'other',
+}
+
 @Schema({ timestamps: true, collection: 'prescriptions' })
 export class Prescription extends Document {
   @Prop({ required: true, unique: true })
@@ -29,11 +44,22 @@ export class Prescription extends Document {
       {
         medicationId: { type: Types.ObjectId, ref: 'Medication', required: true },
         medicationName: { type: String, required: true },
-        dosage: { type: String, required: true },
-        frequency: { type: String, required: true },
-        duration: { type: String, required: true },
-        quantity: { type: Number, required: true },
+        dosage: { type: String, required: true },       // e.g. "500mg", "1 tablet"
+        frequency: { type: String, required: true },    // e.g. "3 times daily", "every 8 hours"
+        duration: { type: String, required: true },     // e.g. "7 days", "2 weeks"
+        quantity: { type: Number, required: true },     // total units to dispense
+        route: {
+          type: String,
+          enum: Object.values(RouteOfAdministrationEnum),
+          default: RouteOfAdministrationEnum.ORAL,
+        },
+        // Doctor's patient-facing directions — printed on the dispensing label
+        // e.g. "Take 1 tablet by mouth 3 times daily with food for 7 days"
+        // e.g. "Apply a thin layer to affected area twice daily"
         instructions: { type: String },
+        // Internal note for the pharmacist only — not printed on label
+        // e.g. "Counsel patient on photosensitivity", "Refrigerate after opening"
+        pharmacistNote: { type: String },
       },
     ],
     required: true,
@@ -45,14 +71,21 @@ export class Prescription extends Document {
     frequency: string;
     duration: string;
     quantity: number;
+    route: RouteOfAdministrationEnum;
     instructions?: string;
+    pharmacistNote?: string;
   }>;
 
   @Prop({ required: true, enum: Object.values(PrescriptionStatusEnum) })
   status: PrescriptionStatusEnum;
 
+  // General notes from the doctor (visible to pharmacist and patient)
   @Prop()
   notes?: string;
+
+  // Pharmacist's dispensing notes — added at dispense time
+  @Prop()
+  dispensingNotes?: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   dispensedBy?: Types.ObjectId;

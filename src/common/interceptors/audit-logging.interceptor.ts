@@ -50,7 +50,7 @@ export class AuditLoggingInterceptor implements NestInterceptor {
 
     // Extract user info if available
     const user = (request as any).user;
-    const userId = user?.sub || user?.id || 'Anonymous';
+    const userId = user?.userId || user?.sub || 'Anonymous';
 
     // Extract IP address and user agent
     const ipAddress = request.ip || request.socket.remoteAddress || 'Unknown';

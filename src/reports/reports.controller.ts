@@ -8,11 +8,11 @@ import { LabResultReportDto } from './dto/lab-result-report.dto';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRoleEnum.ADMIN)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('dashboard')
+  @Roles(UserRoleEnum.ADMIN)
   async getDashboardStats(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -23,6 +23,7 @@ export class ReportsController {
   }
 
   @Get('test-volume')
+  @Roles(UserRoleEnum.ADMIN)
   async getTestVolumeReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -33,6 +34,7 @@ export class ReportsController {
   }
 
   @Get('turnaround-time')
+  @Roles(UserRoleEnum.ADMIN)
   async getTurnaroundTimeReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -43,6 +45,7 @@ export class ReportsController {
   }
 
   @Get('revenue')
+  @Roles(UserRoleEnum.ADMIN)
   async getRevenueReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -53,6 +56,7 @@ export class ReportsController {
   }
 
   @Get('machine-utilization')
+  @Roles(UserRoleEnum.ADMIN)
   async getMachineUtilizationReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -63,6 +67,7 @@ export class ReportsController {
   }
 
   @Get('test-distribution')
+  @Roles(UserRoleEnum.ADMIN)
   async getTestDistributionByCategory(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,

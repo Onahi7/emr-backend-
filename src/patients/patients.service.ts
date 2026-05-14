@@ -419,11 +419,11 @@ export class PatientsService {
     const Admission = this.patientModel.db.model('Admission');
     const admissions = await Admission.find({ patientId: new Types.ObjectId(patientId) })
       .populate('doctorId', 'fullName specialty')
-      .populate('primaryNurseId', 'full_name')
-      .populate('vitalsLog.recordedBy', 'full_name')
-      .populate('medicationLog.administeredBy', 'full_name')
-      .populate('fluidBalance.recordedBy', 'full_name')
-      .populate('nursingNotes.authoredBy', 'full_name')
+      .populate('primaryNurseId', 'fullName')
+      .populate('vitalsLog.recordedBy', 'fullName')
+      .populate('medicationLog.administeredBy', 'fullName')
+      .populate('fluidBalance.recordedBy', 'fullName')
+      .populate('nursingNotes.authoredBy', 'fullName')
       .sort({ admittedAt: -1 })
       .exec();
 

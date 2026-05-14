@@ -152,6 +152,22 @@ export class OrdersService {
       throw new BadRequestException('Invalid patient ID');
     }
 
+    // Validate visitId belongs to the same patient
+    if (createOrderDto.visitId) {
+      if (!Types.ObjectId.isValid(createOrderDto.visitId)) {
+        throw new BadRequestException('Invalid visit ID');
+      }
+      const visit = await this.orderModel.db
+        .collection('visits')
+        .findOne({ _id: new Types.ObjectId(createOrderDto.visitId) });
+      if (!visit) {
+        throw new BadRequestException('Visit not found');
+      }
+      if (visit.patientId.toString() !== createOrderDto.patientId) {
+        throw new BadRequestException('Visit does not belong to the specified patient');
+      }
+    }
+
     // Calculate subtotal
     const subtotal = createOrderDto.tests.reduce(
       (sum, test) => sum + test.price,

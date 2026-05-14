@@ -21,6 +21,8 @@ import { UserRoleEnum } from '../database/schemas/user-role.schema';
 export class QcController {
   constructor(private readonly qcService: QcService) {}
 
+  // ── Samples ──────────────────────────────────────────────────────────
+
   @Post('samples')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async createQcSample(
@@ -48,11 +50,14 @@ export class QcController {
     });
   }
 
+  // NOTE: literal sub-paths must come BEFORE :id to avoid shadowing
   @Get('samples/:id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async getQcSampleById(@Param('id') id: string) {
     return this.qcService.findQcSampleById(id);
   }
+
+  // ── Results ───────────────────────────────────────────────────────────
 
   @Post('results')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
@@ -80,20 +85,16 @@ export class QcController {
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
     };
-
-    if (isInRange !== undefined) {
-      filters.isInRange = isInRange === 'true';
-    }
-    if (startDate) {
-      filters.startDate = new Date(startDate);
-    }
-    if (endDate) {
-      filters.endDate = new Date(endDate);
-    }
-
+    if (isInRange !== undefined) filters.isInRange = isInRange === 'true';
+    if (startDate) filters.startDate = new Date(startDate);
+    if (endDate) filters.endDate = new Date(endDate);
     return this.qcService.findAllQcResults(filters);
   }
 
+  /**
+   * Literal sub-path — MUST be declared before GET results/:id
+   * otherwise "out-of-range" is captured as the :id parameter.
+   */
   @Get('results/out-of-range')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async getOutOfRangeResults(
@@ -108,14 +109,8 @@ export class QcController {
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
     };
-
-    if (startDate) {
-      filters.startDate = new Date(startDate);
-    }
-    if (endDate) {
-      filters.endDate = new Date(endDate);
-    }
-
+    if (startDate) filters.startDate = new Date(startDate);
+    if (endDate) filters.endDate = new Date(endDate);
     return this.qcService.findOutOfRangeResults(filters);
   }
 
