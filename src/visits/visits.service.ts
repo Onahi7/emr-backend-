@@ -137,7 +137,7 @@ export class VisitsService {
    */
   async getDoctorQueue(doctorId?: string): Promise<Visit[]> {
     const query: any = {
-      status: { $in: [VisitStatusEnum.IN_QUEUE, VisitStatusEnum.IN_CONSULTATION] },
+      status: VisitStatusEnum.IN_QUEUE,
       consultationPaid: true,
     };
 
@@ -367,7 +367,7 @@ export class VisitsService {
   }
 
   /**
-   * Mark consultation as paid and route to nurse triage
+   * Mark consultation as paid and route to the doctor queue.
    */
   async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string): Promise<Visit> {
     const visit = await this.visitModel.findById(id);
@@ -380,7 +380,7 @@ export class VisitsService {
     }
 
     visit.consultationPaid = true;
-    visit.status = VisitStatusEnum.AWAITING_TRIAGE;
+    visit.status = VisitStatusEnum.IN_QUEUE;
     visit.checkedInAt = new Date();
 
     const savedVisit = await visit.save();
@@ -392,9 +392,9 @@ export class VisitsService {
       receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
       notes: `Consultation payment for visit ${visit.visitNumber}`,
     });
-    this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (awaiting triage)`);
+    this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (doctor queue)`);
 
-    // Auto-create queue entry for nurse triage
+    // Auto-create queue entry for doctor FCFS queue
     try {
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
