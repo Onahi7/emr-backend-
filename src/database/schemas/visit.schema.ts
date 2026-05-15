@@ -31,7 +31,9 @@ export class Visit extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
   patientId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  // The treating doctor (system user — Profile) who is managing this visit.
+  // Set from req.user.userId when the doctor accepts the patient.
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
   doctorId?: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(VisitTypeEnum), default: VisitTypeEnum.NEW })
@@ -106,7 +108,7 @@ export class Visit extends Document {
   @Prop()
   triagedAt?: Date;
 
-  // Referral to specialist
+  // Referral to specialist — this IS an external doctor reference
   @Prop({ type: Types.ObjectId, ref: 'Doctor' })
   referredToSpecialistId?: Types.ObjectId;
 

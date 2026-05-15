@@ -72,7 +72,7 @@ export class AdmissionsService {
     return this.admissionModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions dateOfBirth')
-      .populate('doctorId', 'fullName specialty')
+      .populate('doctorId', 'fullName department')
       .populate('primaryNurseId', 'fullName')
       .sort({ admittedAt: -1 })
       .exec();
@@ -85,7 +85,7 @@ export class AdmissionsService {
   async findByPatient(patientId: string) {
     return this.admissionModel
       .find({ patientId: new Types.ObjectId(patientId) })
-      .populate('doctorId', 'fullName specialty')
+      .populate('doctorId', 'fullName department')
       .sort({ admittedAt: -1 })
       .exec();
   }

@@ -144,7 +144,7 @@ export class PatientsService {
   }
 
   /**
-   * Find patient by patient ID (LAB-YYYYMMDD-XXXX)
+   * Find patient by patient ID (PAT-YYYYMMDD-XXXX)
    */
   async findByPatientId(patientId: string): Promise<Patient> {
     const patient = await this.patientModel
@@ -294,13 +294,23 @@ export class PatientsService {
 
     // Import Order model dynamically to avoid circular dependency
     const Order = this.patientModel.db.model('Order');
-    
+    const OrderTest = this.patientModel.db.model('OrderTest');
+
     const orders = await Order.find({ patientId: new Types.ObjectId(patientId) })
       .populate('orderedBy', 'fullName email')
       .sort({ createdAt: -1 })
+      .lean()
       .exec();
 
-    return orders;
+    // Attach order_tests so callers can display test names/codes
+    const ordersWithTests = await Promise.all(
+      orders.map(async (order: any) => {
+        const tests = await OrderTest.find({ orderId: order._id }).lean().exec();
+        return { ...order, order_tests: tests };
+      }),
+    );
+
+    return ordersWithTests;
   }
 
   /**
@@ -418,7 +428,7 @@ export class PatientsService {
     // Get admissions with ward nursing records for follow-up and future reference
     const Admission = this.patientModel.db.model('Admission');
     const admissions = await Admission.find({ patientId: new Types.ObjectId(patientId) })
-      .populate('doctorId', 'fullName specialty')
+      .populate('doctorId', 'fullName department')
       .populate('primaryNurseId', 'fullName')
       .populate('vitalsLog.recordedBy', 'fullName')
       .populate('medicationLog.administeredBy', 'fullName')

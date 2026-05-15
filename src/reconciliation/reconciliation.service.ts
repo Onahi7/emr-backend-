@@ -231,7 +231,14 @@ export class ReconciliationService {
     const totalOrders = orders.length;
     const paidOrders = orders.filter(o => o.paymentStatus === PaymentStatusEnum.PAID);
     const totalSubtotal = orders.reduce((s, o) => s + (o.subtotal || 0), 0);
-    const totalDiscounts = orders.reduce((s, o) => s + (o.discount || 0), 0);
+    // For percentage discounts, convert to monetary value for the report
+    const totalDiscounts = orders.reduce((s, o) => {
+      if (!o.discount) return s;
+      if (o.discountType === 'percentage') {
+        return s + ((o.subtotal || 0) * o.discount / 100);
+      }
+      return s + o.discount;
+    }, 0);
     const totalBilled = orders.reduce((s, o) => s + (o.total || 0), 0);
 
     // 2. Tests done (from OrderTest)

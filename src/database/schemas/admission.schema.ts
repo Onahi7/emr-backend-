@@ -144,7 +144,8 @@ export class Admission extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Visit' })
   visitId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  // The treating doctor (system user — Profile) who admitted the patient.
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
   doctorId?: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Profile' })

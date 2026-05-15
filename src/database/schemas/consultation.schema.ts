@@ -25,7 +25,8 @@ export class Consultation extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Visit' })
   visitId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor', required: true })
+  // The treating doctor (system user — Profile) who conducted this consultation.
+  @Prop({ type: Types.ObjectId, ref: 'Profile', required: true })
   doctorId: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(ConsultationTypeEnum) })

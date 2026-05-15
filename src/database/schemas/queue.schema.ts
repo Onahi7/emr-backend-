@@ -42,7 +42,9 @@ export class Queue extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   nurseId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  // The doctor (system user — Profile) assigned to this queue entry.
+  // Set from req.user.userId when doctor accepts, or from nurse assignment.
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
   doctorId?: Types.ObjectId;
 
   @Prop()

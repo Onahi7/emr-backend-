@@ -38,7 +38,6 @@ export class Prescription extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'Doctor' })
   doctorId?: Types.ObjectId;
-  prescribedBy?: Types.ObjectId;
 
   // The system user (doctor/specialist) who wrote this prescription.
   // Always populated from the JWT — this is how pharmacists and reception

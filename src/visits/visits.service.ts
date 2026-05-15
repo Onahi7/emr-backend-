@@ -156,7 +156,7 @@ export class VisitsService {
     return this.visitModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
-      .populate('doctorId', 'fullName specialty')
+      .populate('doctorId', 'fullName department')
       .sort({ triagedAt: 1, createdAt: 1 }) // FCFS after nurse vitals/triage
       .exec();
   }
@@ -241,7 +241,7 @@ export class VisitsService {
             status: VisitStatusEnum.REFERRED,
           })
           .populate('patientId', 'patientId firstName lastName age gender phone')
-          .populate('doctorId', 'fullName specialty')
+          .populate('doctorId', 'fullName department')
           .sort({ referredAt: -1 })
           .exec(),
         // Today's stats
@@ -597,7 +597,7 @@ export class VisitsService {
         status: VisitStatusEnum.REFERRED,
       })
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
-      .populate('doctorId', 'fullName specialty')
+      .populate('doctorId', 'fullName department')
       .sort({ referredAt: -1 })
       .exec();
   }

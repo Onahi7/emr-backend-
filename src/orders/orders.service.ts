@@ -319,6 +319,7 @@ export class OrdersService {
         .find(query)
         .populate('patientId', 'patientId firstName lastName age gender')
         .populate('doctorId', 'fullName phone facility')
+        .populate('orderedBy', 'fullName email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -327,7 +328,18 @@ export class OrdersService {
       this.orderModel.countDocuments(query).exec(),
     ]);
 
-    return { data: data as unknown as Order[], total, page, limit };
+    // Attach order_tests so all list views show test names/codes
+    const dataWithTests = await Promise.all(
+      data.map(async (order) => {
+        const tests = await this.orderTestModel
+          .find({ orderId: order._id })
+          .lean()
+          .exec();
+        return { ...order, order_tests: tests };
+      }),
+    );
+
+    return { data: dataWithTests as unknown as Order[], total, page, limit };
   }
 
   /**
@@ -903,7 +915,14 @@ export class OrdersService {
       this.orderModel.countDocuments(query).exec(),
     ]);
 
-    return { data: data as unknown as Order[], total, page, limit };
+    const dataWithTests = await Promise.all(
+      data.map(async (order) => {
+        const tests = await this.orderTestModel.find({ orderId: order._id }).lean().exec();
+        return { ...order, order_tests: tests };
+      }),
+    );
+
+    return { data: dataWithTests as unknown as Order[], total, page, limit };
   }
 
   /**
@@ -920,13 +939,25 @@ export class OrdersService {
       query.orderType = { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] };
     }
 
-    return this.orderModel
+    const orders = await this.orderModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .populate('orderedBy', 'fullName')
       .sort({ createdAt: 1 })
+      .lean()
       .exec();
+
+    // Attach order_tests so reception can see test names (FBC, CRP, etc.)
+    return Promise.all(
+      orders.map(async (order) => {
+        const tests = await this.orderTestModel
+          .find({ orderId: order._id })
+          .lean()
+          .exec();
+        return { ...order, order_tests: tests };
+      }),
+    ) as any;
   }
 
   /**
@@ -988,7 +1019,7 @@ export class OrdersService {
    * Returns orders that are paid and ready for processing
    */
   async getLabQueue(): Promise<Order[]> {
-    return this.orderModel
+    const orders = await this.orderModel
       .find({
         orderType: OrderTypeEnum.LAB,
         status: { $in: [OrderStatusEnum.PENDING_COLLECTION, OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING] },
@@ -996,15 +1027,22 @@ export class OrdersService {
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
+      .lean()
       .exec();
+
+    return Promise.all(
+      orders.map(async (order) => {
+        const tests = await this.orderTestModel
+          .find({ orderId: order._id })
+          .lean()
+          .exec();
+        return { ...order, order_tests: tests };
+      }),
+    ) as any;
   }
 
-  /**
-   * Get pharmacy orders for pharmacy dashboard
-   * Returns orders that are paid and ready for dispensing
-   */
   async getPharmacyQueue(): Promise<Order[]> {
-    return this.orderModel
+    const orders = await this.orderModel
       .find({
         orderType: OrderTypeEnum.PHARMACY,
         status: OrderStatusEnum.PAID,
@@ -1012,6 +1050,17 @@ export class OrdersService {
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
+      .lean()
       .exec();
+
+    return Promise.all(
+      orders.map(async (order) => {
+        const tests = await this.orderTestModel
+          .find({ orderId: order._id })
+          .lean()
+          .exec();
+        return { ...order, order_tests: tests };
+      }),
+    ) as any;
   }
 }
