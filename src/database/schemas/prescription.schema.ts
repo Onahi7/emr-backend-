@@ -36,8 +36,8 @@ export class Prescription extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Consultation' })
   consultationId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor', required: true })
-  doctorId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  doctorId?: Types.ObjectId;
 
   @Prop({
     type: [

@@ -94,8 +94,8 @@ export class CreatePrescriptionDto {
   visitId?: string;
 
   @IsMongoId()
-  @IsNotEmpty()
-  doctorId: string;
+  @IsOptional()
+  doctorId?: string;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'Prescription must contain at least one medication item' })

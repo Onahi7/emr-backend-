@@ -119,7 +119,7 @@ export class PrescriptionsService {
       patientId: new Types.ObjectId(patientId),
       consultationId: consultationId ? new Types.ObjectId(consultationId) : undefined,
       visitId: visitId ? new Types.ObjectId(visitId) : undefined,
-      doctorId: new Types.ObjectId(doctorId),
+      doctorId: doctorId ? new Types.ObjectId(doctorId) : undefined,
       items: items.map((item) => ({
         ...item,
         medicationId: new Types.ObjectId(item.medicationId),
