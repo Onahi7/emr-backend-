@@ -19,7 +19,9 @@ export class SoapNote extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Consultation' })
   consultationId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  // The system user (doctor/specialist) who wrote this note.
+  // Refs Profile — not the external doctors collection.
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
   doctorId?: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(SoapNoteTypeEnum) })

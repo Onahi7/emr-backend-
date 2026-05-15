@@ -105,8 +105,24 @@ export class AdmissionsService {
       .populate('shiftHandovers.handedOverBy', 'fullName')
       .exec();
     if (!admission) throw new NotFoundException('Admission not found');
+
+    // Fetch all clinical notes for this patient.
+    // We include notes from the linked visit (if any) AND any notes written
+    // directly against the patient — so the nurse sees the full clinical picture
+    // regardless of whether the doctor linked the note to the visit or not.
+    const noteQuery: any = { patientId: admission.patientId };
+    if (admission.visitId) {
+      // Prefer notes from this specific visit, but also include notes with no visitId
+      // (e.g. ward round notes written directly against the patient)
+      noteQuery.$or = [
+        { visitId: admission.visitId },
+        { visitId: { $exists: false } },
+        { visitId: null },
+      ];
+    }
+
     const clinicalNotes = await this.soapNoteModel
-      .find({ patientId: admission.patientId, ...(admission.visitId ? { visitId: admission.visitId } : {}) })
+      .find(noteQuery)
       .populate('doctorId', 'fullName')
       .populate('nurseId', 'fullName')
       .sort({ createdAt: -1 })

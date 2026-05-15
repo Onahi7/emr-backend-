@@ -72,7 +72,7 @@ export class PrescriptionsService {
     }
   }
 
-  async create(createPrescriptionDto: CreatePrescriptionDto): Promise<Prescription> {
+  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string): Promise<Prescription> {
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
 
     // Verify patient exists
@@ -120,6 +120,7 @@ export class PrescriptionsService {
       consultationId: consultationId ? new Types.ObjectId(consultationId) : undefined,
       visitId: visitId ? new Types.ObjectId(visitId) : undefined,
       doctorId: doctorId ? new Types.ObjectId(doctorId) : undefined,
+      prescribedBy: prescribedBy ? new Types.ObjectId(prescribedBy) : undefined,
       items: items.map((item) => ({
         ...item,
         medicationId: new Types.ObjectId(item.medicationId),
@@ -143,6 +144,7 @@ export class PrescriptionsService {
     return this.prescriptionModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName')
+      .populate('prescribedBy', 'fullName email')
       .populate('doctorId', 'fullName')
       .populate('items.medicationId', 'name stockQuantity unitPrice medicationCode dosageForm strength')
       .sort({ createdAt: -1 })
@@ -153,8 +155,11 @@ export class PrescriptionsService {
     const prescription = await this.prescriptionModel
       .findById(id)
       .populate('patientId')
+      .populate('prescribedBy', 'fullName email department')
       .populate('doctorId')
       .populate('consultationId')
+      .populate('dispensedBy', 'fullName email')
+      .populate('cancelledBy', 'fullName email')
       .populate('items.medicationId')
       .exec();
     if (!prescription) {
@@ -170,6 +175,7 @@ export class PrescriptionsService {
     return this.prescriptionModel
       .find({ status: PrescriptionStatusEnum.PENDING, isPaid: false })
       .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('prescribedBy', 'fullName')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
@@ -182,6 +188,7 @@ export class PrescriptionsService {
     return this.prescriptionModel
       .find({ status: PrescriptionStatusEnum.PENDING, isPaid: true })
       .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('prescribedBy', 'fullName')
       .populate('doctorId', 'fullName')
       .populate('items.medicationId', 'name stockQuantity unitPrice')
       .sort({ createdAt: 1 })
