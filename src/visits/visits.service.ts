@@ -10,6 +10,8 @@ import { Queue, QueueStatusEnum, PriorityLevelEnum } from '../database/schemas/q
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { OrdersService } from '../orders/orders.service';
+import { OrderTypeEnum, PriorityEnum } from '../database/schemas/order.schema';
 
 @Injectable()
 export class VisitsService {
@@ -23,6 +25,7 @@ export class VisitsService {
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Queue.name) private queueModel: Model<Queue>,
     private realtimeGateway: RealtimeGateway,
+    private ordersService: OrdersService,
   ) {}
 
   /**

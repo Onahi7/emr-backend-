@@ -1018,7 +1018,7 @@ export class ReportsService {
       totalSamples,
     ] = await Promise.all([
       this.orderModel.countDocuments(dateFilter),
-      this.orderModel.countDocuments({ ...dateFilter, status: 'pending_payment' }),
+      this.orderModel.countDocuments({ ...dateFilter, status: 'awaiting_payment' }),
       this.orderModel.countDocuments({ ...dateFilter, status: 'completed' }),
       this.orderModel.aggregate([
         { $match: { ...dateFilter, paymentStatus: 'paid' } },

@@ -12,6 +12,7 @@ import { IdSequence } from '../database/schemas/id-sequence.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
+import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
@@ -41,6 +42,7 @@ export class OrdersService {
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
+    @InjectModel(Visit.name) private visitModel: Model<Visit>,
     private realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -100,28 +102,61 @@ export class OrdersService {
   }
 
   /**
-   * Expand tests to include linked tests (e.g., CRP automatically includes HSCRP)
+   * Expand tests to include linked tests and panel components
    */
   private async expandLinkedTests(tests: any[]): Promise<any[]> {
-    const expandedTests = [...tests];
-    const addedTestCodes = new Set(
-      tests.map((t) => (t.testCode || '').toUpperCase()).filter(Boolean),
-    );
+    const expandedTests: any[] = [];
+    const addedTestCodes = new Set<string>();
 
     for (const test of tests) {
-      // Look up the test in catalog to check for linked tests
+      const testCode = (test.testCode || '').toUpperCase();
+      if (addedTestCodes.has(testCode)) continue;
+
+      // Look up the test in catalog
       const catalogTest = await this.testCatalogModel.findOne({ code: test.testCode }).lean();
 
-      const linkedTests = this.getEffectiveLinkedTests(test.testCode, catalogTest?.linkedTests);
+      // If this is a panel, expand into component tests
+      if (catalogTest?.isPanel && catalogTest.panelComponents && catalogTest.panelComponents.length > 0) {
+        for (const component of catalogTest.panelComponents) {
+          const compCode = (component.testCode || '').toUpperCase();
+          if (!addedTestCodes.has(compCode)) {
+            const compTest = await this.testCatalogModel.findOne({ code: component.testCode }).lean();
+            if (compTest) {
+              expandedTests.push({
+                testId: compTest._id.toString(),
+                testCode: compTest.code,
+                testName: compTest.name,
+                panelCode: catalogTest.code,
+                panelName: catalogTest.name,
+                category: compTest.category,
+                subcategory: compTest.subcategory,
+                price: 0, // Component tests included in panel price
+              });
+              addedTestCodes.add(compCode);
+              this.logger.log(`Panel component added: ${compCode} for panel ${test.testCode}`);
+            }
+          }
+        }
+      } else {
+        // Regular test - add it directly
+        expandedTests.push({
+          testId: test.testId,
+          testCode: test.testCode,
+          testName: test.testName,
+          panelCode: catalogTest?.panelCode,
+          panelName: catalogTest?.panelName,
+          category: catalogTest?.category,
+          subcategory: catalogTest?.subcategory,
+          price: test.price,
+        });
+        addedTestCodes.add(testCode);
 
-      if (linkedTests.length > 0) {
+        // Also check for linked tests (e.g., CRP includes HSCRP)
+        const linkedTests = this.getEffectiveLinkedTests(test.testCode, catalogTest?.linkedTests);
         for (const linkedTestCode of linkedTests) {
           const normalizedLinkedCode = (linkedTestCode || '').toUpperCase();
-
-          // Only add if not already in the order
           if (!addedTestCodes.has(normalizedLinkedCode)) {
             const linkedTest = await this.testCatalogModel.findOne({ code: normalizedLinkedCode }).lean();
-
             if (linkedTest) {
               expandedTests.push({
                 testId: linkedTest._id.toString(),
@@ -130,7 +165,7 @@ export class OrdersService {
                 panelCode: linkedTest.panelCode,
                 panelName: linkedTest.panelName,
                 category: linkedTest.category,
-                price: 0, // Linked tests are included free
+                price: 0,
               });
               addedTestCodes.add(normalizedLinkedCode);
               this.logger.log(`Auto-added linked test: ${normalizedLinkedCode} for ${test.testCode}`);
@@ -282,6 +317,11 @@ export class OrdersService {
     this.logger.log(`Order created: ${savedOrder.orderNumber}`);
 
     const populatedOrder = await this.findOne(savedOrder._id.toString());
+
+    // Sync visit status if this order belongs to a visit
+    if (savedOrder.visitId) {
+      await this.syncVisitStatus(savedOrder.visitId as Types.ObjectId);
+    }
 
     // Emit real-time event
     this.realtimeGateway.notifyOrderCreated(populatedOrder);
@@ -1008,10 +1048,62 @@ export class OrdersService {
 
     this.logger.log(`Order ${order.orderNumber} marked as paid`);
 
+    // Sync visit status if this order belongs to a visit
+    if (order.visitId) {
+      await this.syncVisitStatus(order.visitId as Types.ObjectId);
+    }
+
     const populatedOrder = await this.findOne(id);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
 
     return populatedOrder;
+  }
+
+  /**
+   * Sync visit status based on all orders for that visit
+   */
+  private async syncVisitStatus(visitId: Types.ObjectId): Promise<void> {
+    const orders = await this.orderModel.find({ visitId }).lean();
+    if (orders.length === 0) return;
+
+    const visit = await this.visitModel.findById(visitId);
+    if (!visit) return;
+
+    const hasUnpaidLab = orders.some(o => o.orderType === OrderTypeEnum.LAB && o.paymentStatus !== PaymentStatusEnum.PAID);
+    const hasUnpaidPharmacy = orders.some(o => o.orderType === OrderTypeEnum.PHARMACY && o.paymentStatus !== PaymentStatusEnum.PAID);
+    const hasPendingLab = orders.some(o => o.orderType === OrderTypeEnum.LAB && o.status === OrderStatusEnum.PENDING_COLLECTION);
+    const hasProcessingLab = orders.some(o => o.orderType === OrderTypeEnum.LAB && o.status === OrderStatusEnum.PROCESSING);
+    const hasCompletedLab = orders.some(o => o.orderType === OrderTypeEnum.LAB && o.status === OrderStatusEnum.COMPLETED);
+    const hasPendingPharmacy = orders.some(o => o.orderType === OrderTypeEnum.PHARMACY && o.status === OrderStatusEnum.PAID);
+    const hasCompletedPharmacy = orders.some(o => o.orderType === OrderTypeEnum.PHARMACY && o.status === OrderStatusEnum.COMPLETED);
+    const allOrdersCompleted = orders.every(o => o.status === OrderStatusEnum.COMPLETED || o.status === OrderStatusEnum.CANCELLED);
+
+    let newStatus: VisitStatusEnum | null = null;
+
+    if (allOrdersCompleted && orders.length > 0) {
+      newStatus = VisitStatusEnum.RESULTS_READY;
+    } else if (hasUnpaidLab) {
+      newStatus = VisitStatusEnum.AWAITING_LAB;
+    } else if (hasUnpaidPharmacy) {
+      newStatus = VisitStatusEnum.AWAITING_PHARMACY;
+    } else if (hasPendingLab || hasProcessingLab) {
+      newStatus = VisitStatusEnum.AWAITING_RESULTS;
+    } else if (hasCompletedLab && hasPendingPharmacy) {
+      newStatus = VisitStatusEnum.AWAITING_DISPENSING;
+    } else if (hasCompletedLab && hasCompletedPharmacy) {
+      newStatus = VisitStatusEnum.RESULTS_READY;
+    } else if (hasCompletedLab) {
+      newStatus = VisitStatusEnum.RESULTS_READY;
+    } else if (hasPendingPharmacy) {
+      newStatus = VisitStatusEnum.AWAITING_DISPENSING;
+    }
+
+    if (newStatus && newStatus !== visit.status) {
+      this.logger.log(`Visit ${visit.visitNumber} status synced: ${visit.status} → ${newStatus}`);
+      visit.status = newStatus;
+      await visit.save();
+      this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status: newStatus });
+    }
   }
 
   /**

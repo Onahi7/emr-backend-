@@ -3,8 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as net from 'net';
 import { CommunicationLog } from '../database/schemas/communication-log.schema';
-import { Result } from '../database/schemas/result.schema';
-import { Order } from '../database/schemas/order.schema';
+import { Result, ResultStatusEnum } from '../database/schemas/result.schema';
+import { Order, OrderStatusEnum } from '../database/schemas/order.schema';
 import { OrderTest } from '../database/schemas/order-test.schema';
 import { Machine } from '../database/schemas/machine.schema';
 import { Patient } from '../database/schemas/patient.schema';
@@ -330,6 +330,18 @@ export class Hl7Service {
         };
       }
 
+      // Check payment status before storing results
+      if (order.paymentStatus === 'pending' || order.paymentStatus === 'refunded') {
+        this.logger.warn(
+          `Order ${order.orderNumber} is not paid (status: ${order.paymentStatus}). Results rejected.`,
+        );
+        await this.updateCommunicationLog(logEntry._id, 'failed', 'Order not paid');
+        return {
+          ack: this.generateHL7Ack(parsed.messageControlId, 'AE'),
+          results: [],
+        };
+      }
+
       // Store results
       const results = await this.storeResults(order._id, parsed.results || [], machineId);
 
@@ -490,7 +502,7 @@ export class Hl7Service {
       return this.orderModel
         .findOne({
           patientId: patientObjectId,
-          status: { $in: ['pending_collection', 'collected', 'processing'] },
+          status: { $in: [OrderStatusEnum.PENDING_COLLECTION, OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING] },
         })
         .sort({ createdAt: -1 });
     }
@@ -536,7 +548,7 @@ export class Hl7Service {
         unit: normalizedResult.unit,
         referenceRange: normalizedResult.referenceRange,
         flag: this.mapAbnormalFlag(normalizedResult.abnormalFlag),
-        status: 'preliminary',
+        status: ResultStatusEnum.PRELIMINARY,
         source: 'automated',
         machineId: new Types.ObjectId(machineId),
         resultedAt: new Date(),
@@ -578,12 +590,12 @@ export class Hl7Service {
 
     // Update order status to processing if not already
     await this.orderModel.findByIdAndUpdate(orderId, {
-      $set: { status: 'processing' },
+      $set: { status: OrderStatusEnum.PROCESSING },
     });
 
     // Notify that order status changed
     if (order) {
-      this.realtimeGateway.notifyOrderStatusChanged(orderId.toString(), 'processing', order.orderNumber);
+      this.realtimeGateway.notifyOrderStatusChanged(orderId.toString(), OrderStatusEnum.PROCESSING, order.orderNumber);
     }
 
     // Notify that machine received results

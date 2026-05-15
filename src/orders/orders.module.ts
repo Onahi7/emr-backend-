@@ -8,6 +8,7 @@ import { IdSequence, IdSequenceSchema } from '../database/schemas/id-sequence.sc
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog.schema';
 import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
+import { Visit, VisitSchema } from '../database/schemas/visit.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: Payment.name, schema: PaymentSchema },
       { name: TestCatalog.name, schema: TestCatalogSchema },
       { name: Doctor.name, schema: DoctorSchema },
+      { name: Visit.name, schema: VisitSchema },
     ]),
     RealtimeModule,
   ],

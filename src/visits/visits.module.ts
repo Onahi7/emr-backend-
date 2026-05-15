@@ -9,6 +9,7 @@ import { IdSequence, IdSequenceSchema } from '../database/schemas/id-sequence.sc
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { Queue, QueueSchema } from '../database/schemas/queue.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: Queue.name, schema: QueueSchema },
     ]),
     RealtimeModule,
+    OrdersModule,
   ],
   controllers: [VisitsController],
   providers: [VisitsService],

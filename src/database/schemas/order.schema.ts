@@ -101,7 +101,7 @@ export class Order extends Document {
   @Prop()
   referredByDoctor?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
   doctorId?: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Profile' })

@@ -6,9 +6,10 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Result, ResultFlagEnum, ResultStatusEnum } from '../database/schemas/result.schema';
-import { Order } from '../database/schemas/order.schema';
+import { Order, OrderStatusEnum } from '../database/schemas/order.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
+import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { CreateResultDto } from './dto/create-result.dto';
 import { UpdateResultDto } from './dto/update-result.dto';
@@ -51,6 +52,7 @@ export class ResultsService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
+    @InjectModel(Visit.name) private visitModel: Model<Visit>,
     private realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -326,12 +328,15 @@ export class ResultsService {
     const orderObjectId = new Types.ObjectId(createResultDto.orderId);
 
     // Verify the order exists and is not cancelled/completed
-    const order = await this.orderModel.findById(orderObjectId).select('status patientId').lean();
+    const order = await this.orderModel.findById(orderObjectId).select('status paymentStatus patientId').lean();
     if (!order) {
       throw new NotFoundException(`Order ${createResultDto.orderId} not found`);
     }
     if (order.status === 'cancelled') {
       throw new BadRequestException('Cannot enter results for a cancelled order');
+    }
+    if (order.paymentStatus === 'pending' || order.paymentStatus === 'refunded') {
+      throw new BadRequestException('Cannot enter results for an unpaid order');
     }
 
     const resolvedReferenceRange = await this.resolveReferenceRangeForResult(
@@ -385,6 +390,22 @@ export class ResultsService {
     });
 
     const savedResult = await result.save();
+
+    // Update order status to completed when results are entered
+    await this.orderModel.findByIdAndUpdate(orderObjectId, {
+      $set: { status: OrderStatusEnum.COMPLETED, completedAt: new Date() },
+    });
+
+    // Sync visit status if order belongs to a visit
+    const order = await this.orderModel.findById(orderObjectId).select('visitId').lean();
+    if (order?.visitId) {
+      const visit = await this.visitModel.findById(order.visitId);
+      if (visit && visit.status !== VisitStatusEnum.RESULTS_READY && visit.status !== VisitStatusEnum.COMPLETED) {
+        visit.status = VisitStatusEnum.RESULTS_READY;
+        await visit.save();
+        this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status: VisitStatusEnum.RESULTS_READY });
+      }
+    }
 
     // Emit real-time event
     this.realtimeGateway.notifyResultCreated(savedResult);

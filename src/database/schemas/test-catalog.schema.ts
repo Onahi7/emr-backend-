@@ -75,6 +75,12 @@ export class TestCatalog extends Document {
   @Prop({ type: [String] })
   linkedTests?: string[]; // Test codes that should be automatically included (e.g., CRP includes HSCRP)
 
+  @Prop({ default: false })
+  isPanel?: boolean; // Whether this test is a panel containing multiple component tests
+
+  @Prop({ type: [{ testCode: String, testName: String }] })
+  panelComponents?: Array<{ testCode: string; testName: string }>; // Component tests for panels (e.g., FBC includes WBC, RBC, HGB, etc.)
+
   createdAt: Date;
   updatedAt: Date;
 }

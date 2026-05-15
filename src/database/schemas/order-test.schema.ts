@@ -1,6 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
+export enum OrderTestStatusEnum {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
 @Schema({ timestamps: true, collection: 'order_tests' })
 export class OrderTest extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Order', required: true })
@@ -24,8 +31,8 @@ export class OrderTest extends Document {
   @Prop({ required: true })
   price: number;
 
-  @Prop({ required: true })
-  status: string;
+  @Prop({ required: true, enum: Object.values(OrderTestStatusEnum), default: OrderTestStatusEnum.PENDING })
+  status: OrderTestStatusEnum;
 
   @Prop({ type: Types.ObjectId, ref: 'Machine' })
   machineId?: Types.ObjectId;

@@ -245,7 +245,7 @@ export class TcpListenerService implements OnModuleInit, OnModuleDestroy {
       // Strategy 1: Match by order number
       let order = await this.orderModel.findOne({
         orderNumber: sampleId,
-        status: { $in: ['collected', 'processing', 'pending'] },
+        status: { $in: ['collected', 'processing', 'pending_collection'] },
       });
 
       // Strategy 2: Match by patient ID in recent pending orders
@@ -253,7 +253,7 @@ export class TcpListenerService implements OnModuleInit, OnModuleDestroy {
         order = await this.orderModel
           .findOne({
             patientId: sampleId,
-            status: { $in: ['collected', 'processing', 'pending'] },
+            status: { $in: ['collected', 'processing', 'pending_collection'] },
           })
           .sort({ createdAt: -1 });
       }
@@ -269,6 +269,12 @@ export class TcpListenerService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (!order) {
+        return false;
+      }
+
+      // Check payment status before storing results
+      if (order.paymentStatus === 'pending' || order.paymentStatus === 'refunded') {
+        this.logger.warn(`Order ${order.orderNumber} is not paid. Auto-match rejected.`);
         return false;
       }
 

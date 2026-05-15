@@ -36,9 +36,6 @@ export class Prescription extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Consultation' })
   consultationId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
-  doctorId?: Types.ObjectId;
-
   // The system user (doctor/specialist) who wrote this prescription.
   // Always populated from the JWT — this is how pharmacists and reception
   // know which staff member prescribed.
@@ -124,7 +121,6 @@ export const PrescriptionSchema = SchemaFactory.createForClass(Prescription);
 PrescriptionSchema.index({ prescriptionNumber: 1 }, { unique: true });
 PrescriptionSchema.index({ patientId: 1 });
 PrescriptionSchema.index({ consultationId: 1 });
-PrescriptionSchema.index({ doctorId: 1 });
 PrescriptionSchema.index({ prescribedBy: 1 });
 PrescriptionSchema.index({ status: 1 });
 PrescriptionSchema.index({ createdAt: -1 });
