@@ -8,6 +8,7 @@ import {
   IsEnum,
   Min,
   ValidateNested,
+  ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RouteOfAdministrationEnum } from '../../database/schemas/prescription.schema';
@@ -97,7 +98,7 @@ export class CreatePrescriptionDto {
   doctorId: string;
 
   @IsArray()
-  @IsNotEmpty()
+  @ArrayMinSize(1, { message: 'Prescription must contain at least one medication item' })
   @ValidateNested({ each: true })
   @Type(() => PrescriptionItemDto)
   items: PrescriptionItemDto[];
