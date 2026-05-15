@@ -1,5 +1,23 @@
-import { IsString, IsEnum, IsOptional, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsBoolean, IsNumber, IsArray, ValidateNested, IsDateString } from 'class-validator';
+import { Type } from 'class-transformer';
 import { VisitStatusEnum, VisitTypeEnum } from '../../database/schemas/visit.schema';
+
+export class ProblemListItemDto {
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsDateString()
+  notedAt?: string;
+}
 
 export class UpdateVisitDto {
   @IsOptional()
@@ -101,4 +119,20 @@ export class UpdateVisitDto {
   @IsOptional()
   @IsString()
   referralNotes?: string;
+
+  // Problem list
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProblemListItemDto)
+  problemList?: Array<{ code?: string; name: string; status?: string; notedAt?: string }>;
+
+  // Follow-up
+  @IsOptional()
+  @IsDateString()
+  followUpDate?: string;
+
+  @IsOptional()
+  @IsString()
+  followUpNotes?: string;
 }

@@ -95,6 +95,22 @@ export class Visit extends Document {
   @Prop()
   diagnosis?: string;
 
+  // Problem list — active diagnoses for this visit (ICD-10 compatible)
+  @Prop({ type: [{ code: String, name: String, status: String, notedAt: Date }] })
+  problemList?: Array<{
+    code?: string;      // ICD-10 code (e.g., "E11.9")
+    name: string;       // Diagnosis name
+    status?: string;    // "active", "resolved", "chronic"
+    notedAt?: Date;     // When this problem was first noted
+  }>;
+
+  // Follow-up
+  @Prop()
+  followUpDate?: Date;
+
+  @Prop()
+  followUpNotes?: string;
+
   // Triage (nurse)
   @Prop({ enum: ['low', 'normal', 'high', 'urgent', 'emergency'] })
   triagePriority?: string;

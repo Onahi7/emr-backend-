@@ -91,6 +91,15 @@ export class Patient extends Document {
   @Prop({ type: [String] })
   allergies?: string[];
 
+  // Structured allergy data for clinical alerts
+  @Prop({ type: [{ allergen: String, severity: String, reaction: String, diagnosedAt: Date }] })
+  allergyDetails?: Array<{
+    allergen: string;     // e.g., "Penicillin", "Sulfa drugs"
+    severity?: string;    // "mild", "moderate", "severe", "life-threatening"
+    reaction?: string;    // e.g., "Rash", "Anaphylaxis"
+    diagnosedAt?: Date;   // When allergy was diagnosed
+  }>;
+
   @Prop({ type: [String] })
   chronicConditions?: string[];
 
@@ -99,6 +108,18 @@ export class Patient extends Document {
 
   @Prop()
   currentMedications?: string;
+
+  // Structured medication list for reconciliation
+  @Prop({ type: [{ name: String, dosage: String, frequency: String, prescribedBy: String, startedAt: Date, stoppedAt: Date, active: Boolean }] })
+  medicationList?: Array<{
+    name: string;
+    dosage?: string;
+    frequency?: string;
+    prescribedBy?: string;
+    startedAt?: Date;
+    stoppedAt?: Date;
+    active: boolean;
+  }>;
 
   // Legacy emergency contact (kept for backward compat)
   @Prop()
