@@ -247,7 +247,7 @@ export class ReconciliationService {
       .lean();
 
     const totalTestsDone = orderTests.length;
-    const completedTests = orderTests.filter(t => t.status === 'completed' || t.status === 'verified').length;
+    const completedTests = orderTests.filter(t => t.status === 'completed').length;
     const pendingTests = orderTests.filter(t => t.status === 'pending' || t.status === 'in_progress').length;
 
     // Test breakdown: count by panel (if part of panel) or individual test code

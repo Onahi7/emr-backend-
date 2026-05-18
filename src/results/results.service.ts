@@ -397,9 +397,9 @@ export class ResultsService {
     });
 
     // Sync visit status if order belongs to a visit
-    const order = await this.orderModel.findById(orderObjectId).select('visitId').lean();
-    if (order?.visitId) {
-      const visit = await this.visitModel.findById(order.visitId);
+    const orderForVisit = await this.orderModel.findById(orderObjectId).select('visitId').lean();
+    if (orderForVisit?.visitId) {
+      const visit = await this.visitModel.findById(orderForVisit.visitId);
       if (visit && visit.status !== VisitStatusEnum.RESULTS_READY && visit.status !== VisitStatusEnum.COMPLETED) {
         visit.status = VisitStatusEnum.RESULTS_READY;
         await visit.save();
