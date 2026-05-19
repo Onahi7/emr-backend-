@@ -53,7 +53,7 @@ export class VisitsService {
    * Create a new visit (Reception registers patient)
    */
   async create(createVisitDto: CreateVisitDto): Promise<Visit> {
-    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy } = createVisitDto;
+    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature } = createVisitDto;
 
     // Verify patient exists
     const patient = await this.patientModel.findById(patientId);
@@ -80,9 +80,13 @@ export class VisitsService {
       consultationFee,
       chiefComplaint,
       notes,
+      temperature: temperature || undefined,
       status: VisitStatusEnum.WAITING_PAYMENT,
       consultationPaid: false,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
+      // Emergency auto-routing to treatment/procedure room
+      room: visitType === VisitTypeEnum.EMERGENCY ? 'treatment-room-1' : undefined,
+      roomType: visitType === VisitTypeEnum.EMERGENCY ? 'emergency' : undefined,
     });
 
     const savedVisit = await visit.save();

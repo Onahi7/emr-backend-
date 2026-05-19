@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -464,6 +465,48 @@ export class PatientsService {
         lastVisit: consultations.length > 0 ? (consultations[0] as any).createdAt : null,
       },
     };
+  }
+
+  // ─── Wallet System ───
+
+  async getWalletBalance(patientId: string): Promise<{ patientId: string; balance: number; lastUpdated: Date | null }> {
+    const patient = await this.patientModel.findById(patientId).select('walletBalance walletLastUpdated').lean();
+    if (!patient) throw new NotFoundException('Patient not found');
+    return {
+      patientId,
+      balance: patient.walletBalance || 0,
+      lastUpdated: patient.walletLastUpdated || null,
+    };
+  }
+
+  async depositToWallet(patientId: string, amount: number, notes?: string): Promise<any> {
+    if (amount <= 0) throw new BadRequestException('Deposit amount must be positive');
+    const patient = await this.patientModel.findById(patientId);
+    if (!patient) throw new NotFoundException('Patient not found');
+    patient.walletBalance = (patient.walletBalance || 0) + amount;
+    patient.walletLastUpdated = new Date();
+    await patient.save();
+    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes });
+    return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, timestamp: new Date() };
+  }
+
+  async withdrawFromWallet(patientId: string, amount: number, notes?: string): Promise<any> {
+    if (amount <= 0) throw new BadRequestException('Withdrawal amount must be positive');
+    const patient = await this.patientModel.findById(patientId);
+    if (!patient) throw new NotFoundException('Patient not found');
+    const currentBalance = patient.walletBalance || 0;
+    if (amount > currentBalance) {
+      throw new BadRequestException(`Insufficient wallet balance. Available: Le ${currentBalance.toLocaleString()}`);
+    }
+    patient.walletBalance = currentBalance - amount;
+    patient.walletLastUpdated = new Date();
+    await patient.save();
+    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes });
+    return { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes, timestamp: new Date() };
+  }
+
+  async payFromWallet(patientId: string, amount: number, orderId?: string): Promise<any> {
+    return this.withdrawFromWallet(patientId, amount, orderId ? `Payment for order ${orderId}` : 'Order payment');
   }
 
 }

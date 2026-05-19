@@ -164,6 +164,13 @@ export class Visit extends Document {
   @Prop()
   cancellationReason?: string;
 
+  // Room/location assignment
+  @Prop()
+  room?: string; // e.g., "treatment-room-1", "procedure-room-2", "consultation-room-1"
+
+  @Prop()
+  roomType?: string; // "consultation", "treatment", "procedure", "emergency"
+
   createdAt: Date;
   updatedAt: Date;
 }

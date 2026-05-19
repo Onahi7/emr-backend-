@@ -28,4 +28,9 @@ export class CreateVisitDto {
   @IsOptional()
   @IsMongoId()
   registeredBy?: string;
+
+  // Quick vitals from reception
+  @IsOptional()
+  @IsNumber()
+  temperature?: number;
 }

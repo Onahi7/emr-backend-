@@ -105,4 +105,25 @@ export class PatientsController {
     async getChart(@Param('id') id: string, @Request() req: any) {
       return this.patientsService.getPatientChart(id, req.user?.roles || []);
     }
+
+  // Wallet endpoints
+  @Get(':id/wallet')
+  async getWallet(@Param('id') id: string) {
+    return this.patientsService.getWalletBalance(id);
   }
+
+  @Post(':id/wallet/deposit')
+  async depositWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }) {
+    return this.patientsService.depositToWallet(id, body.amount, body.notes);
+  }
+
+  @Post(':id/wallet/withdraw')
+  async withdrawWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }) {
+    return this.patientsService.withdrawFromWallet(id, body.amount, body.notes);
+  }
+
+  @Post(':id/wallet/pay')
+  async payFromWallet(@Param('id') id: string, @Body() body: { amount: number; orderId?: string }) {
+    return this.patientsService.payFromWallet(id, body.amount, body.orderId);
+  }
+}

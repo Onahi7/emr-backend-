@@ -49,8 +49,8 @@ export class Patient extends Document {
   @Prop({ required: true, enum: Object.values(GenderEnum) })
   gender: GenderEnum;
 
-  @Prop()
-  phone?: string;
+  @Prop({ required: true })
+  phone: string;
 
   @Prop()
   email?: string;
@@ -143,6 +143,13 @@ export class Patient extends Document {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  // Wallet system
+  @Prop({ default: 0 })
+  walletBalance: number;
+
+  @Prop()
+  walletLastUpdated?: Date;
 
   createdAt: Date;
   updatedAt: Date;

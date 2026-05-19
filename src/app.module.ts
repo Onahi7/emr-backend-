@@ -35,6 +35,7 @@ import { SoapNotesModule } from './soap-notes/soap-notes.module';
 import { AdminModule } from './admin/admin.module';
 import { AdmissionsModule } from './admissions/admissions.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -84,6 +85,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
     AdminModule,
     AdmissionsModule,
     InventoryModule,
+    AppointmentsModule,
   ],
   controllers: [AppController],
   providers: [
