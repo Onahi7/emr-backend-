@@ -112,18 +112,27 @@ export class PatientsController {
     return this.patientsService.getWalletBalance(id);
   }
 
+  @Get(':id/wallet/transactions')
+  async getWalletTransactions(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.patientsService.getWalletTransactions(id, page ? parseInt(page, 10) : 1, limit ? parseInt(limit, 10) : 50);
+  }
+
   @Post(':id/wallet/deposit')
-  async depositWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }) {
-    return this.patientsService.depositToWallet(id, body.amount, body.notes);
+  async depositWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }, @Request() req: any) {
+    return this.patientsService.depositToWallet(id, body.amount, body.notes, req.user?.userId);
   }
 
   @Post(':id/wallet/withdraw')
-  async withdrawWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }) {
-    return this.patientsService.withdrawFromWallet(id, body.amount, body.notes);
+  async withdrawWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }, @Request() req: any) {
+    return this.patientsService.withdrawFromWallet(id, body.amount, body.notes, req.user?.userId);
   }
 
   @Post(':id/wallet/pay')
-  async payFromWallet(@Param('id') id: string, @Body() body: { amount: number; orderId?: string }) {
-    return this.patientsService.payFromWallet(id, body.amount, body.orderId);
+  async payFromWallet(@Param('id') id: string, @Body() body: { amount: number; orderId?: string }, @Request() req: any) {
+    return this.patientsService.payFromWallet(id, body.amount, body.orderId, req.user?.userId);
   }
 }

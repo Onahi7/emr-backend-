@@ -42,6 +42,7 @@ export enum PaymentMethodEnum {
   CASH = 'cash',
   ORANGE_MONEY = 'orange_money',
   AFRIMONEY = 'afrimoney',
+  WALLET = 'wallet',
 }
 
 @Schema({ timestamps: true, collection: 'orders' })

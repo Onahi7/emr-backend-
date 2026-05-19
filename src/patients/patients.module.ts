@@ -11,6 +11,10 @@ import {
   IdSequence,
   IdSequenceSchema,
 } from '../database/schemas/id-sequence.schema';
+import {
+  WalletTransaction,
+  WalletTransactionSchema,
+} from '../database/schemas/wallet-transaction.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
@@ -19,6 +23,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: Patient.name, schema: PatientSchema },
       { name: PatientNote.name, schema: PatientNoteSchema },
       { name: IdSequence.name, schema: IdSequenceSchema },
+      { name: WalletTransaction.name, schema: WalletTransactionSchema },
     ]),
     RealtimeModule,
   ],

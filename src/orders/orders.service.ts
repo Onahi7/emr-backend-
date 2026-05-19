@@ -6,9 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Order, OrderStatusEnum, OrderTypeEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
+import { Order, OrderStatusEnum, OrderTypeEnum, PaymentStatusEnum, PaymentMethodEnum } from '../database/schemas/order.schema';
 import { OrderTest } from '../database/schemas/order-test.schema';
 import { IdSequence } from '../database/schemas/id-sequence.schema';
+import { Patient } from '../database/schemas/patient.schema';
+import { WalletTransaction, WalletTransactionTypeEnum } from '../database/schemas/wallet-transaction.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
@@ -187,6 +189,11 @@ export class OrdersService {
       throw new BadRequestException('Invalid patient ID');
     }
 
+    const orderType = createOrderDto.orderType || OrderTypeEnum.LAB;
+    if ((orderType === OrderTypeEnum.LAB || orderType === OrderTypeEnum.PHARMACY) && !createOrderDto.visitId) {
+      throw new BadRequestException('Clinical lab and pharmacy orders must be attached to a patient visit');
+    }
+
     // Validate visitId belongs to the same patient
     if (createOrderDto.visitId) {
       if (!Types.ObjectId.isValid(createOrderDto.visitId)) {
@@ -250,7 +257,7 @@ export class OrdersService {
       orderNumber,
       patientId: new Types.ObjectId(createOrderDto.patientId),
       visitId: createOrderDto.visitId ? new Types.ObjectId(createOrderDto.visitId) : undefined,
-      orderType: createOrderDto.orderType || OrderTypeEnum.LAB,
+      orderType,
       status: OrderStatusEnum.AWAITING_PAYMENT,
       priority: createOrderDto.priority,
       subtotal,
@@ -816,6 +823,42 @@ export class OrdersService {
       );
     }
 
+    // Wallet payment: deduct from patient's wallet first
+    if (addPaymentDto.paymentMethod === 'wallet') {
+      const PatientModel = this.orderModel.db.model<Patient>('Patient');
+      const WalletTxModel = this.orderModel.db.model<WalletTransaction>('WalletTransaction');
+      const patient = await PatientModel.findById(order.patientId).exec();
+      if (!patient) {
+        throw new BadRequestException('Patient not found for wallet deduction');
+      }
+      const balanceBefore = patient.walletBalance || 0;
+      if (addPaymentDto.amount > balanceBefore) {
+        throw new BadRequestException(
+          `Insufficient wallet balance. Available: Le ${balanceBefore.toLocaleString()}`,
+        );
+      }
+      patient.walletBalance = balanceBefore - addPaymentDto.amount;
+      patient.walletLastUpdated = new Date();
+      await patient.save();
+      await WalletTxModel.create({
+        patientId: order.patientId,
+        type: WalletTransactionTypeEnum.PAYMENT,
+        amount: addPaymentDto.amount,
+        balanceBefore,
+        balanceAfter: patient.walletBalance,
+        reference: `Payment for order ${order.orderNumber}`,
+        notes: addPaymentDto.notes,
+        performedBy: userId ? new Types.ObjectId(userId) : undefined,
+        orderId: order._id,
+      });
+      this.realtimeGateway.emitToAll('wallet:updated', {
+        patientId: order.patientId.toString(),
+        balance: patient.walletBalance,
+        type: 'payment',
+        amount: addPaymentDto.amount,
+      });
+    }
+
     // Create payment record
     const payment = await this.paymentModel.create({
       orderId: order._id,
@@ -1068,6 +1111,7 @@ export class OrdersService {
 
     const visit = await this.visitModel.findById(visitId);
     if (!visit) return;
+    if ([VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) return;
 
     const hasUnpaidLab = orders.some(o => o.orderType === OrderTypeEnum.LAB && o.paymentStatus !== PaymentStatusEnum.PAID);
     const hasUnpaidPharmacy = orders.some(o => o.orderType === OrderTypeEnum.PHARMACY && o.paymentStatus !== PaymentStatusEnum.PAID);
@@ -1081,7 +1125,7 @@ export class OrdersService {
     let newStatus: VisitStatusEnum | null = null;
 
     if (allOrdersCompleted && orders.length > 0) {
-      newStatus = VisitStatusEnum.RESULTS_READY;
+      newStatus = hasCompletedLab ? VisitStatusEnum.RESULTS_READY : VisitStatusEnum.AWAITING_DOCTOR_REVIEW;
     } else if (hasUnpaidLab) {
       newStatus = VisitStatusEnum.AWAITING_LAB;
     } else if (hasUnpaidPharmacy) {

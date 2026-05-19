@@ -84,12 +84,23 @@ export class VisitsService {
       status: VisitStatusEnum.WAITING_PAYMENT,
       consultationPaid: false,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
-      // Emergency auto-routing to treatment/procedure room
-      room: visitType === VisitTypeEnum.EMERGENCY ? 'treatment-room-1' : undefined,
-      roomType: visitType === VisitTypeEnum.EMERGENCY ? 'emergency' : undefined,
     });
 
     const savedVisit = await visit.save();
+
+    // Auto-assign room based on visit type
+    if (savedVisit.visitType === VisitTypeEnum.EMERGENCY) {
+      const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
+        { roomType: 'emergency', status: 'available' },
+        { status: 'occupied', currentVisitId: savedVisit._id, currentPatientName: savedVisit._id },
+        { sort: { name: 1 } },
+      ).exec();
+      if (room) {
+        savedVisit.room = room.name;
+        savedVisit.roomType = room.roomType;
+        await savedVisit.save();
+      }
+    }
     this.logger.log(`Visit created: ${savedVisit.visitNumber}`);
 
     // Emit real-time event
@@ -210,6 +221,12 @@ export class VisitsService {
   async getDoctorDashboard(doctorId: string): Promise<{
     waitingQueue: Visit[];
     activePatients: Visit[];
+    awaitingLabPayment: Visit[];
+    awaitingResults: Visit[];
+    awaitingPharmacy: Visit[];
+    awaitingDispensing: Visit[];
+    awaitingDoctorReview: Visit[];
+    admittedPatients: Visit[];
     resultsReady: Visit[];
     incomingReferrals: Visit[];
     todayStats: { seen: number; waiting: number; completed: number };
@@ -221,7 +238,32 @@ export class VisitsService {
 
     const doctorObjectId = new Types.ObjectId(doctorId);
 
-    const [waitingQueue, activePatients, resultsReady, incomingReferrals, todaySeen, todayWaiting, todayCompleted] =
+    const openEncounterStatuses = [
+      VisitStatusEnum.IN_CONSULTATION,
+      VisitStatusEnum.AWAITING_LAB,
+      VisitStatusEnum.AWAITING_RESULTS,
+      VisitStatusEnum.RESULTS_READY,
+      VisitStatusEnum.AWAITING_PHARMACY,
+      VisitStatusEnum.AWAITING_DISPENSING,
+      VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
+      VisitStatusEnum.ADMITTED,
+    ];
+
+    const [
+      waitingQueue,
+      activePatients,
+      awaitingLabPayment,
+      awaitingResults,
+      awaitingPharmacy,
+      awaitingDispensing,
+      awaitingDoctorReview,
+      admittedPatients,
+      resultsReady,
+      incomingReferrals,
+      todaySeen,
+      todayWaiting,
+      todayCompleted,
+    ] =
       await Promise.all([
         // All paid patients waiting in queue (not yet assigned to a doctor)
         this.visitModel
@@ -229,11 +271,41 @@ export class VisitsService {
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ triagedAt: 1, createdAt: 1 })
           .exec(),
-        // This doctor's patients currently in consultation
+        // This doctor's open encounters stay visible until the doctor closes them.
         this.visitModel
-          .find({ status: VisitStatusEnum.IN_CONSULTATION, doctorId: doctorObjectId })
+          .find({ status: { $in: openEncounterStatuses }, doctorId: doctorObjectId })
           .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
-          .sort({ consultationStartedAt: 1 })
+          .sort({ updatedAt: -1, consultationStartedAt: 1 })
+          .exec(),
+        this.visitModel
+          .find({ status: VisitStatusEnum.AWAITING_LAB, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
+          .exec(),
+        this.visitModel
+          .find({ status: VisitStatusEnum.AWAITING_RESULTS, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
+          .exec(),
+        this.visitModel
+          .find({ status: VisitStatusEnum.AWAITING_PHARMACY, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
+          .exec(),
+        this.visitModel
+          .find({ status: VisitStatusEnum.AWAITING_DISPENSING, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
+          .exec(),
+        this.visitModel
+          .find({ status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
+          .exec(),
+        this.visitModel
+          .find({ status: VisitStatusEnum.ADMITTED, doctorId: doctorObjectId })
+          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .sort({ updatedAt: 1 })
           .exec(),
         // Patients with results ready for this doctor to review
         this.visitModel
@@ -255,7 +327,7 @@ export class VisitsService {
         this.visitModel.countDocuments({
           doctorId: doctorObjectId,
           createdAt: { $gte: today, $lt: tomorrow },
-          status: { $in: [VisitStatusEnum.IN_CONSULTATION, VisitStatusEnum.COMPLETED, VisitStatusEnum.AWAITING_LAB, VisitStatusEnum.AWAITING_PHARMACY, VisitStatusEnum.AWAITING_RESULTS, VisitStatusEnum.RESULTS_READY, VisitStatusEnum.AWAITING_DISPENSING] },
+          status: { $in: [...openEncounterStatuses, VisitStatusEnum.COMPLETED] },
         }),
         this.visitModel.countDocuments({
           createdAt: { $gte: today, $lt: tomorrow },
@@ -271,6 +343,12 @@ export class VisitsService {
     return {
       waitingQueue,
       activePatients,
+      awaitingLabPayment,
+      awaitingResults,
+      awaitingPharmacy,
+      awaitingDispensing,
+      awaitingDoctorReview,
+      admittedPatients,
       resultsReady,
       incomingReferrals,
       todayStats: {
@@ -642,6 +720,19 @@ export class VisitsService {
       throw new BadRequestException('Visit is not in queue');
     }
 
+    // Auto-assign consultation room if not already assigned
+    if (!visit.room) {
+      const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
+        { roomType: 'consultation', status: 'available' },
+        { status: 'occupied', currentVisitId: visit._id, currentPatientName: visit._id },
+        { sort: { name: 1 } },
+      ).exec();
+      if (room) {
+        visit.room = room.name;
+        visit.roomType = room.roomType;
+      }
+    }
+
     visit.status = VisitStatusEnum.IN_CONSULTATION;
     visit.doctorId = new Types.ObjectId(doctorId);
     visit.consultationStartedAt = new Date();
@@ -762,7 +853,8 @@ export class VisitsService {
   }
 
   /**
-   * Pharmacist has dispensed all drugs - move visit to completed
+   * Pharmacist has dispensed all drugs - return visit to doctor review.
+   * The doctor, not pharmacy, closes the encounter.
    */
   async markDispensed(id: string): Promise<Visit> {
     const visit = await this.visitModel.findById(id);
@@ -774,11 +866,10 @@ export class VisitsService {
       throw new BadRequestException('Visit is not awaiting dispensing');
     }
 
-    visit.status = VisitStatusEnum.COMPLETED;
-    visit.dischargedAt = new Date();
+    visit.status = VisitStatusEnum.AWAITING_DOCTOR_REVIEW;
     const savedVisit = await visit.save();
 
-    this.logger.log(`Drugs dispensed, visit completed: ${savedVisit.visitNumber}`);
+    this.logger.log(`Drugs dispensed, awaiting doctor review: ${savedVisit.visitNumber}`);
     this.realtimeGateway.emitToAll('visit:dispensed', savedVisit);
 
     return savedVisit;
@@ -811,6 +902,15 @@ export class VisitsService {
       throw new NotFoundException('Visit not found');
     }
 
+    // Release room if assigned
+    if (visit.room) {
+      const RoomModel = this.visitModel.db.model('Room');
+      await RoomModel.findOneAndUpdate(
+        { name: visit.room },
+        { status: 'available', currentVisitId: null, currentPatientName: null },
+      ).exec();
+    }
+
     visit.status = VisitStatusEnum.COMPLETED;
     visit.dischargedAt = new Date();
 
@@ -829,6 +929,15 @@ export class VisitsService {
     const visit = await this.visitModel.findById(id);
     if (!visit) {
       throw new NotFoundException('Visit not found');
+    }
+
+    // Release room if assigned
+    if (visit.room) {
+      const RoomModel = this.visitModel.db.model('Room');
+      await RoomModel.findOneAndUpdate(
+        { name: visit.room },
+        { status: 'available', currentVisitId: null, currentPatientName: null },
+      ).exec();
     }
 
     visit.status = VisitStatusEnum.CANCELLED;
@@ -866,6 +975,8 @@ export class VisitsService {
       awaitingDispensing,
       awaitingResults,
       resultsReady,
+      awaitingDoctorReview,
+      admitted,
       completed,
       cancelled,
     ] = await Promise.all([
@@ -879,6 +990,8 @@ export class VisitsService {
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_DISPENSING }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_RESULTS }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.RESULTS_READY }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW }),
+      this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.ADMITTED }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.COMPLETED }),
       this.visitModel.countDocuments({ ...query, status: VisitStatusEnum.CANCELLED }),
     ]);
@@ -894,6 +1007,8 @@ export class VisitsService {
       awaitingDispensing,
       awaitingResults,
       resultsReady,
+      awaitingDoctorReview,
+      admitted,
       completed,
       cancelled,
     };

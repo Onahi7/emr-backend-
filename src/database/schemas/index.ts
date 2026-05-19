@@ -27,3 +27,6 @@ export * from './queue.schema';
 export * from './prescription.schema';
 export * from './medication.schema';
 export * from './soap-note.schema';
+export * from './wallet-transaction.schema';
+export * from './appointment.schema';
+export * from './room.schema';

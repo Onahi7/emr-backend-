@@ -10,6 +10,7 @@ import { Model, Types } from 'mongoose';
 import { Patient } from '../database/schemas/patient.schema';
 import { PatientNote } from '../database/schemas/patient-note.schema';
 import { IdSequence } from '../database/schemas/id-sequence.schema';
+import { WalletTransaction, WalletTransactionTypeEnum } from '../database/schemas/wallet-transaction.schema';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { CreatePatientNoteDto } from './dto/create-patient-note.dto';
@@ -23,6 +24,7 @@ export class PatientsService {
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(PatientNote.name) private patientNoteModel: Model<PatientNote>,
     @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
+    @InjectModel(WalletTransaction.name) private walletTransactionModel: Model<WalletTransaction>,
     private realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -479,18 +481,49 @@ export class PatientsService {
     };
   }
 
-  async depositToWallet(patientId: string, amount: number, notes?: string): Promise<any> {
+  private async recordTransaction(
+    patientId: Types.ObjectId,
+    type: WalletTransactionTypeEnum,
+    amount: number,
+    balanceBefore: number,
+    balanceAfter: number,
+    opts?: { notes?: string; reference?: string; performedBy?: string; orderId?: string },
+  ): Promise<WalletTransaction> {
+    const tx = new this.walletTransactionModel({
+      patientId,
+      type,
+      amount,
+      balanceBefore,
+      balanceAfter,
+      notes: opts?.notes,
+      reference: opts?.reference,
+      performedBy: opts?.performedBy ? new Types.ObjectId(opts.performedBy) : undefined,
+      orderId: opts?.orderId ? new Types.ObjectId(opts.orderId) : undefined,
+    });
+    return tx.save();
+  }
+
+  async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Deposit amount must be positive');
     const patient = await this.patientModel.findById(patientId);
     if (!patient) throw new NotFoundException('Patient not found');
-    patient.walletBalance = (patient.walletBalance || 0) + amount;
+    const balanceBefore = patient.walletBalance || 0;
+    patient.walletBalance = balanceBefore + amount;
     patient.walletLastUpdated = new Date();
     await patient.save();
+    await this.recordTransaction(
+      new Types.ObjectId(patientId),
+      WalletTransactionTypeEnum.DEPOSIT,
+      amount,
+      balanceBefore,
+      patient.walletBalance,
+      { notes, performedBy: userId },
+    );
     this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes });
     return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, timestamp: new Date() };
   }
 
-  async withdrawFromWallet(patientId: string, amount: number, notes?: string): Promise<any> {
+  async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Withdrawal amount must be positive');
     const patient = await this.patientModel.findById(patientId);
     if (!patient) throw new NotFoundException('Patient not found');
@@ -498,15 +531,48 @@ export class PatientsService {
     if (amount > currentBalance) {
       throw new BadRequestException(`Insufficient wallet balance. Available: Le ${currentBalance.toLocaleString()}`);
     }
+    const balanceBefore = currentBalance;
     patient.walletBalance = currentBalance - amount;
     patient.walletLastUpdated = new Date();
     await patient.save();
+    await this.recordTransaction(
+      new Types.ObjectId(patientId),
+      WalletTransactionTypeEnum.WITHDRAWAL,
+      amount,
+      balanceBefore,
+      patient.walletBalance,
+      { notes, performedBy: userId },
+    );
     this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes });
     return { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes, timestamp: new Date() };
   }
 
-  async payFromWallet(patientId: string, amount: number, orderId?: string): Promise<any> {
-    return this.withdrawFromWallet(patientId, amount, orderId ? `Payment for order ${orderId}` : 'Order payment');
+  async payFromWallet(patientId: string, amount: number, orderId?: string, userId?: string): Promise<any> {
+    return this.withdrawFromWallet(patientId, amount, orderId ? `Payment for order ${orderId}` : 'Order payment', userId);
+  }
+
+  async getWalletTransactions(
+    patientId: string,
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<{ data: WalletTransaction[]; total: number; page: number; limit: number }> {
+    if (!Types.ObjectId.isValid(patientId)) {
+      throw new NotFoundException(`Patient with ID ${patientId} not found`);
+    }
+    const skip = (page - 1) * limit;
+    const filter = { patientId: new Types.ObjectId(patientId) };
+    const [data, total] = await Promise.all([
+      this.walletTransactionModel
+        .find(filter)
+        .populate('performedBy', 'fullName email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.walletTransactionModel.countDocuments(filter).exec(),
+    ]);
+    return { data: data as unknown as WalletTransaction[], total, page, limit };
   }
 
 }

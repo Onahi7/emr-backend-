@@ -11,6 +11,7 @@ export enum VisitStatusEnum {
   AWAITING_RESULTS = 'awaiting_results',        // Lab paid, waiting for results
   RESULTS_READY = 'results_ready',              // Results released, doctor reviewing
   AWAITING_DISPENSING = 'awaiting_dispensing',  // Pharmacy paid, waiting for pharmacist to dispense
+  AWAITING_DOCTOR_REVIEW = 'awaiting_doctor_review', // Service done, doctor must close/continue encounter
   ADMITTED = 'admitted',                        // Patient admitted (inpatient, nurse-managed)
   REFERRED = 'referred',                        // Referred to specialist
   COMPLETED = 'completed',                      // Visit closed
