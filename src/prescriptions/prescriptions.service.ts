@@ -6,6 +6,7 @@ import { Medication } from '../database/schemas/medication.schema';
 import { StockMovement, StockMovementTypeEnum } from '../database/schemas/stock-movement.schema';
 import { Consultation } from '../database/schemas/consultation.schema';
 import { Patient } from '../database/schemas/patient.schema';
+import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -18,8 +19,20 @@ export class PrescriptionsService {
     @InjectModel(StockMovement.name) private stockMovementModel: Model<StockMovement>,
     @InjectModel(Consultation.name) private consultationModel: Model<Consultation>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
+    @InjectModel(Visit.name) private visitModel: Model<Visit>,
     private realtimeGateway: RealtimeGateway,
   ) {}
+
+  private async moveVisitToStatus(visitId: Types.ObjectId | string | undefined, status: VisitStatusEnum): Promise<void> {
+    if (!visitId) return;
+    const visit = await this.visitModel.findById(visitId);
+    if (!visit) return;
+    if ([VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) return;
+    if (visit.status === status) return;
+    visit.status = status;
+    await visit.save();
+    this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status });
+  }
 
   /**
    * Auto-generate patient-facing label instructions from structured fields
@@ -135,6 +148,7 @@ export class PrescriptionsService {
     });
 
     const savedPrescription = await prescription.save();
+    await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_PHARMACY);
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:created', populatedPrescription);
     return populatedPrescription;
@@ -260,6 +274,7 @@ export class PrescriptionsService {
     }
 
     const savedPrescription = await prescription.save();
+    await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DOCTOR_REVIEW);
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:dispensed', populatedPrescription);
     return populatedPrescription;
@@ -272,6 +287,7 @@ export class PrescriptionsService {
     }
     prescription.isPaid = true;
     const savedPrescription = await prescription.save();
+    await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DISPENSING);
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:paid', populatedPrescription);
     return populatedPrescription;

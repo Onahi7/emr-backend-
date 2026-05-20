@@ -47,7 +47,7 @@ export class OrdersController {
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.ordersService.findAll(pageNum, limitNum, status, patientId, search);
+    return this.ordersService.findAll(pageNum, limitNum, status, patientId, search, orderType);
   }
 
   /**

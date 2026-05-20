@@ -7,6 +7,7 @@ import { Medication, MedicationSchema } from '../database/schemas/medication.sch
 import { StockMovement, StockMovementSchema } from '../database/schemas/stock-movement.schema';
 import { Consultation, ConsultationSchema } from '../database/schemas/consultation.schema';
 import { Patient, PatientSchema } from '../database/schemas/patient.schema';
+import { Visit, VisitSchema } from '../database/schemas/visit.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
@@ -18,6 +19,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: StockMovement.name, schema: StockMovementSchema },
       { name: Consultation.name, schema: ConsultationSchema },
       { name: Patient.name, schema: PatientSchema },
+      { name: Visit.name, schema: VisitSchema },
     ]),
   ],
   controllers: [PrescriptionsController],

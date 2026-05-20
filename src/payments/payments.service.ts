@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
-import { Order, PaymentStatusEnum, OrderStatusEnum } from '../database/schemas/order.schema';
+import { Order, PaymentStatusEnum, OrderStatusEnum, OrderTypeEnum } from '../database/schemas/order.schema';
 import { Consultation } from '../database/schemas/consultation.schema';
 import { Prescription } from '../database/schemas/prescription.schema';
 
@@ -44,9 +44,10 @@ export class PaymentsService {
         order.paymentStatus = PaymentStatusEnum.PARTIAL;
       }
 
-      // Advance order status once any payment is received
-      if (order.status === OrderStatusEnum.AWAITING_PAYMENT) {
-        order.status = OrderStatusEnum.PENDING_COLLECTION;
+      if (order.paymentStatus === PaymentStatusEnum.PAID && order.status === OrderStatusEnum.AWAITING_PAYMENT) {
+        order.status = order.orderType === OrderTypeEnum.LAB
+          ? OrderStatusEnum.PENDING_COLLECTION
+          : OrderStatusEnum.PAID;
       }
 
       await order.save();

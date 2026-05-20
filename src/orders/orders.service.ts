@@ -183,6 +183,18 @@ export class OrdersService {
   /**
    * Create a new order
    */
+  private getPaymentTypeForOrder(orderType: OrderTypeEnum): PaymentTypeEnum {
+    return orderType === OrderTypeEnum.PHARMACY
+      ? PaymentTypeEnum.PHARMACY_ORDER
+      : PaymentTypeEnum.LAB_ORDER;
+  }
+
+  private getPaidStatusForOrder(orderType: OrderTypeEnum): OrderStatusEnum {
+    if (orderType === OrderTypeEnum.LAB) return OrderStatusEnum.PENDING_COLLECTION;
+    if (orderType === OrderTypeEnum.PHARMACY) return OrderStatusEnum.PAID;
+    return OrderStatusEnum.PAID;
+  }
+
   async create(createOrderDto: CreateOrderDto, userId?: string): Promise<Order> {
     // Validate patient ID
     if (!Types.ObjectId.isValid(createOrderDto.patientId)) {
@@ -252,13 +264,17 @@ export class OrdersService {
     if (amountPaid >= total) paymentStatus = PaymentStatusEnum.PAID;
     else if (amountPaid > 0) paymentStatus = PaymentStatusEnum.PARTIAL;
 
+    const initialStatus = paymentStatus === PaymentStatusEnum.PAID
+      ? this.getPaidStatusForOrder(orderType)
+      : OrderStatusEnum.AWAITING_PAYMENT;
+
     // Create order
     const order = new this.orderModel({
       orderNumber,
       patientId: new Types.ObjectId(createOrderDto.patientId),
       visitId: createOrderDto.visitId ? new Types.ObjectId(createOrderDto.visitId) : undefined,
       orderType,
-      status: OrderStatusEnum.AWAITING_PAYMENT,
+      status: initialStatus,
       priority: createOrderDto.priority,
       subtotal,
       discount: createOrderDto.discount || 0,
@@ -302,7 +318,7 @@ export class OrdersService {
         if (p.amount > 0) {
           await this.paymentModel.create({
             orderId: savedOrder._id,
-            paymentType: PaymentTypeEnum.LAB_ORDER,
+            paymentType: this.getPaymentTypeForOrder(orderType),
             amount: Math.round(p.amount * 100) / 100,
             paymentMethod: p.paymentMethod,
             receivedBy: userId ? new Types.ObjectId(userId) : undefined,
@@ -313,7 +329,7 @@ export class OrdersService {
     } else if (createOrderDto.paymentMethod && amountPaid > 0) {
       await this.paymentModel.create({
         orderId: savedOrder._id,
-        paymentType: PaymentTypeEnum.LAB_ORDER,
+        paymentType: this.getPaymentTypeForOrder(orderType),
         amount: amountPaid,
         paymentMethod: createOrderDto.paymentMethod,
         receivedBy: userId ? new Types.ObjectId(userId) : undefined,
@@ -345,6 +361,7 @@ export class OrdersService {
     status?: string,
     patientId?: string,
     search?: string,
+    orderType?: OrderTypeEnum,
   ): Promise<{ data: Order[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
     const query: any = {};
@@ -355,6 +372,10 @@ export class OrdersService {
 
     if (patientId && Types.ObjectId.isValid(patientId)) {
       query.patientId = new Types.ObjectId(patientId);
+    }
+
+    if (orderType) {
+      query.orderType = orderType;
     }
 
     if (search) {
@@ -862,7 +883,7 @@ export class OrdersService {
     // Create payment record
     const payment = await this.paymentModel.create({
       orderId: order._id,
-      paymentType: PaymentTypeEnum.LAB_ORDER,
+      paymentType: this.getPaymentTypeForOrder(order.orderType),
       amount: addPaymentDto.amount,
       paymentMethod: addPaymentDto.paymentMethod,
       receivedBy: userId ? new Types.ObjectId(userId) : undefined,
@@ -880,9 +901,8 @@ export class OrdersService {
       order.paymentStatus = PaymentStatusEnum.PARTIAL;
     }
 
-    // Move to pending_collection once any payment is made
-    if (order.status === OrderStatusEnum.AWAITING_PAYMENT) {
-      order.status = OrderStatusEnum.PENDING_COLLECTION;
+    if (order.paymentStatus === PaymentStatusEnum.PAID && order.status === OrderStatusEnum.AWAITING_PAYMENT) {
+      order.status = this.getPaidStatusForOrder(order.orderType);
     }
 
     await order.save();
@@ -892,6 +912,9 @@ export class OrdersService {
 
     const populatedOrder = await this.findOne(id);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
+    if (order.visitId) {
+      await this.syncVisitStatus(order.visitId as Types.ObjectId);
+    }
 
     return { order: populatedOrder, payment };
   }
@@ -1061,14 +1084,7 @@ export class OrdersService {
       throw new BadRequestException('Order is not awaiting payment');
     }
 
-    // Update order status based on type
-    if (order.orderType === OrderTypeEnum.LAB) {
-      order.status = OrderStatusEnum.PENDING_COLLECTION; // Lab orders go straight to pending collection
-    } else if (order.orderType === OrderTypeEnum.PHARMACY) {
-      order.status = OrderStatusEnum.PAID; // Pharmacy orders go to PAID -> pharmacist dispenses
-    } else {
-      order.status = OrderStatusEnum.PAID;
-    }
+    order.status = this.getPaidStatusForOrder(order.orderType);
 
     order.paymentStatus = PaymentStatusEnum.PAID;
     order.amountPaid = order.total;
@@ -1080,9 +1096,7 @@ export class OrdersService {
     // Create payment record
     await this.paymentModel.create({
       orderId: order._id,
-      paymentType: order.orderType === OrderTypeEnum.PHARMACY
-        ? PaymentTypeEnum.PHARMACY_ORDER
-        : PaymentTypeEnum.LAB_ORDER,
+      paymentType: this.getPaymentTypeForOrder(order.orderType),
       amount: order.total,
       paymentMethod,
       receivedBy: userId ? new Types.ObjectId(userId) : undefined,
