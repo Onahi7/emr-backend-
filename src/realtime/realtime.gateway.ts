@@ -48,7 +48,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   server: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
-  private connectedClients = new Map<string, { userId: string; role: string }>();
+  private connectedClients = new Map<string, { userId: string; roles: string[] }>();
 
   constructor(private jwtService: JwtService) {}
 
@@ -66,15 +66,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.logger.debug(`Attempting to verify token for client ${client.id}`);
       const payload = await this.jwtService.verifyAsync(token);
       
+      const roles = Array.isArray(payload.roles)
+        ? payload.roles
+        : payload.role
+          ? [payload.role]
+          : [];
+
       this.connectedClients.set(client.id, {
         userId: payload.sub,
-        role: payload.roles[0],
+        roles,
       });
 
-      this.logger.log(`Client connected: ${client.id} (User: ${payload.sub}, Role: ${payload.roles[0]})`);
+      this.logger.log(`Client connected: ${client.id} (User: ${payload.sub}, Roles: ${roles.join(', ') || 'none'})`);
       
-      // Join role-specific room
-      client.join(`role:${payload.roles[0]}`);
+      // Join every assigned role room so multi-role users receive all relevant updates.
+      roles.forEach((role) => client.join(`role:${role}`));
       
       // Send connection confirmation
       client.emit('connected', {
@@ -189,7 +195,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   // Get clients by role
   getClientsByRole(role: string): number {
     return Array.from(this.connectedClients.values())
-      .filter(client => client.role === role)
+      .filter(client => client.roles.includes(role))
       .length;
   }
 }
