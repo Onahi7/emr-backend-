@@ -29,6 +29,9 @@ export class WalletTransaction extends Document {
   @Prop()
   reference?: string;
 
+  @Prop({ enum: ['cash', 'orange_money', 'afrimoney', 'wallet', 'other'] })
+  paymentMethod?: string;
+
   @Prop()
   notes?: string;
 

@@ -487,7 +487,7 @@ export class PatientsService {
     amount: number,
     balanceBefore: number,
     balanceAfter: number,
-    opts?: { notes?: string; reference?: string; performedBy?: string; orderId?: string },
+    opts?: { notes?: string; reference?: string; paymentMethod?: string; performedBy?: string; orderId?: string },
   ): Promise<WalletTransaction> {
     const tx = new this.walletTransactionModel({
       patientId,
@@ -497,13 +497,14 @@ export class PatientsService {
       balanceAfter,
       notes: opts?.notes,
       reference: opts?.reference,
+      paymentMethod: opts?.paymentMethod,
       performedBy: opts?.performedBy ? new Types.ObjectId(opts.performedBy) : undefined,
       orderId: opts?.orderId ? new Types.ObjectId(opts.orderId) : undefined,
     });
     return tx.save();
   }
 
-  async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string): Promise<any> {
+  async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string, paymentMethod = 'cash'): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Deposit amount must be positive');
     const patient = await this.patientModel.findById(patientId);
     if (!patient) throw new NotFoundException('Patient not found');
@@ -517,10 +518,10 @@ export class PatientsService {
       amount,
       balanceBefore,
       patient.walletBalance,
-      { notes, performedBy: userId },
+      { notes, performedBy: userId, paymentMethod },
     );
-    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes });
-    return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, timestamp: new Date() };
+    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod });
+    return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: new Date() };
   }
 
   async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string): Promise<any> {

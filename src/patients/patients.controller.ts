@@ -122,8 +122,8 @@ export class PatientsController {
   }
 
   @Post(':id/wallet/deposit')
-  async depositWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string }, @Request() req: any) {
-    return this.patientsService.depositToWallet(id, body.amount, body.notes, req.user?.userId);
+  async depositWallet(@Param('id') id: string, @Body() body: { amount: number; notes?: string; paymentMethod?: string }, @Request() req: any) {
+    return this.patientsService.depositToWallet(id, body.amount, body.notes, req.user?.userId, body.paymentMethod || 'cash');
   }
 
   @Post(':id/wallet/withdraw')

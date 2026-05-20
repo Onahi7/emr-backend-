@@ -1084,6 +1084,19 @@ export class OrdersService {
       throw new BadRequestException('Order is not awaiting payment');
     }
 
+    if (paymentMethod === PaymentMethodEnum.WALLET) {
+      const result = await this.addPayment(
+        id,
+        {
+          amount: order.total,
+          paymentMethod: PaymentMethodEnum.WALLET,
+          notes: `Wallet payment for ${order.orderType} order ${order.orderNumber}`,
+        },
+        userId,
+      );
+      return result.order;
+    }
+
     order.status = this.getPaidStatusForOrder(order.orderType);
 
     order.paymentStatus = PaymentStatusEnum.PAID;
