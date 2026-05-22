@@ -11,6 +11,7 @@ import { Medication, MedicationSchema } from '../database/schemas/medication.sch
 import { Profile, ProfileSchema } from '../database/schemas/profile.schema';
 import { UserRole, UserRoleSchema } from '../database/schemas/user-role.schema';
 import { AuditLog, AuditLogSchema } from '../database/schemas/audit-log.schema';
+import { Appointment, AppointmentSchema } from '../database/schemas/appointment.schema';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AuditLog, AuditLogSchema } from '../database/schemas/audit-log.schema';
       { name: Profile.name, schema: ProfileSchema },
       { name: UserRole.name, schema: UserRoleSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
+      { name: Appointment.name, schema: AppointmentSchema },
     ]),
   ],
   controllers: [AdminController],

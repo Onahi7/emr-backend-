@@ -10,6 +10,7 @@ import { Medication } from '../database/schemas/medication.schema';
 import { Profile } from '../database/schemas/profile.schema';
 import { UserRole } from '../database/schemas/user-role.schema';
 import { AuditLog } from '../database/schemas/audit-log.schema';
+import { Appointment, AppointmentStatusEnum } from '../database/schemas/appointment.schema';
 
 @Injectable()
 export class AdminService {
@@ -23,7 +24,148 @@ export class AdminService {
     @InjectModel(Profile.name) private profileModel: Model<Profile>,
     @InjectModel(UserRole.name) private userRoleModel: Model<UserRole>,
     @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLog>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
   ) {}
+
+  private getDateRange(startDate?: string, endDate?: string) {
+    const end = endDate ? new Date(endDate) : new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = startDate ? new Date(startDate) : new Date(end);
+    if (!startDate) start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return { start, end };
+  }
+
+  private kpiStatus(value: number | null, target: number, direction: 'higher' | 'lower' = 'higher') {
+    if (value === null || Number.isNaN(value)) return 'manual';
+    if (direction === 'higher') {
+      if (value >= target) return 'green';
+      if (value >= target * 0.8) return 'yellow';
+      return 'red';
+    }
+    if (value <= target) return 'green';
+    if (value <= target * 1.2) return 'yellow';
+    return 'red';
+  }
+
+  private makeKpi(category: string, label: string, target: string, value: number | null, unit = '', owner = 'Admin', direction: 'higher' | 'lower' = 'higher', manual = false) {
+    const numericTarget = Number((target.match(/[\d.]+/) || ['0'])[0]);
+    return {
+      category,
+      label,
+      target,
+      value,
+      unit,
+      owner,
+      status: manual ? 'manual' : this.kpiStatus(value, numericTarget, direction),
+      manual,
+    };
+  }
+
+  async getManagementKpis(startDate?: string, endDate?: string): Promise<any> {
+    const { start, end } = this.getDateRange(startDate, endDate);
+    const rangeFilter = { createdAt: { $gte: start, $lte: end } };
+    const previousStart = new Date(start);
+    previousStart.setTime(start.getTime() - (end.getTime() - start.getTime()) - 1);
+    const previousEnd = new Date(start.getTime() - 1);
+    const previousFilter = { createdAt: { $gte: previousStart, $lte: previousEnd } };
+
+    const [
+      visits,
+      previousVisits,
+      newPatients,
+      payments,
+      orders,
+      appointments,
+      lowStockCount,
+      expiringCount,
+    ] = await Promise.all([
+      this.visitModel.find(rangeFilter).lean(),
+      this.visitModel.find(previousFilter).lean(),
+      this.patientModel.countDocuments(rangeFilter),
+      this.paymentModel.find(rangeFilter).lean(),
+      this.orderModel.find(rangeFilter).lean(),
+      this.appointmentModel.find({ date: { $gte: start, $lte: end } }).lean(),
+      this.medicationModel.countDocuments({ isActive: true, $expr: { $lte: ['$stockQuantity', '$reorderLevel'] } }),
+      this.medicationModel.countDocuments({ isActive: true, expiryDate: { $lte: new Date(end.getTime() + 90 * 24 * 60 * 60 * 1000) } }),
+    ]);
+
+    const totalPatientsSeen = visits.length;
+    const revenue = payments.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
+    const avgRevenuePerPatient = totalPatientsSeen ? Math.round(revenue / totalPatientsSeen) : 0;
+    const completedVisits = visits.filter((v: any) => v.status === VisitStatusEnum.COMPLETED).length;
+    const ehrCompleted = visits.filter((v: any) => v.subjectiveNotes || v.objectiveNotes || v.assessmentNotes || v.planNotes || v.diagnosis).length;
+    const ehrCompletionRate = totalPatientsSeen ? Math.round((ehrCompleted / totalPatientsSeen) * 100) : 0;
+    const paidOrders = orders.filter((o: any) => o.paymentStatus === 'paid').length;
+    const billableOrders = orders.filter((o: any) => o.status !== 'cancelled').length;
+    const billingCollectionRate = billableOrders ? Math.round((paidOrders / billableOrders) * 100) : 100;
+    const noShowOrCancelled = appointments.filter((a: any) => [AppointmentStatusEnum.NO_SHOW, AppointmentStatusEnum.CANCELLED].includes(a.status)).length;
+    const noShowRate = appointments.length ? Math.round((noShowOrCancelled / appointments.length) * 100) : 0;
+    const waitSamples = visits
+      .map((v: any) => {
+        const startTime = v.checkedInAt || v.createdAt;
+        const endTime = v.consultationStartedAt || v.triagedAt;
+        if (!startTime || !endTime) return null;
+        return Math.max(0, new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000;
+      })
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    const avgWaitTime = waitSamples.length ? Math.round(waitSamples.reduce((s, v) => s + v, 0) / waitSamples.length) : 0;
+    const digitalAppointmentRate = appointments.length ? Math.round((appointments.length / Math.max(appointments.length + totalPatientsSeen, 1)) * 100) : 0;
+    const growthRate = previousVisits.length ? Math.round(((totalPatientsSeen - previousVisits.length) / previousVisits.length) * 100) : (totalPatientsSeen ? 100 : 0);
+
+    const themedClinic = visits.reduce((acc: Record<string, number>, v: any) => {
+      const key = String(v.visitType || v.clinicType || v.patientCategory || 'general').replace(/_/g, ' ');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const kpis = {
+      overall: [
+        this.makeKpi('Patient Volume', 'Total Patients Seen', '150', totalPatientsSeen, 'patients', 'Operations Lead'),
+        this.makeKpi('Financial', 'Revenue', '1', revenue, 'Le', 'CEO'),
+        this.makeKpi('Financial', 'Average Revenue per Patient', '1', avgRevenuePerPatient, 'Le', 'CEO'),
+        this.makeKpi('Quality & Access', 'Average Wait Time', '30', avgWaitTime, 'min', 'Operations Lead', 'lower'),
+        this.makeKpi('Efficiency', 'Stockout / Low Stock Incidents', '0', lowStockCount, 'items', 'Operations Lead', 'lower'),
+        this.makeKpi('Efficiency', 'No-show / Cancellation Rate', '15', noShowRate, '%', 'IT Person', 'lower'),
+        this.makeKpi('Growth', 'New Patients This Period', '15', growthRate, '%', 'CEO'),
+      ],
+      ceo: [
+        this.makeKpi('Growth', 'Revenue Growth', '30', growthRate, '%', 'CEO'),
+        this.makeKpi('Growth', 'New Patients', '15', newPatients, 'patients', 'CEO'),
+        this.makeKpi('Strategy', 'Active Partnerships', '5', null, '', 'CEO', 'higher', true),
+        this.makeKpi('Strategy', 'Franchise Readiness Score', '80', null, '%', 'CEO', 'higher', true),
+        this.makeKpi('Compliance', 'Regulatory Compliance', '100', null, '%', 'CEO', 'higher', true),
+      ],
+      it: [
+        this.makeKpi('Digital Growth', 'Appointments Booked Digitally', '70', digitalAppointmentRate, '%', 'IT Person'),
+        this.makeKpi('Digital Growth', 'EHR Completion Rate', '95', ehrCompletionRate, '%', 'IT Person'),
+        this.makeKpi('Reliability', 'System Uptime', '98', null, '%', 'IT Person', 'higher', true),
+        this.makeKpi('Training', 'ECHO Technical Success', '100', null, '%', 'IT Person', 'higher', true),
+        this.makeKpi('Security', 'Privacy Incidents', '0', 0, 'incidents', 'IT Person', 'lower'),
+      ],
+      clinical: [
+        this.makeKpi('Utilization', 'Themed Clinic Utilization', '25', totalPatientsSeen, 'patients', 'Clinical Lead'),
+        this.makeKpi('Records', 'Completed Encounters', '70', completedVisits, 'visits', 'Clinical Lead'),
+        this.makeKpi('Outcomes', 'Immunization Completion Rate', '80', null, '%', 'Clinical Lead', 'higher', true),
+        this.makeKpi('Outcomes', 'NCD Control Rate', '70', null, '%', 'Clinical Lead', 'higher', true),
+        this.makeKpi('Safety', 'Clinical Incident Rate', '1', null, '%', 'Clinical Lead', 'lower', true),
+      ],
+      operations: [
+        this.makeKpi('Efficiency', 'Average Patient Wait Time', '30', avgWaitTime, 'min', 'Operations Lead', 'lower'),
+        this.makeKpi('Efficiency', 'Daily Patient Throughput', '30', Math.round(totalPatientsSeen / Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))), 'patients/day', 'Operations Lead'),
+        this.makeKpi('Inventory', 'Low Stock Items', '0', lowStockCount, 'items', 'Operations Lead', 'lower'),
+        this.makeKpi('Inventory', 'Expiring Soon Items', '0', expiringCount, 'items', 'Operations Lead', 'lower'),
+        this.makeKpi('Billing', 'Billing Collection Rate', '98', billingCollectionRate, '%', 'Operations Lead'),
+      ],
+    };
+
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      summary: { totalPatientsSeen, revenue, avgRevenuePerPatient, avgWaitTime, noShowRate, ehrCompletionRate, billingCollectionRate, newPatients, themedClinic },
+      kpis,
+    };
+  }
 
   /**
    * Full admin dashboard — hospital-wide summary

@@ -20,6 +20,14 @@ export class AdminController {
     return this.adminService.getDashboard(date);
   }
 
+  @Get('management-kpis')
+  getManagementKpis(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.adminService.getManagementKpis(startDate, endDate);
+  }
+
   /**
    * Revenue report for a date range
    * GET /admin/revenue?startDate=2026-05-01&endDate=2026-05-10
