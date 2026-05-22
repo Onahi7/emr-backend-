@@ -382,6 +382,14 @@ export class PatientsService {
       .sort({ createdAt: -1 })
       .exec();
 
+    // Get visit-level triage vitals recorded by nurses before doctor consultation.
+    const Visit = this.patientModel.db.model('Visit');
+    const visits = await Visit.find({ patientId: new Types.ObjectId(patientId) })
+      .populate('triagedBy', 'fullName')
+      .populate('doctorId', 'fullName')
+      .sort({ createdAt: -1 })
+      .exec();
+
     // Get prescriptions with items
     const Prescription = this.patientModel.db.model('Prescription');
     const prescriptions = await Prescription.find({ patientId: new Types.ObjectId(patientId) })
@@ -440,17 +448,80 @@ export class PatientsService {
       .sort({ admittedAt: -1 })
       .exec();
 
-    // Get vitals history from SOAP notes
-    const vitalsHistory = soapNotes
-      .filter((note: any) => note.vitalSigns)
+    const hasVitals = (vitals: any) =>
+      !!vitals &&
+      [
+        'bloodPressure',
+        'temperature',
+        'heartRate',
+        'respiratoryRate',
+        'weight',
+        'height',
+        'oxygenSaturation',
+        'bmi',
+      ].some((key) => vitals[key] !== undefined && vitals[key] !== null && vitals[key] !== '');
+
+    // Build one consistent vitals history from nurse triage, SOAP notes, and inpatient nursing vitals.
+    const triageVitalsHistory = visits
+      .map((visit: any) => ({
+        date: visit.triagedAt || visit.createdAt,
+        source: 'triage',
+        visitId: visit._id,
+        visitNumber: visit.visitNumber,
+        recordedBy: visit.triagedBy,
+        vitalSigns: {
+          bloodPressure: visit.bloodPressure,
+          temperature: visit.temperature,
+          heartRate: visit.heartRate,
+          respiratoryRate: visit.respiratoryRate,
+          weight: visit.weight,
+          height: visit.height,
+          oxygenSaturation: visit.oxygenSaturation,
+          bmi: visit.bmi,
+        },
+      }))
+      .filter((entry: any) => hasVitals(entry.vitalSigns));
+
+    const soapVitalsHistory = soapNotes
+      .filter((note: any) => hasVitals(note.vitalSigns))
       .map((note: any) => ({
         date: note.createdAt,
-        vitalSigns: note.vitalSigns,
+        source: 'soap',
+        visitId: note.visitId,
         recordedBy: note.nurseId || note.doctorId,
+        vitalSigns: note.vitalSigns,
       }));
+
+    const admissionVitalsHistory = admissions.flatMap((admission: any) =>
+      (admission.vitalsLog || [])
+        .filter((reading: any) => hasVitals(reading))
+        .map((reading: any) => ({
+          date: reading.recordedAt || admission.admittedAt,
+          source: 'admission',
+          admissionId: admission._id,
+          admissionNumber: admission.admissionNumber,
+          recordedBy: reading.recordedBy,
+          vitalSigns: {
+            bloodPressure: reading.bloodPressure,
+            temperature: reading.temperature,
+            heartRate: reading.heartRate,
+            respiratoryRate: reading.respiratoryRate,
+            weight: reading.weight,
+            height: reading.height,
+            oxygenSaturation: reading.oxygenSaturation,
+          },
+        })),
+    );
+
+    const vitalsHistory = [
+      ...triageVitalsHistory,
+      ...soapVitalsHistory,
+      ...admissionVitalsHistory,
+    ].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return {
       patient,
+      visits,
       consultations,
       prescriptions,
       soapNotes,
