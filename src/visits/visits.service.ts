@@ -11,7 +11,7 @@ import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OrdersService } from '../orders/orders.service';
-import { OrderTypeEnum, PriorityEnum } from '../database/schemas/order.schema';
+import { OrderTypeEnum, PriorityEnum, OrderStatusEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
 
 @Injectable()
 export class VisitsService {
@@ -884,6 +884,10 @@ export class VisitsService {
       throw new NotFoundException('Visit not found');
     }
 
+    if (visit.status !== VisitStatusEnum.AWAITING_RESULTS) {
+      throw new BadRequestException('Visit is not awaiting results');
+    }
+
     visit.status = VisitStatusEnum.RESULTS_READY;
     const savedVisit = await visit.save();
 
@@ -900,6 +904,48 @@ export class VisitsService {
     const visit = await this.visitModel.findById(id);
     if (!visit) {
       throw new NotFoundException('Visit not found');
+    }
+
+    // Only close encounters from valid doctor-owned closure states.
+    if (
+      ![
+        VisitStatusEnum.IN_CONSULTATION,
+        VisitStatusEnum.RESULTS_READY,
+        VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
+      ].includes(visit.status)
+    ) {
+      throw new BadRequestException(`Visit cannot be completed from status '${visit.status}'`);
+    }
+
+    // Enforce full service settlement for all linked clinical orders before closure.
+    const linkedOrders = await this.visitModel.db
+      .model('Order')
+      .find({
+        visitId: visit._id,
+        orderType: { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] },
+        status: { $ne: OrderStatusEnum.CANCELLED },
+      })
+      .lean();
+
+    const hasUnpaidOrders = linkedOrders.some(
+      (order: any) => order.paymentStatus !== PaymentStatusEnum.PAID,
+    );
+    if (hasUnpaidOrders) {
+      throw new BadRequestException('Visit has unpaid clinical orders');
+    }
+
+    const hasUnreleasedLab = linkedOrders.some(
+      (order: any) => order.orderType === OrderTypeEnum.LAB && order.status !== OrderStatusEnum.COMPLETED,
+    );
+    if (hasUnreleasedLab) {
+      throw new BadRequestException('Visit has lab orders pending result release');
+    }
+
+    const hasUndispensedPharmacy = linkedOrders.some(
+      (order: any) => order.orderType === OrderTypeEnum.PHARMACY && order.status !== OrderStatusEnum.COMPLETED,
+    );
+    if (hasUndispensedPharmacy) {
+      throw new BadRequestException('Visit has pharmacy orders pending dispensing');
     }
 
     // Release room if assigned
