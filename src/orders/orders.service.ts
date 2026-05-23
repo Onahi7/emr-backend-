@@ -21,6 +21,7 @@ import { CancelOrderDto } from './dto/cancel-order.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { LisIntegrationService } from '../lis-integration/lis-integration.service';
 
 @Injectable()
 export class OrdersService {
@@ -46,6 +47,7 @@ export class OrdersService {
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
     private realtimeGateway: RealtimeGateway,
+    private lisIntegrationService: LisIntegrationService,
   ) {}
 
   /**
@@ -348,6 +350,10 @@ export class OrdersService {
 
     // Emit real-time event
     this.realtimeGateway.notifyOrderCreated(populatedOrder);
+
+    if (savedOrder.orderType === OrderTypeEnum.LAB) {
+      void this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString());
+    }
 
     return populatedOrder;
   }
@@ -916,6 +922,14 @@ export class OrdersService {
       await this.syncVisitStatus(order.visitId as Types.ObjectId);
     }
 
+    if (order.orderType === OrderTypeEnum.LAB) {
+      void this.lisIntegrationService.syncPaymentToLis(
+        order._id.toString(),
+        addPaymentDto.amount,
+        addPaymentDto.paymentMethod,
+      );
+    }
+
     return { order: populatedOrder, payment };
   }
 
@@ -1126,7 +1140,32 @@ export class OrdersService {
     const populatedOrder = await this.findOne(id);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
 
+    if (order.orderType === OrderTypeEnum.LAB) {
+      void this.lisIntegrationService.syncPaymentToLis(
+        order._id.toString(),
+        order.total,
+        paymentMethod,
+      );
+    }
+
     return populatedOrder;
+  }
+
+  async syncToLis(id: string): Promise<Order> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
+    await this.lisIntegrationService.syncOrderToLis(id);
+    return this.findOne(id);
+  }
+
+  async fetchLisResults(id: string): Promise<any> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
+    return this.lisIntegrationService.fetchAndStoreResults(id);
   }
 
   /**

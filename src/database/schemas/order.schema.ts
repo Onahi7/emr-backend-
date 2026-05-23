@@ -126,6 +126,30 @@ export class Order extends Document {
   @Prop()
   cancellationReason?: string;
 
+  @Prop()
+  lisExternalRequestId?: string;
+
+  @Prop()
+  lisOrderId?: string;
+
+  @Prop()
+  lisOrderNumber?: string;
+
+  @Prop({
+    enum: ['not_synced', 'synced', 'failed'],
+    default: 'not_synced',
+  })
+  lisSyncStatus?: string;
+
+  @Prop()
+  lisSyncError?: string;
+
+  @Prop()
+  lisSyncedAt?: Date;
+
+  @Prop()
+  lisResultsFetchedAt?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -141,3 +165,5 @@ OrderSchema.index({ doctorId: 1 });
 OrderSchema.index({ visitId: 1 });
 OrderSchema.index({ orderType: 1 });
 OrderSchema.index({ orderType: 1, status: 1 });
+OrderSchema.index({ lisExternalRequestId: 1 }, { sparse: true });
+OrderSchema.index({ lisSyncStatus: 1 });

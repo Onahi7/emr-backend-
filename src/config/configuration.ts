@@ -11,7 +11,7 @@ export default () => ({
 
   // Database configuration
   database: {
-    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/lis',
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/emr',
     options: {
       retryWrites: true,
       w: 'majority',
@@ -60,7 +60,7 @@ export default () => ({
     secure: process.env.EMAIL_SECURE === 'true',
     user: process.env.EMAIL_USER,
     password: process.env.EMAIL_PASSWORD,
-    from: process.env.EMAIL_FROM || 'noreply@lis.com',
+    from: process.env.EMAIL_FROM || 'noreply@emr.local',
   },
 
   // SMS configuration (for future use)
@@ -69,5 +69,12 @@ export default () => ({
     accountSid: process.env.SMS_ACCOUNT_SID,
     authToken: process.env.SMS_AUTH_TOKEN,
     fromNumber: process.env.SMS_FROM_NUMBER,
+  },
+
+  // Partner LIS integration
+  lis: {
+    baseUrl: process.env.LIS_API_BASE_URL,
+    apiKey: process.env.LIS_API_KEY,
+    timeoutMs: parseInt(process.env.LIS_API_TIMEOUT_MS || '15000', 10),
   },
 });

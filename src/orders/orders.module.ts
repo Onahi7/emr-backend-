@@ -10,6 +10,7 @@ import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog
 import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
 import { Visit, VisitSchema } from '../database/schemas/visit.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { LisIntegrationModule } from '../lis-integration/lis-integration.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: Visit.name, schema: VisitSchema },
     ]),
     RealtimeModule,
+    LisIntegrationModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
