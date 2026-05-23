@@ -50,12 +50,12 @@ export class LisIntegrationService {
     const externalRequestId = order.lisExternalRequestId || `EMR-${order.orderNumber}`;
 
     try {
+      const testsToSend = this.buildLisTests(order.order_tests || []);
+
       const response = await this.client.post('/external-api/test-requests', {
         externalRequestId,
         patient: this.mapPatient(order.patientId),
-        tests: (order.order_tests || []).map((test: any) => ({
-          code: test.testCode || test.test_code,
-        })),
+        tests: testsToSend,
         priority: order.priority,
         referredByDoctor: order.doctorId?.fullName,
         notes: [
@@ -82,6 +82,32 @@ export class LisIntegrationService {
       });
       this.logger.warn(`LIS order sync failed for ${order.orderNumber}: ${message}`);
     }
+  }
+
+  /**
+   * Build LIS test payload:
+   * - If order tests are panel components (have panelCode), send the parent panel code once.
+   * - Include standalone tests that have no panelCode.
+   * This avoids sending analyzer component codes that partner LIS may not accept as orderable tests.
+   */
+  private buildLisTests(orderTests: any[]): Array<{ code: string }> {
+    const codes = new Set<string>();
+
+    for (const test of orderTests) {
+      const panelCode = (test.panelCode || test.panel_code || '').toString().trim().toUpperCase();
+      const testCode = (test.testCode || test.test_code || '').toString().trim().toUpperCase();
+
+      if (panelCode) {
+        codes.add(panelCode);
+        continue;
+      }
+
+      if (testCode) {
+        codes.add(testCode);
+      }
+    }
+
+    return Array.from(codes).map((code) => ({ code }));
   }
 
   async syncPaymentToLis(orderId: string, amount: number, paymentMethod: string): Promise<void> {

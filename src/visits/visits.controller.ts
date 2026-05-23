@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -190,47 +191,53 @@ export class VisitsController {
   }
 
   /**
-   * Doctor orders lab tests
+   * Deprecated: use POST /orders with orderType=lab and visitId instead.
    * PATCH /visits/:id/order-lab
    */
   @Patch(':id/order-lab')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  orderLab(@Param('id') id: string) {
-    return this.visitsService.orderLab(id);
+  orderLab(@Param('id') _id: string) {
+    throw new BadRequestException(
+      'Deprecated endpoint. Create a lab order via POST /orders (orderType=lab, visitId).',
+    );
   }
 
   /**
-   * Doctor prescribes medication
+   * Deprecated: use POST /orders with orderType=pharmacy and visitId instead.
    * PATCH /visits/:id/prescribe
    */
   @Patch(':id/prescribe')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  prescribeMedication(@Param('id') id: string) {
-    return this.visitsService.prescribeMedication(id);
+  prescribeMedication(@Param('id') _id: string) {
+    throw new BadRequestException(
+      'Deprecated endpoint. Create a pharmacy order via POST /orders (orderType=pharmacy, visitId).',
+    );
   }
 
   /**
-   * Mark lab payment as paid
+   * Deprecated: use PATCH /orders/:id/mark-paid for the specific lab order.
    * PATCH /visits/:id/mark-lab-paid
    */
   @Patch(':id/mark-lab-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  markLabPaid(@Param('id') id: string) {
-    return this.visitsService.markLabPaid(id);
+  markLabPaid(@Param('id') _id: string) {
+    throw new BadRequestException(
+      'Deprecated endpoint. Mark the corresponding lab order paid via PATCH /orders/:id/mark-paid.',
+    );
   }
 
   /**
-   * Mark pharmacy payment as paid
+   * Deprecated: use PATCH /orders/:id/mark-paid for the specific pharmacy order.
    * PATCH /visits/:id/mark-pharmacy-paid
    */
   @Patch(':id/mark-pharmacy-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markPharmacyPaid(
-    @Param('id') id: string,
-    @Body() body: { paymentMethod?: string },
-    @Request() req: any,
+    @Param('id') _id: string,
   ) {
-    return this.visitsService.markPharmacyPaid(id, body.paymentMethod || 'cash', req.user?.userId);
+    throw new BadRequestException(
+      'Deprecated endpoint. Mark the corresponding pharmacy order paid via PATCH /orders/:id/mark-paid.',
+    );
   }
 
   /**
