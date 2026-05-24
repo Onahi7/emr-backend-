@@ -49,7 +49,16 @@ export class SettingsController {
    * GET /settings/connection/config
    */
   @Get('connection/config')
-  @Roles(UserRoleEnum.ADMIN)
+  @Roles(
+    UserRoleEnum.ADMIN,
+    UserRoleEnum.DOCTOR,
+    UserRoleEnum.SPECIALIST,
+    UserRoleEnum.NURSE,
+    UserRoleEnum.RECEPTIONIST,
+    UserRoleEnum.LAB_TECH,
+    UserRoleEnum.PHARMACIST,
+    UserRoleEnum.INVENTORY_MANAGER,
+  )
   async getConnectionConfig() {
     return this.settingsService.getSetting('connection_config');
   }
