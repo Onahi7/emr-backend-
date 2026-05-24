@@ -218,21 +218,37 @@ export class LisIntegrationService {
       `/external-api/test-requests/${encodeURIComponent(order.lisExternalRequestId)}/results`,
     );
     const results = response.data?.results || [];
+    const orderObjectId = new Types.ObjectId(orderId);
+    const orderTests = await this.orderModel.db
+      .model('OrderTest')
+      .find({ orderId: orderObjectId })
+      .select('_id testCode')
+      .lean();
+    const orderTestByCode = new Map(
+      orderTests.map((test: any) => [
+        (test.testCode || '').toString().trim().toUpperCase(),
+        test._id,
+      ]),
+    );
 
     for (const result of results) {
       if (!result.testCode || result.value === undefined || result.value === null) {
         continue;
       }
 
+      const normalizedTestCode = result.testCode.toString().trim().toUpperCase();
+      const orderTestId = orderTestByCode.get(normalizedTestCode);
+
       await this.resultModel.updateOne(
         {
-          orderId: new Types.ObjectId(orderId),
-          testCode: result.testCode,
+          orderId: orderObjectId,
+          testCode: normalizedTestCode,
         },
         {
           $set: {
-            orderId: new Types.ObjectId(orderId),
-            testCode: result.testCode,
+            orderId: orderObjectId,
+            orderTestId,
+            testCode: normalizedTestCode,
             testName: result.testName || result.testCode,
             panelCode: result.panelCode,
             panelName: result.panelName,
