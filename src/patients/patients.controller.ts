@@ -33,7 +33,7 @@ export class PatientsController {
   }
 
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async findAll(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -45,13 +45,13 @@ export class PatientsController {
   }
 
   @Get('search')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async search(@Query('q') query: string) {
     return this.patientsService.search(query);
   }
 
   @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async findOne(@Param('id') id: string) {
     return this.patientsService.findOne(id);
   }
@@ -73,7 +73,7 @@ export class PatientsController {
   }
 
   @Post(':id/notes')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async addNote(
     @Param('id') id: string,
     @Body() createNoteDto: CreatePatientNoteDto,
@@ -83,25 +83,25 @@ export class PatientsController {
   }
 
   @Get(':id/notes')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async getNotes(@Param('id') id: string) {
     return this.patientsService.getNotes(id);
   }
 
   @Get(':id/orders')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async getOrders(@Param('id') id: string) {
     return this.patientsService.getOrders(id);
   }
 
     @Get(':id/results')
-    @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+    @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
     async getResults(@Param('id') id: string) {
       return this.patientsService.getResults(id);
     }
 
     @Get(':id/chart')
-    @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
+    @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
     async getChart(@Param('id') id: string, @Request() req: any) {
       return this.patientsService.getPatientChart(id, req.user?.roles || []);
     }

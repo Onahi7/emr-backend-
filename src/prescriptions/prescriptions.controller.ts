@@ -19,7 +19,7 @@ export class PrescriptionsController {
   }
 
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
   findAll() {
     return this.prescriptionsService.findAll({});
   }
@@ -45,13 +45,13 @@ export class PrescriptionsController {
   }
 
   @Get('patient/:patientId')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
   findByPatient(@Param('patientId') patientId: string) {
     return this.prescriptionsService.findAll({ patientId });
   }
 
   @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
   findOne(@Param('id') id: string) {
     return this.prescriptionsService.findById(id);
   }
@@ -81,7 +81,7 @@ export class PrescriptionsController {
   }
 
   @Patch(':id/cancel')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   cancel(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
     return this.prescriptionsService.cancel(id, body.reason, req.user?.userId);
   }

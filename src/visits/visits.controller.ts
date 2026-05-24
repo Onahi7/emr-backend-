@@ -43,7 +43,7 @@ export class VisitsController {
    * GET /visits
    */
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   findAll(
     @Query('status') status?: VisitStatusEnum,
     @Query('patientId') patientId?: string,
@@ -141,7 +141,7 @@ export class VisitsController {
    * GET /visits/patient/:patientId
    */
   @Get('patient/:patientId')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   findByPatient(@Param('patientId') patientId: string) {
     return this.visitsService.findByPatient(patientId);
   }
@@ -151,7 +151,7 @@ export class VisitsController {
    * GET /visits/:id
    */
   @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   findOne(@Param('id') id: string) {
     return this.visitsService.findById(id);
   }
@@ -161,7 +161,7 @@ export class VisitsController {
    * PATCH /visits/:id
    */
   @Patch(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   update(@Param('id') id: string, @Body() updateVisitDto: UpdateVisitDto) {
     return this.visitsService.update(id, updateVisitDto);
   }
