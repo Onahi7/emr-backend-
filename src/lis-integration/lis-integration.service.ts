@@ -41,6 +41,55 @@ export class LisIntegrationService {
     return !!this.client;
   }
 
+  async fetchLisOrderables(): Promise<Array<{
+    code: string;
+    name: string;
+    price?: number;
+    isPanel?: boolean;
+    category?: string;
+  }>> {
+    if (!this.client) return [];
+
+    // Try known partner endpoints in order. We normalize shape for EMR UI.
+    const candidates = [
+      '/external-api/catalog',
+      '/external-api/tests',
+      '/external-api/orderables',
+    ];
+
+    for (const path of candidates) {
+      try {
+        const response = await this.client.get(path);
+        const payload = response.data;
+        const list = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : Array.isArray(payload?.items)
+              ? payload.items
+              : [];
+
+        if (!Array.isArray(list) || list.length === 0) continue;
+
+        const normalized = list
+          .map((item: any) => ({
+            code: (item.code || item.testCode || item.panelCode || '').toString().trim().toUpperCase(),
+            name: (item.name || item.testName || item.panelName || item.description || '').toString().trim(),
+            price: Number(item.price ?? item.amount ?? 0) || 0,
+            isPanel: Boolean(item.isPanel || item.type === 'panel' || item.kind === 'panel'),
+            category: item.category || item.department || 'lab',
+          }))
+          .filter((x) => x.code && x.name);
+
+        if (normalized.length > 0) return normalized;
+      } catch (error: any) {
+        this.logger.debug(`LIS catalog endpoint failed (${path}): ${this.getErrorMessage(error)}`);
+      }
+    }
+
+    return [];
+  }
+
   async syncOrderToLis(orderId: string): Promise<void> {
     if (!this.client) return;
 
@@ -50,7 +99,7 @@ export class LisIntegrationService {
     const externalRequestId = order.lisExternalRequestId || `EMR-${order.orderNumber}`;
 
     try {
-      const testsToSend = this.buildLisTests(order.order_tests || []);
+      const testsToSend = this.buildLisTests(order.lisRequestedCodes || [], order.order_tests || []);
 
       const response = await this.client.post('/external-api/test-requests', {
         externalRequestId,
@@ -58,6 +107,7 @@ export class LisIntegrationService {
         tests: testsToSend,
         priority: order.priority,
         referredByDoctor: order.doctorId?.fullName,
+        orderedBy: order.orderedBy?.fullName,
         notes: [
           order.notes,
           `EMR order ${order.orderNumber}`,
@@ -90,7 +140,20 @@ export class LisIntegrationService {
    * - Include standalone tests that have no panelCode.
    * This avoids sending analyzer component codes that partner LIS may not accept as orderable tests.
    */
-  private buildLisTests(orderTests: any[]): Array<{ code: string }> {
+  private buildLisTests(requestedCodes: string[], orderTests: any[]): Array<{ code: string }> {
+    // Primary source of truth: explicit requested LIS codes captured at order creation.
+    const explicit = Array.from(
+      new Set(
+        (requestedCodes || [])
+          .map((code) => (code || '').toString().trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    );
+    if (explicit.length > 0) {
+      return explicit.map((code) => ({ code }));
+    }
+
+    // Fallback for legacy orders created before lisRequestedCodes existed.
     const codes = new Set<string>();
 
     for (const test of orderTests) {
@@ -208,6 +271,7 @@ export class LisIntegrationService {
       .findById(orderId)
       .populate('patientId', 'patientId firstName lastName age ageValue ageUnit gender phone address mrn')
       .populate('doctorId', 'fullName')
+      .populate('orderedBy', 'fullName email')
       .lean()
       .then(async (order: any) => {
         if (!order) return null;

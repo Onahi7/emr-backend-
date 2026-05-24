@@ -240,6 +240,15 @@ export class OrdersService {
     // Generate order number
     const orderNumber = await this.generateOrderNumber();
 
+    // Preserve clinician-selected LIS orderable codes (panel/test) exactly as requested.
+    const lisRequestedCodes = Array.from(
+      new Set(
+        (createOrderDto.tests || [])
+          .map((t) => (t.testCode || '').toString().trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    );
+
     let doctorObjectId: Types.ObjectId | undefined;
     let referredByDoctor = createOrderDto.referredByDoctor?.trim();
     if (createOrderDto.doctorId) {
@@ -290,12 +299,25 @@ export class OrdersService {
       referredByDoctor,
       doctorId: doctorObjectId,
       orderedBy: userId ? new Types.ObjectId(userId) : undefined,
+      lisRequestedCodes,
     });
 
     const savedOrder = await order.save();
 
-    // Expand tests to include linked tests (e.g., CRP automatically includes HSCRP)
-    const expandedTests = await this.expandLinkedTests(createOrderDto.tests);
+    // For LAB orders, preserve exactly what EMR user selected so LIS remains source of truth.
+    // For non-LAB orders, keep local expansion behavior.
+    const expandedTests = orderType === OrderTypeEnum.LAB
+      ? createOrderDto.tests.map((test) => ({
+          testId: test.testId,
+          testCode: test.testCode,
+          testName: test.testName,
+          panelCode: test.panelCode,
+          panelName: test.panelName,
+          category: undefined,
+          subcategory: undefined,
+          price: test.price,
+        }))
+      : await this.expandLinkedTests(createOrderDto.tests);
 
     // Create order tests
     const orderTests = expandedTests.map((test) => ({
@@ -1194,6 +1216,25 @@ export class OrdersService {
     }
 
     return this.lisIntegrationService.fetchAndStoreResults(id);
+  }
+
+  async getLisCatalog(): Promise<Array<{
+    _id: string;
+    code: string;
+    name: string;
+    price: number;
+    isPanel: boolean;
+    category: string;
+  }>> {
+    const items = await this.lisIntegrationService.fetchLisOrderables();
+    return items.map((item) => ({
+      _id: item.code,
+      code: item.code,
+      name: item.name,
+      price: Number(item.price || 0),
+      isPanel: Boolean(item.isPanel),
+      category: item.category || 'lab',
+    }));
   }
 
   /**

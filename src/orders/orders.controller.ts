@@ -92,6 +92,16 @@ export class OrdersController {
     return this.ordersService.getPendingResults();
   }
 
+  /**
+   * Get live LIS orderable tests/panels for doctor ordering UI.
+   * EMR should use this as source for lab request selection.
+   */
+  @Get('lis-catalog')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.RECEPTIONIST)
+  async getLisCatalog() {
+    return this.ordersService.getLisCatalog();
+  }
+
   @Get('stats/payment')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   async getPaymentStats(

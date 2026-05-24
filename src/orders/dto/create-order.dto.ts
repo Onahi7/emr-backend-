@@ -18,8 +18,9 @@ import {
 } from '../../database/schemas/order.schema';
 
 export class OrderTestDto {
+  @IsOptional()
   @IsMongoId()
-  testId: string;
+  testId?: string;
 
   @IsString()
   testCode: string;

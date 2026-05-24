@@ -150,6 +150,11 @@ export class Order extends Document {
   @Prop()
   lisResultsFetchedAt?: Date;
 
+  // Exact LIS orderable codes requested by clinician (panel/test codes).
+  // This preserves source-of-truth intent for partner LIS sync.
+  @Prop({ type: [String], default: [] })
+  lisRequestedCodes?: string[];
+
   createdAt: Date;
   updatedAt: Date;
 }
