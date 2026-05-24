@@ -134,6 +134,16 @@ export class OrdersController {
     return this.ordersService.syncToLis(id);
   }
 
+  /**
+   * Force-sync payment state for a paid lab order to partner LIS.
+   * Useful when an order synced but did not appear in LIS collection queue due to payment sync drift.
+   */
+  @Post(':id/sync-lis-payment')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
+  async syncLisPayment(@Param('id') id: string) {
+    return this.ordersService.syncLisPayment(id);
+  }
+
   @Post(':id/fetch-lis-results')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   async fetchLisResults(@Param('id') id: string) {

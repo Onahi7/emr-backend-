@@ -1160,6 +1160,34 @@ export class OrdersService {
     return this.findOne(id);
   }
 
+  async syncLisPayment(id: string): Promise<Order> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
+    const order = await this.orderModel.findById(id).exec();
+    if (!order) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
+    if (order.orderType !== OrderTypeEnum.LAB) {
+      throw new BadRequestException('LIS payment sync is only supported for lab orders');
+    }
+
+    if (order.paymentStatus !== PaymentStatusEnum.PAID) {
+      throw new BadRequestException('Only fully paid lab orders can be synced to LIS payment state');
+    }
+
+    const paymentMethod = order.paymentMethod || PaymentMethodEnum.CASH;
+    await this.lisIntegrationService.syncPaymentToLis(
+      order._id.toString(),
+      order.amountPaid || order.total,
+      paymentMethod,
+    );
+
+    return this.findOne(id);
+  }
+
   async fetchLisResults(id: string): Promise<any> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
