@@ -66,11 +66,17 @@ async function bootstrap() {
       if (/^https:\/\/[a-zA-Z0-9-]+\.pages\.dev$/.test(origin)) {
         return callback(null, true);
       }
+
+      // Allow secure browser clients by default. The API is still protected by JWT/roles,
+      // and this prevents production lockouts when frontend hostnames change.
+      if (/^https:\/\//.test(origin)) {
+        return callback(null, true);
+      }
       
       callback(null, false);
     },
     credentials: configService.get('cors.credentials'),
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page'],
     maxAge: 3600,
