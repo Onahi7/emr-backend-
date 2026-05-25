@@ -20,20 +20,7 @@ async function bootstrap() {
   // Enable gzip/brotli compression — critical for slow/unstable networks
   app.use(compression());
 
-  // Enable security headers with Helmet
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-      },
-    },
-    crossOriginEmbedderPolicy: false, // Allow embedding for development
-  }));
-
-  // Enable CORS — accept Electron (file://) and LAN connections
+  // Enable CORS FIRST — must run before Helmet so preflight responses aren't blocked
   const corsOrigin = configService.get<string>('cors.origin') || '';
   const configuredOrigins = corsOrigin
     .split(',')
@@ -82,6 +69,20 @@ async function bootstrap() {
     maxAge: 3600,
   });
   logger.log(`CORS enabled for origins: ${configuredOrigins.join(', ') || '(none)'} + localhost (all ports) + LAN + Cloudflare`);
+
+  // Enable security headers with Helmet AFTER CORS so preflight isn't blocked
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Allow cross-origin requests from frontend
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource loading
+  }));
 
   // Enable global validation pipe
   app.useGlobalPipes(

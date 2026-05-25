@@ -11,6 +11,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
+    // Always allow OPTIONS preflight requests (CORS)
+    const request = context.switchToHttp().getRequest();
+    if (request.method === 'OPTIONS') {
+      return true;
+    }
+
     // Check if route is marked as public
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
