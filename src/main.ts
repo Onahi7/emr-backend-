@@ -34,14 +34,18 @@ async function bootstrap() {
   }));
 
   // Enable CORS — accept Electron (file://) and LAN connections
-  const corsOrigin = configService.get('cors.origin');
+  const corsOrigin = configService.get<string>('cors.origin') || '';
+  const configuredOrigins = corsOrigin
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Allow requests with no origin (Electron file://, mobile apps, curl)
       if (!origin) return callback(null, true);
       
-      // Allow configured origin (e.g. http://localhost:5173)
-      if (origin === corsOrigin) return callback(null, true);
+      // Allow explicitly configured origins (comma-separated)
+      if (configuredOrigins.includes(origin)) return callback(null, true);
       
       // Allow any localhost/127.0.0.1 with any port (for development)
       if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
@@ -71,7 +75,7 @@ async function bootstrap() {
     exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page'],
     maxAge: 3600,
   });
-  logger.log(`CORS enabled for origin: ${corsOrigin} + localhost (all ports) + LAN + Cloudflare`);
+  logger.log(`CORS enabled for origins: ${configuredOrigins.join(', ') || '(none)'} + localhost (all ports) + LAN + Cloudflare`);
 
   // Enable global validation pipe
   app.useGlobalPipes(
