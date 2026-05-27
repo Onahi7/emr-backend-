@@ -3,12 +3,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { LisIntegrationService } from './lis-integration.service';
 import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { Result, ResultSchema } from '../database/schemas/result.schema';
+import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Order.name, schema: OrderSchema },
       { name: Result.name, schema: ResultSchema },
+      { name: TestCatalog.name, schema: TestCatalogSchema },
     ]),
   ],
   providers: [LisIntegrationService],

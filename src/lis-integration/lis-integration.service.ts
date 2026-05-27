@@ -10,7 +10,8 @@ import {
   PaymentMethodEnum,
   PaymentStatusEnum,
 } from '../database/schemas/order.schema';
-import { Result, ResultStatusEnum } from '../database/schemas/result.schema';
+import { Result, ResultFlagEnum, ResultStatusEnum } from '../database/schemas/result.schema';
+import { TestCatalog } from '../database/schemas/test-catalog.schema';
 
 @Injectable()
 export class LisIntegrationService {
@@ -21,6 +22,7 @@ export class LisIntegrationService {
     private readonly configService: ConfigService,
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Result.name) private resultModel: Model<Result>,
+    @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
   ) {
     const baseURL = this.configService.get<string>('lis.baseUrl');
     const apiKey = this.configService.get<string>('lis.apiKey');
@@ -226,7 +228,7 @@ export class LisIntegrationService {
       .lean();
     const orderTestByCode = new Map(
       orderTests.map((test: any) => [
-        (test.testCode || '').toString().trim().toUpperCase(),
+        this.normalizeTestCode(test.testCode),
         test._id,
       ]),
     );
@@ -236,8 +238,15 @@ export class LisIntegrationService {
         continue;
       }
 
-      const normalizedTestCode = result.testCode.toString().trim().toUpperCase();
+      const normalizedTestCode = this.normalizeTestCode(result.testCode);
       const orderTestId = orderTestByCode.get(normalizedTestCode);
+      const catalogTest = await this.findCatalogTest(normalizedTestCode, result.testCode);
+      const referenceRange =
+        result.referenceRange ||
+        catalogTest?.referenceRange ||
+        this.pickCatalogReferenceRange(catalogTest);
+      const calculatedFlag = this.calculateFlag(String(result.value), referenceRange);
+      const flag = this.pickResultFlag(result.flag, calculatedFlag);
 
       await this.resultModel.updateOne(
         {
@@ -249,14 +258,14 @@ export class LisIntegrationService {
             orderId: orderObjectId,
             orderTestId,
             testCode: normalizedTestCode,
-            testName: result.testName || result.testCode,
+            testName: result.testName || catalogTest?.name || normalizedTestCode,
             panelCode: result.panelCode,
             panelName: result.panelName,
-            subcategory: result.subcategory,
+            subcategory: result.subcategory || catalogTest?.subcategory,
             value: String(result.value),
-            unit: result.unit,
-            referenceRange: result.referenceRange,
-            flag: result.flag || 'normal',
+            unit: result.unit || catalogTest?.unit,
+            referenceRange,
+            flag,
             status: result.status || ResultStatusEnum.VERIFIED,
             resultedAt: result.resultedAt ? new Date(result.resultedAt) : new Date(),
             verifiedAt: result.verifiedAt ? new Date(result.verifiedAt) : undefined,
@@ -317,6 +326,99 @@ export class LisIntegrationService {
     if (paymentMethod === PaymentMethodEnum.ORANGE_MONEY) return 'orange_money';
     if (paymentMethod === PaymentMethodEnum.AFRIMONEY) return 'afrimoney';
     return 'cash';
+  }
+
+  private normalizeTestCode(code?: string): string {
+    const compact = (code || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    if (['HBA1C', 'HBAIC', 'A1C', 'HBA', 'GLYCATEDHB', 'GLYCATEDHEMOGLOBIN'].includes(compact)) {
+      return 'HBA1C';
+    }
+
+    if (['CKMB', 'CKMBMASS', 'CREATINEKINASEMB'].includes(compact)) {
+      return 'CKMB';
+    }
+
+    return compact;
+  }
+
+  private async findCatalogTest(normalizedCode: string, originalCode?: string): Promise<any> {
+    const original = this.normalizeTestCode(originalCode);
+    const rawOriginal = (originalCode || '').toString().trim().toUpperCase();
+    const codeCandidates = Array.from(new Set([normalizedCode, original, rawOriginal].filter(Boolean)));
+
+    return this.testCatalogModel
+      .findOne({ code: { $in: codeCandidates } })
+      .select('code name unit referenceRange referenceRanges subcategory')
+      .lean();
+  }
+
+  private pickCatalogReferenceRange(catalogTest?: any): string | undefined {
+    if (!catalogTest?.referenceRanges?.length) {
+      return undefined;
+    }
+
+    const normalRange = catalogTest.referenceRanges.find((range: any) =>
+      ['normal', 'adult', 'all'].includes((range.ageGroup || range.condition || range.gender || '').toString().toLowerCase()),
+    );
+
+    return (normalRange || catalogTest.referenceRanges[0])?.range;
+  }
+
+  private pickResultFlag(incomingFlag: string | undefined, calculatedFlag: ResultFlagEnum): ResultFlagEnum {
+    const normalizedIncoming = (incomingFlag || '').toString().trim().toLowerCase();
+    const validFlags = new Set(Object.values(ResultFlagEnum));
+
+    if (validFlags.has(normalizedIncoming as ResultFlagEnum) && normalizedIncoming !== ResultFlagEnum.NORMAL) {
+      return normalizedIncoming as ResultFlagEnum;
+    }
+
+    return calculatedFlag;
+  }
+
+  private calculateFlag(value: string, referenceRange?: string): ResultFlagEnum {
+    if (!referenceRange) {
+      return ResultFlagEnum.NORMAL;
+    }
+
+    const normalizedValue = String(value || '').trim().replace('≤', '<=').replace('≥', '>=');
+    const numericValueMatch = normalizedValue.match(/^(?:[<>]=?)?\s*(-?\d*\.?\d+)/);
+    if (!numericValueMatch) {
+      return ResultFlagEnum.NORMAL;
+    }
+
+    const numericValue = parseFloat(numericValueMatch[1]);
+    const normalizedRange = String(referenceRange)
+      .trim()
+      .replace('≤', '<=')
+      .replace('≥', '>=')
+      .replace(/â‰¤/g, '<=')
+      .replace(/â‰¥/g, '>=')
+      .replace(/[–—]/g, '-');
+
+    const rangeMatch = normalizedRange.match(/(-?\d*\.?\d+)\s*-\s*(-?\d*\.?\d+)/);
+    if (rangeMatch) {
+      const low = parseFloat(rangeMatch[1]);
+      const high = parseFloat(rangeMatch[2]);
+
+      if (numericValue < low) return ResultFlagEnum.LOW;
+      if (numericValue > high) return ResultFlagEnum.HIGH;
+      return ResultFlagEnum.NORMAL;
+    }
+
+    const thresholdMatch = normalizedRange.match(/^(<=|>=|<|>)\s*(-?\d*\.?\d+)$/);
+    if (thresholdMatch) {
+      const operator = thresholdMatch[1];
+      const threshold = parseFloat(thresholdMatch[2]);
+
+      if (operator === '<' || operator === '<=') {
+        return numericValue >= threshold ? ResultFlagEnum.HIGH : ResultFlagEnum.NORMAL;
+      }
+
+      return numericValue <= threshold ? ResultFlagEnum.LOW : ResultFlagEnum.NORMAL;
+    }
+
+    return ResultFlagEnum.NORMAL;
   }
 
   private getErrorMessage(error: any): string {
