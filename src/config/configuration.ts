@@ -73,8 +73,8 @@ export default () => ({
 
   // Partner LIS integration
   lis: {
-    baseUrl: process.env.LIS_API_BASE_URL,
-    apiKey: process.env.LIS_API_KEY,
+    baseUrl: process.env.LIS_API_BASE_URL || process.env.LIS_BASE_URL || process.env.LIS_API_URL || process.env.LIS_URL,
+    apiKey: process.env.LIS_API_KEY || process.env.LIS_API_TOKEN || process.env.LIS_EXTERNAL_API_KEY || process.env.LIS_KEY,
     timeoutMs: parseInt(process.env.LIS_API_TIMEOUT_MS || '15000', 10),
   },
 });

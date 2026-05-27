@@ -49,6 +49,7 @@ export class LisIntegrationService {
     price?: number;
     isPanel?: boolean;
     category?: string;
+    panelComponents?: Array<{ testCode: string; testName: string }>;
   }>> {
     if (!this.client) return [];
 
@@ -77,19 +78,30 @@ export class LisIntegrationService {
         if (!Array.isArray(list) || list.length === 0) continue;
 
         const normalized = list
-          .map((item: any) => ({
-            code: (item.code || item.testCode || item.panelCode || '').toString().trim().toUpperCase(),
-            name: (item.name || item.testName || item.panelName || item.description || '').toString().trim(),
-            price: Number(item.price ?? item.amount ?? 0) || 0,
-            isPanel: Boolean(
-              item.isPanel ||
-              item.type === 'panel' ||
-              item.kind === 'panel' ||
-              (Array.isArray(item.tests) && item.tests.length > 0) ||
-              (Array.isArray(item.panelComponents) && item.panelComponents.length > 0)
-            ),
-            category: item.category || item.department || 'lab',
-          }))
+          .map((item: any) => {
+            const components = Array.isArray(item.panelComponents)
+              ? item.panelComponents
+              : Array.isArray(item.tests)
+                ? item.tests
+                : [];
+
+            return {
+              code: (item.code || item.testCode || item.panelCode || '').toString().trim().toUpperCase(),
+              name: (item.name || item.testName || item.panelName || item.description || '').toString().trim(),
+              price: Number(item.price ?? item.amount ?? 0) || 0,
+              isPanel: Boolean(
+                item.isPanel ||
+                item.type === 'panel' ||
+                item.kind === 'panel' ||
+                components.length > 0
+              ),
+              category: item.category || item.department || 'lab',
+              panelComponents: components.map((component: any) => ({
+                testCode: (component.testCode || component.code || '').toString().trim().toUpperCase(),
+                testName: (component.testName || component.name || component.testCode || component.code || '').toString().trim(),
+              })).filter((component: any) => component.testCode || component.testName),
+            };
+          })
           .filter((x) => x.code && x.name);
 
         if (normalized.length > 0) return normalized;

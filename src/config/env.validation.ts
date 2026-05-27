@@ -103,6 +103,43 @@ export class EnvironmentVariables {
   @IsOptional()
   EMAIL_FROM: string = 'noreply@lis.com';
 
+  // Partner LIS integration (Optional)
+  @IsString()
+  @IsOptional()
+  LIS_API_BASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_BASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_API_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_API_TOKEN?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_EXTERNAL_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  LIS_KEY?: string;
+
+  @IsNumber()
+  @IsOptional()
+  LIS_API_TIMEOUT_MS?: number;
+
   // SMS (Optional)
   @IsString()
   @IsOptional()

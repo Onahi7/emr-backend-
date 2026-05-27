@@ -1225,6 +1225,7 @@ export class OrdersService {
     price: number;
     isPanel: boolean;
     category: string;
+    panelComponents?: Array<{ testCode: string; testName: string }>;
   }>> {
     const items = await this.lisIntegrationService.fetchLisOrderables();
     return items.map((item) => ({
@@ -1234,6 +1235,7 @@ export class OrdersService {
       price: Number(item.price || 0),
       isPanel: Boolean(item.isPanel),
       category: item.category || 'lab',
+      panelComponents: item.panelComponents || [],
     }));
   }
 
