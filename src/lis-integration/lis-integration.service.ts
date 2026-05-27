@@ -81,7 +81,13 @@ export class LisIntegrationService {
             code: (item.code || item.testCode || item.panelCode || '').toString().trim().toUpperCase(),
             name: (item.name || item.testName || item.panelName || item.description || '').toString().trim(),
             price: Number(item.price ?? item.amount ?? 0) || 0,
-            isPanel: Boolean(item.isPanel || item.type === 'panel' || item.kind === 'panel'),
+            isPanel: Boolean(
+              item.isPanel ||
+              item.type === 'panel' ||
+              item.kind === 'panel' ||
+              (Array.isArray(item.tests) && item.tests.length > 0) ||
+              (Array.isArray(item.panelComponents) && item.panelComponents.length > 0)
+            ),
             category: item.category || item.department || 'lab',
           }))
           .filter((x) => x.code && x.name);
