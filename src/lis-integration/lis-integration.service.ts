@@ -114,6 +114,9 @@ export class LisIntegrationService {
 
       const response = await this.client.post('/external-api/test-requests', {
         externalRequestId,
+        sourceSystem: process.env.LIS_SOURCE_SYSTEM || 'Harbour EMR',
+        sourceFacilityName: process.env.LIS_SOURCE_FACILITY_NAME || 'Harbour EMR',
+        sourceFacilityLocation: process.env.LIS_SOURCE_FACILITY_LOCATION || process.env.EMR_LOCATION || 'EMR',
         patient: this.mapPatient(order.patientId),
         tests: testsToSend,
         priority: order.priority,
