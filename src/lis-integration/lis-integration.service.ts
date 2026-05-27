@@ -406,7 +406,7 @@ export class LisIntegrationService {
       return ResultFlagEnum.NORMAL;
     }
 
-    const thresholdMatch = normalizedRange.match(/^(<=|>=|<|>)\s*(-?\d*\.?\d+)$/);
+    const thresholdMatch = normalizedRange.match(/^(<=|>=|<|>)\s*(-?\d*\.?\d+)/);
     if (thresholdMatch) {
       const operator = thresholdMatch[1];
       const threshold = parseFloat(thresholdMatch[2]);
