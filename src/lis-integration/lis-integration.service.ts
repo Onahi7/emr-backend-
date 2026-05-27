@@ -69,7 +69,10 @@ export class LisIntegrationService {
             ? payload.data
             : Array.isArray(payload?.items)
               ? payload.items
-              : [];
+              : [
+                  ...(Array.isArray(payload?.tests) ? payload.tests : []),
+                  ...(Array.isArray(payload?.panels) ? payload.panels : []),
+                ];
 
         if (!Array.isArray(list) || list.length === 0) continue;
 
@@ -109,7 +112,6 @@ export class LisIntegrationService {
         tests: testsToSend,
         priority: order.priority,
         referredByDoctor: order.doctorId?.fullName,
-        orderedBy: order.orderedBy?.fullName,
         notes: [
           order.notes,
           `EMR order ${order.orderNumber}`,
@@ -422,11 +424,12 @@ export class LisIntegrationService {
   }
 
   private getErrorMessage(error: any): string {
-    return (
+    const message =
       error?.response?.data?.message ||
       error?.response?.data?.error ||
       error?.message ||
-      'Unknown LIS integration error'
-    );
+      'Unknown LIS integration error';
+
+    return Array.isArray(message) ? message.join('; ') : String(message);
   }
 }
