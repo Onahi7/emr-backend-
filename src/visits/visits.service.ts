@@ -518,7 +518,7 @@ export class VisitsService {
   }
 
   /**
-   * Nurse triage — record vitals, priority, optionally assign a doctor, and move to doctor queue
+   * Nurse triage — record vitals, priority, assign a doctor, and move to doctor queue
    */
   async completeTriage(
     id: string,
@@ -533,7 +533,7 @@ export class VisitsService {
       triagePriority?: string;
       triageNotes?: string;
       chiefComplaint?: string;
-      doctorId?: string; // Nurse can assign a specific doctor during triage
+      doctorId?: string; // Nurse must assign a specific doctor during triage
     },
     nurseId?: string,
   ): Promise<Visit> {
@@ -544,20 +544,21 @@ export class VisitsService {
       throw new BadRequestException('Visit is not awaiting triage');
     }
 
-    // Validate doctor if provided
-    if (data.doctorId) {
-      if (!Types.ObjectId.isValid(data.doctorId)) {
-        throw new BadRequestException('Invalid doctor ID');
-      }
-      const doctor = await this.doctorModel.findById(data.doctorId);
-      if (!doctor) throw new NotFoundException('Doctor not found');
+    if (!data.doctorId) {
+      throw new BadRequestException('Doctor selection is required before sending patient to queue');
     }
+
+    if (!Types.ObjectId.isValid(data.doctorId)) {
+      throw new BadRequestException('Invalid doctor ID');
+    }
+    const doctor = await this.doctorModel.findById(data.doctorId);
+    if (!doctor) throw new NotFoundException('Doctor not found');
 
     const { doctorId, ...vitalsAndTriage } = data;
 
     Object.assign(visit, {
       ...vitalsAndTriage,
-      ...(doctorId ? { doctorId: new Types.ObjectId(doctorId) } : {}),
+      doctorId: new Types.ObjectId(doctorId),
       status: VisitStatusEnum.IN_QUEUE,
       triagedAt: new Date(),
       triagedBy: nurseId ? new Types.ObjectId(nurseId) : undefined,
@@ -565,7 +566,7 @@ export class VisitsService {
 
     const savedVisit = await visit.save();
     this.logger.log(
-      `Triage complete for visit: ${savedVisit.visitNumber}${doctorId ? ` → assigned to doctor ${doctorId}` : ''}`,
+      `Triage complete for visit: ${savedVisit.visitNumber} - assigned to doctor ${doctorId}`,
     );
 
     const triagePriority =
@@ -580,7 +581,7 @@ export class VisitsService {
       {
         status: QueueStatusEnum.WAITING,
         ...(triagePriority ? { priority: triagePriority } : {}),
-        ...(doctorId ? { doctorId: new Types.ObjectId(doctorId) } : {}),
+        doctorId: new Types.ObjectId(doctorId),
       },
     );
 
