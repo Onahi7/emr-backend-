@@ -38,6 +38,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { LisIntegrationModule } from './lis-integration/lis-integration.module';
+import { CafIntegrationModule } from './caf-integration/caf-integration.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -48,7 +49,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '.env.development', '.env.production'],
+      envFilePath: ['.env', '.env.development', '.env.staging', '.env.production'],
     }),
     ThrottlerModule.forRoot([
       {
@@ -90,6 +91,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
     AppointmentsModule,
     RoomsModule,
     LisIntegrationModule,
+    CafIntegrationModule,
   ],
   controllers: [AppController],
   providers: [

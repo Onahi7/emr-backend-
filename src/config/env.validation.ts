@@ -103,6 +103,23 @@ export class EnvironmentVariables {
   @IsOptional()
   EMAIL_FROM: string = 'noreply@lis.com';
 
+  // CAF Pharmacy integration (Optional)
+  @IsString()
+  @IsOptional()
+  CAF_API_BASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  CAF_API_USERNAME?: string;
+
+  @IsString()
+  @IsOptional()
+  CAF_API_PASSWORD?: string;
+
+  @IsString()
+  @IsOptional()
+  CAF_BRANCH_ID?: string;
+
   // Partner LIS integration (Optional)
   @IsString()
   @IsOptional()

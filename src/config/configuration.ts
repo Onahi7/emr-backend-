@@ -77,4 +77,12 @@ export default () => ({
     apiKey: process.env.LIS_API_KEY || process.env.LIS_API_TOKEN || process.env.LIS_EXTERNAL_API_KEY || process.env.LIS_KEY,
     timeoutMs: parseInt(process.env.LIS_API_TIMEOUT_MS || '15000', 10),
   },
+
+  // CAF Pharmacy integration
+  caf: {
+    baseUrl: process.env.CAF_API_BASE_URL,
+    username: process.env.CAF_API_USERNAME,
+    password: process.env.CAF_API_PASSWORD,
+    branchId: process.env.CAF_BRANCH_ID,
+  },
 });

@@ -7,11 +7,15 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { MedicationCategoryEnum } from '../database/schemas/medication.schema';
+import { CafIntegrationService } from '../caf-integration/caf-integration.service';
 
 @Controller('medications')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class MedicationsController {
-  constructor(private readonly medicationsService: MedicationsService) {}
+  constructor(
+    private readonly medicationsService: MedicationsService,
+    private readonly cafIntegrationService: CafIntegrationService,
+  ) {}
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
@@ -31,8 +35,37 @@ export class MedicationsController {
 
   @Get('search')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  search(@Query('q') searchTerm: string) {
+  async search(@Query('q') searchTerm: string) {
+    if (this.cafIntegrationService.isConfigured()) {
+      const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm);
+      if (cafProducts.length > 0) {
+        return cafProducts.map((p) => ({
+          _id: p._id,
+          medicationCode: p.sku,
+          name: p.name,
+          genericName: p.brand,
+          category: p.category,
+          stockQuantity: p.quantityAvailable,
+          unitPrice: p.suggestedRetailPrice || p.basePrice,
+          unit: p.unit,
+          isActive: p.isActive,
+          dosageForm: p.unit,
+          strength: p.packSizes?.[0]?.name || '',
+          __cafProduct: true,
+          __cafBranchId: this.cafIntegrationService.getBranchId(),
+        }));
+      }
+    }
     return this.medicationsService.search(searchTerm);
+  }
+
+  @Get('caf-products')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  async listCafProducts(
+    @Query('search') search?: string,
+    @Query('category') category?: string,
+  ) {
+    return this.cafIntegrationService.getProducts({ search, category });
   }
 
   @Get('report')
@@ -41,16 +74,16 @@ export class MedicationsController {
     return this.medicationsService.getInventoryReport();
   }
 
-  @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string) {
-    return this.medicationsService.findById(id);
-  }
-
   @Get('code/:code')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   findByCode(@Param('code') code: string) {
     return this.medicationsService.findByCode(code);
+  }
+
+  @Get(':id')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  findOne(@Param('id') id: string) {
+    return this.medicationsService.findById(id);
   }
 
   @Patch(':id')

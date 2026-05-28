@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsIn } from 'class-validator';
 
 export class DispensePrescriptionDto {
   /**
@@ -9,4 +9,11 @@ export class DispensePrescriptionDto {
   @IsOptional()
   @IsString()
   dispensingNotes?: string;
+
+  /**
+   * Payment method used by the patient — forwarded to CAF for the sale record.
+   */
+  @IsOptional()
+  @IsIn(['cash', 'card', 'orange_money', 'africell_money', 'qmoney', 'bank_transfer', 'insurance', 'credit'])
+  paymentMethod?: string;
 }

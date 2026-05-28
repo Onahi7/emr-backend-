@@ -10,6 +10,7 @@ import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { CafIntegrationService } from '../caf-integration/caf-integration.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -21,6 +22,7 @@ export class PrescriptionsService {
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
     private realtimeGateway: RealtimeGateway,
+    private cafIntegrationService: CafIntegrationService,
   ) {}
 
   private async moveVisitToStatus(visitId: Types.ObjectId | string | undefined, status: VisitStatusEnum): Promise<void> {
@@ -105,11 +107,19 @@ export class PrescriptionsService {
       }
     }
 
-    // Check medication stock and update
+    // Check medication stock — local meds or CAF products
     for (const item of items) {
-      const medication = await this.medicationModel.findById(item.medicationId);
+      const medication = await this.medicationModel.findById(item.medicationId).lean();
       if (!medication) {
-        throw new NotFoundException(`Medication ${item.medicationName} not found`);
+        if (this.cafIntegrationService.isConfigured()) {
+          const cafStock = await this.cafIntegrationService.getProductStock(item.medicationId);
+          if (cafStock < item.quantity) {
+            throw new BadRequestException(
+              `Insufficient CAF stock for ${item.medicationName}. Available: ${cafStock}, Required: ${item.quantity}`,
+            );
+          }
+        }
+        continue;
       }
       if (medication.stockQuantity < item.quantity) {
         throw new BadRequestException(`Insufficient stock for ${medication.name}`);
@@ -160,7 +170,6 @@ export class PrescriptionsService {
       .populate('patientId', 'patientId firstName lastName')
       .populate('prescribedBy', 'fullName email')
       .populate('doctorId', 'fullName')
-      .populate('items.medicationId', 'name stockQuantity unitPrice medicationCode dosageForm strength')
       .sort({ createdAt: -1 })
       .exec();
   }
@@ -174,7 +183,6 @@ export class PrescriptionsService {
       .populate('consultationId')
       .populate('dispensedBy', 'fullName email')
       .populate('cancelledBy', 'fullName email')
-      .populate('items.medicationId')
       .exec();
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
@@ -204,7 +212,6 @@ export class PrescriptionsService {
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('prescribedBy', 'fullName')
       .populate('doctorId', 'fullName')
-      .populate('items.medicationId', 'name stockQuantity unitPrice')
       .sort({ createdAt: 1 })
       .exec();
   }
@@ -227,33 +234,45 @@ export class PrescriptionsService {
       throw new BadRequestException('Prescription must be paid before dispensing');
     }
 
-    // Atomically deduct stock for each item using findOneAndUpdate with a
-    // stock-sufficiency condition. This prevents the race condition where two
-    // concurrent dispenses both pass the read-check but both deduct.
-    for (const item of prescription.items) {
+    // Separate CAF-sourced items from local items
+    const cafItems: Array<{ medicationId: Types.ObjectId; quantity: number; medicationName: string }> = [];
+    const localItems: Array<{ medicationId: Types.ObjectId; quantity: number; medicationName: string }> = [];
+
+    if (this.cafIntegrationService.isConfigured()) {
+      for (const item of prescription.items) {
+        const localMed = await this.medicationModel.findById(item.medicationId).lean();
+        if (!localMed) {
+          cafItems.push(item);
+        } else {
+          localItems.push(item);
+        }
+      }
+    } else {
+      localItems.push(...prescription.items);
+    }
+
+    // Deduct local items from EMR stock
+    for (const item of localItems) {
       const updated = await this.medicationModel.findOneAndUpdate(
         {
           _id: item.medicationId,
-          stockQuantity: { $gte: item.quantity }, // only update if enough stock
+          stockQuantity: { $gte: item.quantity },
         },
         { $inc: { stockQuantity: -item.quantity } },
         { new: true },
       );
 
       if (!updated) {
-        // Either medication not found or insufficient stock at deduction time
         const med = await this.medicationModel.findById(item.medicationId).lean();
         if (!med) {
           throw new NotFoundException(`Medication not found: ${item.medicationName}`);
         }
         throw new BadRequestException(
-          `Insufficient stock for ${med.name}. ` +
-          `Available: ${med.stockQuantity}, Required: ${item.quantity}`,
+          `Insufficient stock for ${med.name}. Available: ${med.stockQuantity}, Required: ${item.quantity}`,
         );
       }
 
-      // Create StockMovement audit record for this dispense
-      const stockBefore = updated.stockQuantity + item.quantity; // before deduction
+      const stockBefore = updated.stockQuantity + item.quantity;
       await this.stockMovementModel.create({
         medicationId: item.medicationId,
         movementType: StockMovementTypeEnum.DISPENSE,
@@ -266,11 +285,49 @@ export class PrescriptionsService {
       });
     }
 
+    // Deduct CAF items via CAF checkout
+    let cafSaleId: string | undefined;
+    let cafReceiptNumber: string | undefined;
+
+    if (cafItems.length > 0 && this.cafIntegrationService.isConfigured()) {
+      const shiftId = await this.cafIntegrationService.ensureOpenShift();
+      const patient = prescription.patientId
+        ? await this.patientModel.findById(prescription.patientId).lean()
+        : null;
+      const patientName = patient
+        ? `${(patient as any).firstName || ''} ${(patient as any).lastName || ''}`.trim() || 'EMR Patient'
+        : 'EMR Patient';
+
+      const result = await this.cafIntegrationService.dispensePrescription({
+        shiftId,
+        items: cafItems.map((item) => ({
+          productId: item.medicationId.toString(),
+          quantity: item.quantity,
+        })),
+        patientName,
+        prescriptionRef: prescription.prescriptionNumber,
+        paymentMethod: dto?.paymentMethod || 'cash',
+        notes: dto?.dispensingNotes,
+      });
+
+      cafSaleId = result.saleId;
+      cafReceiptNumber = result.receiptNumber;
+    }
+
     prescription.status = PrescriptionStatusEnum.DISPENSED;
     prescription.dispensedBy = new Types.ObjectId(dispensedBy);
     prescription.dispensedAt = new Date();
     if (dto?.dispensingNotes) {
       prescription.dispensingNotes = dto.dispensingNotes;
+    }
+    if (cafSaleId) {
+      prescription.cafSaleId = cafSaleId;
+    }
+    if (cafReceiptNumber) {
+      prescription.cafReceiptNumber = cafReceiptNumber;
+    }
+    if (cafItems.length > 0) {
+      prescription.hasCafItems = true;
     }
 
     const savedPrescription = await prescription.save();

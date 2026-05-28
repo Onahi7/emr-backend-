@@ -9,10 +9,12 @@ import { Consultation, ConsultationSchema } from '../database/schemas/consultati
 import { Patient, PatientSchema } from '../database/schemas/patient.schema';
 import { Visit, VisitSchema } from '../database/schemas/visit.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { CafIntegrationModule } from '../caf-integration/caf-integration.module';
 
 @Module({
   imports: [
     RealtimeModule,
+    CafIntegrationModule,
     MongooseModule.forFeature([
       { name: Prescription.name, schema: PrescriptionSchema },
       { name: Medication.name, schema: MedicationSchema },

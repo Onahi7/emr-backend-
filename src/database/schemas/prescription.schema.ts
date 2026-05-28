@@ -42,6 +42,9 @@ export class Prescription extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   prescribedBy?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  doctorId?: Types.ObjectId;
+
   @Prop({
     type: [
       {
@@ -110,6 +113,16 @@ export class Prescription extends Document {
 
   @Prop()
   totalAmount?: number;
+
+  // CAF integration — set when dispensed through CAF
+  @Prop()
+  cafSaleId?: string;
+
+  @Prop()
+  cafReceiptNumber?: string;
+
+  @Prop({ default: false })
+  hasCafItems?: boolean;
 
   createdAt: Date;
   updatedAt: Date;
