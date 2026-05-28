@@ -239,6 +239,7 @@ export class CafIntegrationService implements OnModuleInit {
     shiftId: string;
     items: Array<{ productId: string; quantity: number }>;
     patientName?: string;
+    patientId?: string;
     prescriptionRef: string;
     paymentMethod?: string;
     notes?: string;
@@ -261,6 +262,9 @@ export class CafIntegrationService implements OnModuleInit {
           items: checkoutItems,
           paymentMethod: params.paymentMethod || 'cash',
           customerName: params.patientName || 'EMR Patient',
+          patientId: params.patientId || '',
+          patientName: params.patientName || '',
+          sourceSystem: 'emr',
           notes: `EMR Prescription ${params.prescriptionRef}` + (params.notes ? ` - ${params.notes}` : ''),
         },
         {
