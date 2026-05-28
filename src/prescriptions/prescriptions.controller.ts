@@ -40,7 +40,7 @@ export class PrescriptionsController {
    * GET /prescriptions/pending-dispense
    */
   @Get('pending-dispense')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.RECEPTIONIST)
   findPendingDispense() {
     return this.prescriptionsService.findPendingDispense();
   }
@@ -75,7 +75,7 @@ export class PrescriptionsController {
    * PATCH /prescriptions/:id/dispense
    */
   @Patch(':id/dispense')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.RECEPTIONIST)
   dispense(
     @Param('id') id: string,
     @Body() dto: DispensePrescriptionDto,
