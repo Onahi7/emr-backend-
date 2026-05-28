@@ -508,32 +508,134 @@ export class OrdersService {
   }
 
   /**
-   * Update order
+   * Update order — supports test replacement, priority, notes, discount.
+   * Business rules:
+   *  - Tests can only be replaced while status is awaiting_payment (not yet paid)
+   *  - Priority and notes can be edited while awaiting_payment or pending_collection
+   *  - Payment-related fields (paymentStatus, paymentMethod) are ignored here —
+   *    use markAsPaid / addPayment endpoints instead.
    */
   async update(id: string, updateOrderDto: UpdateOrderDto): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel
-      .findByIdAndUpdate(id, updateOrderDto, { new: true })
-      .populate('patientId', 'patientId firstName lastName age gender')
-      .populate('orderedBy', 'fullName email')
-      .populate('doctorId', 'fullName phone facility')
-      .populate('collectedBy', 'fullName email')
-      .populate('cancelledBy', 'fullName email')
-      .exec();
-
+    const order = await this.orderModel.findById(id).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    this.logger.log(`Order updated: ${order.orderNumber}`);
+    const editableStatuses = [OrderStatusEnum.AWAITING_PAYMENT, OrderStatusEnum.PENDING_COLLECTION];
+    if (!editableStatuses.includes(order.status)) {
+      throw new BadRequestException(
+        `Cannot edit order in "${order.status}" status. Only orders awaiting payment or pending collection can be edited.`,
+      );
+    }
+
+    let testsChanged = false;
+
+    // --- Replace tests (only allowed before payment) ---
+    if (updateOrderDto.tests && updateOrderDto.tests.length > 0) {
+      if (order.status !== OrderStatusEnum.AWAITING_PAYMENT) {
+        throw new BadRequestException('Tests can only be edited before the order is paid');
+      }
+
+      // Delete existing order tests
+      await this.orderTestModel.deleteMany({ orderId: order._id }).exec();
+
+      // Expand linked tests / panels
+      const expandedTests = order.orderType === OrderTypeEnum.LAB
+        ? updateOrderDto.tests.map((test) => ({
+            testId: test.testId,
+            testCode: test.testCode,
+            testName: test.testName,
+            panelCode: test.panelCode,
+            panelName: test.panelName,
+            category: undefined,
+            subcategory: undefined,
+            price: test.price,
+          }))
+        : await this.expandLinkedTests(updateOrderDto.tests);
+
+      // Create new order tests
+      const orderTests = expandedTests.map((test) => ({
+        orderId: order._id,
+        testId: Types.ObjectId.isValid(test.testId)
+          ? new Types.ObjectId(test.testId)
+          : undefined,
+        testCode: test.testCode,
+        testName: test.testName,
+        panelCode: test.panelCode,
+        panelName: test.panelName,
+        category: test.category,
+        price: test.price,
+        status: 'pending',
+      }));
+
+      await this.orderTestModel.insertMany(orderTests);
+
+      // Recalculate totals
+      const subtotal = updateOrderDto.tests.reduce((sum, test) => sum + test.price, 0);
+      const discount = updateOrderDto.discount ?? order.discount ?? 0;
+      const discountType = updateOrderDto.discountType ?? order.discountType;
+      const total = this.calculateTotal(subtotal, discount, discountType);
+
+      order.subtotal = subtotal;
+      order.total = total;
+      order.discount = discount;
+      order.discountType = discountType as any;
+      order.balance = Math.round((total - order.amountPaid) * 100) / 100;
+
+      // Update LIS requested codes for lab orders
+      if (order.orderType === OrderTypeEnum.LAB) {
+        order.lisRequestedCodes = Array.from(
+          new Set(
+            updateOrderDto.tests
+              .map((t) => (t.testCode || '').toString().trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        );
+      }
+
+      testsChanged = true;
+    }
+
+    // --- Update priority ---
+    if (updateOrderDto.priority) {
+      order.priority = updateOrderDto.priority;
+    }
+
+    // --- Update notes ---
+    if (updateOrderDto.notes !== undefined) {
+      order.notes = updateOrderDto.notes;
+    }
+
+    // --- Update discount (without tests) ---
+    if (updateOrderDto.discount !== undefined && !updateOrderDto.tests) {
+      const discount = updateOrderDto.discount;
+      const discountType = updateOrderDto.discountType ?? order.discountType;
+      const total = this.calculateTotal(order.subtotal, discount, discountType);
+      order.discount = discount;
+      order.discountType = discountType as any;
+      order.total = total;
+      order.balance = Math.round((total - order.amountPaid) * 100) / 100;
+    }
+
+    await order.save();
+
+    this.logger.log(`Order updated: ${order.orderNumber}${testsChanged ? ' (tests replaced)' : ''}`);
+
+    const populatedOrder = await this.findOne(id);
 
     // Emit real-time event
-    this.realtimeGateway.notifyOrderUpdated(order);
+    this.realtimeGateway.notifyOrderUpdated(populatedOrder);
 
-    return order;
+    // Re-sync to LIS if tests changed on an already-synced order
+    if (testsChanged && order.orderType === OrderTypeEnum.LAB && order.lisExternalRequestId) {
+      void this.lisIntegrationService.syncOrderToLis(id);
+    }
+
+    return populatedOrder;
   }
 
   /**

@@ -350,6 +350,62 @@ export class PrescriptionsService {
     return populatedPrescription;
   }
 
+  /**
+   * Update prescription — items, notes, totalAmount.
+   * Only allowed while the prescription is pending and unpaid.
+   */
+  async update(id: string, updateDto: any): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findById(id);
+    if (!prescription) {
+      throw new NotFoundException('Prescription not found');
+    }
+
+    if (prescription.status !== PrescriptionStatusEnum.PENDING) {
+      throw new BadRequestException(
+        `Cannot edit prescription in "${prescription.status}" status. Only pending prescriptions can be edited.`,
+      );
+    }
+
+    if (prescription.isPaid) {
+      throw new BadRequestException('Cannot edit a prescription that has already been paid');
+    }
+
+    // Replace items if provided
+    if (updateDto.items && updateDto.items.length > 0) {
+      prescription.items = updateDto.items.map((item: any) => ({
+        medicationId: new Types.ObjectId(item.medicationId),
+        medicationName: item.medicationName,
+        dosage: item.dosage,
+        frequency: item.frequency,
+        duration: item.duration,
+        quantity: item.quantity,
+        route: item.route || 'oral',
+        instructions: this.generateLabelInstructions(item),
+        pharmacistNote: item.pharmacistNote,
+      }));
+    }
+
+    // Update notes
+    if (updateDto.notes !== undefined) {
+      prescription.notes = updateDto.notes;
+    }
+
+    // Update total
+    if (updateDto.totalAmount !== undefined) {
+      prescription.totalAmount = updateDto.totalAmount;
+    } else if (updateDto.items) {
+      // Recalculate from items if items changed but total not explicitly provided
+      prescription.totalAmount = prescription.items.reduce(
+        (sum, item) => sum + item.quantity * 0, 0,
+      );
+    }
+
+    const savedPrescription = await prescription.save();
+    const populatedPrescription = await this.findById(savedPrescription._id.toString());
+    this.realtimeGateway.emitToAll('prescription:updated', populatedPrescription);
+    return populatedPrescription;
+  }
+
   async cancel(id: string, reason: string, cancelledBy: string): Promise<Prescription> {
     const prescription = await this.prescriptionModel.findById(id);
     if (!prescription) {

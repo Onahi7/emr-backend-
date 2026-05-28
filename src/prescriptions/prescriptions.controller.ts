@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, UseGuards, Request } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -54,6 +55,19 @@ export class PrescriptionsController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
   findOne(@Param('id') id: string) {
     return this.prescriptionsService.findById(id);
+  }
+
+  /**
+   * Edit prescription (items, notes, total) — only before payment
+   * PATCH /prescriptions/:id
+   */
+  @Patch(':id')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  update(
+    @Param('id') id: string,
+    @Body() updatePrescriptionDto: UpdatePrescriptionDto,
+  ) {
+    return this.prescriptionsService.update(id, updatePrescriptionDto);
   }
 
   /**
