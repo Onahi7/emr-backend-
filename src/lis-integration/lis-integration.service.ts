@@ -12,6 +12,7 @@ import {
 } from '../database/schemas/order.schema';
 import { Result, ResultFlagEnum, ResultStatusEnum } from '../database/schemas/result.schema';
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
+import { Branch, BranchDocument } from '../branches/branch.schema';
 
 @Injectable()
 export class LisIntegrationService {
@@ -23,6 +24,7 @@ export class LisIntegrationService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Result.name) private resultModel: Model<Result>,
     @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
+    @InjectModel(Branch.name) private branchModel: Model<BranchDocument>,
   ) {
     const baseURL = this.configService.get<string>('lis.baseUrl');
     const apiKey = this.configService.get<string>('lis.apiKey');
@@ -41,6 +43,55 @@ export class LisIntegrationService {
 
   isEnabled(): boolean {
     return !!this.client;
+  }
+
+  private async getBranchLisConfig(branchId?: string): Promise<{
+    apiKey: string;
+    baseUrl: string;
+    facilityName: string;
+    facilityLocation: string;
+    sourceSystem: string;
+  }> {
+    const defaultConfig = {
+      apiKey: this.configService.get<string>('lis.apiKey') || '',
+      baseUrl: this.configService.get<string>('lis.baseUrl') || '',
+      facilityName: this.configService.get<string>('lis.sourceFacilityName') || 'Harbour EMR',
+      facilityLocation: this.configService.get<string>('lis.sourceFacilityLocation') || 'EMR',
+      sourceSystem: this.configService.get<string>('lis.sourceSystem') || 'Harbour EMR',
+    };
+
+    if (!branchId) return defaultConfig;
+
+    try {
+      const branch = await this.branchModel.findById(branchId).lean().exec();
+      if (branch && branch.labApiKey) {
+        return {
+          apiKey: branch.labApiKey,
+          baseUrl: defaultConfig.baseUrl,
+          facilityName: branch.name || defaultConfig.facilityName,
+          facilityLocation: branch.address || defaultConfig.facilityLocation,
+          sourceSystem: `${branch.name} EMR`,
+        };
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to get branch LIS config: ${err.message}`);
+    }
+
+    return defaultConfig;
+  }
+
+  private async createLisClient(branchId?: string): Promise<AxiosInstance | null> {
+    const config = await this.getBranchLisConfig(branchId);
+    if (!config.apiKey || !config.baseUrl) return null;
+
+    return axios.create({
+      baseURL: config.baseUrl,
+      timeout: 15000,
+      headers: {
+        'X-API-Key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+    });
   }
 
   async fetchLisOrderables(): Promise<Array<{
@@ -113,22 +164,24 @@ export class LisIntegrationService {
     return [];
   }
 
-  async syncOrderToLis(orderId: string): Promise<void> {
-    if (!this.client) return;
+  async syncOrderToLis(orderId: string, branchId?: string): Promise<void> {
+    const client = await this.createLisClient(branchId) || this.client;
+    if (!client) return;
 
     const order = await this.loadOrder(orderId);
     if (!order || order.orderType !== OrderTypeEnum.LAB) return;
 
     const externalRequestId = order.lisExternalRequestId || `EMR-${order.orderNumber}`;
+    const branchConfig = await this.getBranchLisConfig(branchId);
 
     try {
       const testsToSend = this.buildLisTests(order.lisRequestedCodes || [], order.order_tests || []);
 
-      const response = await this.client.post('/external-api/test-requests', {
+      const response = await client.post('/external-api/test-requests', {
         externalRequestId,
-        sourceSystem: process.env.LIS_SOURCE_SYSTEM || 'Harbour EMR',
-        sourceFacilityName: process.env.LIS_SOURCE_FACILITY_NAME || 'Harbour EMR',
-        sourceFacilityLocation: process.env.LIS_SOURCE_FACILITY_LOCATION || process.env.EMR_LOCATION || 'EMR',
+        sourceSystem: branchConfig.sourceSystem,
+        sourceFacilityName: branchConfig.facilityName,
+        sourceFacilityLocation: branchConfig.facilityLocation,
         patient: this.mapPatient(order.patientId),
         tests: testsToSend,
         priority: order.priority,
@@ -198,14 +251,15 @@ export class LisIntegrationService {
     return Array.from(codes).map((code) => ({ code }));
   }
 
-  async syncPaymentToLis(orderId: string, amount: number, paymentMethod: string): Promise<void> {
-    if (!this.client) return;
+  async syncPaymentToLis(orderId: string, amount: number, paymentMethod: string, branchId?: string): Promise<void> {
+    const client = await this.createLisClient(branchId) || this.client;
+    if (!client) return;
 
     const order = await this.loadOrder(orderId);
     if (!order || order.orderType !== OrderTypeEnum.LAB) return;
 
     if (order.lisSyncStatus !== 'synced') {
-      await this.syncOrderToLis(orderId);
+      await this.syncOrderToLis(orderId, branchId);
     }
 
     const refreshed = await this.orderModel.findById(orderId).lean();
@@ -213,7 +267,7 @@ export class LisIntegrationService {
     if (refreshed?.lisSyncStatus !== 'synced') return;
 
     try {
-      await this.client.post(`/external-api/test-requests/${encodeURIComponent(externalRequestId)}/payment`, {
+      await client.post(`/external-api/test-requests/${encodeURIComponent(externalRequestId)}/payment`, {
         amount,
         paymentMethod: this.mapPaymentMethod(paymentMethod),
         notes: `Paid in EMR for ${order.orderNumber}${paymentMethod === PaymentMethodEnum.WALLET ? ' via wallet' : ''}`,
@@ -228,8 +282,9 @@ export class LisIntegrationService {
     }
   }
 
-  async fetchAndStoreResults(orderId: string): Promise<any> {
-    if (!this.client) {
+  async fetchAndStoreResults(orderId: string, branchId?: string): Promise<any> {
+    const client = await this.createLisClient(branchId) || this.client;
+    if (!client) {
       throw new Error('LIS integration is not configured');
     }
 
@@ -239,7 +294,7 @@ export class LisIntegrationService {
       throw new Error('Order has not been synced to LIS');
     }
 
-    const response = await this.client.get(
+    const response = await client.get(
       `/external-api/test-requests/${encodeURIComponent(order.lisExternalRequestId)}/results`,
     );
     const results = response.data?.results || [];
