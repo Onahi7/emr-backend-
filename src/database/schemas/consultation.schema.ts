@@ -16,7 +16,10 @@ export enum ConsultationTypeEnum {
 
 @Schema({ timestamps: true, collection: 'consultations' })
 export class Consultation extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   consultationNumber: string; // CONS-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
@@ -92,7 +95,7 @@ export class Consultation extends Document {
 export const ConsultationSchema = SchemaFactory.createForClass(Consultation);
 
 // Indexes
-ConsultationSchema.index({ consultationNumber: 1 }, { unique: true });
+ConsultationSchema.index({ branchId: 1, consultationNumber: 1 }, { unique: true });
 ConsultationSchema.index({ patientId: 1 });
 ConsultationSchema.index({ doctorId: 1 });
 ConsultationSchema.index({ status: 1 });

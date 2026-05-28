@@ -84,4 +84,22 @@ export class AuthController {
 
     return this.authService.getProfile(userId);
   }
+
+  @Post('select-branch')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async selectBranch(
+    @Request() req: AuthenticatedRequest,
+    @Body('branchId') branchId: string,
+  ): Promise<AuthResponse> {
+    const userId = req.user.userId;
+    this.logger.log(`Branch selection for user: ${userId}, branch: ${branchId}`);
+    return this.authService.selectBranch(userId, branchId);
+  }
+
+  @Get('branches')
+  @UseGuards(JwtAuthGuard)
+  async getBranches(@Request() req: AuthenticatedRequest) {
+    return this.authService.getUserBranches(req.user.userId);
+  }
 }

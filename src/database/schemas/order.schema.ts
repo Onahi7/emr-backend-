@@ -47,7 +47,10 @@ export enum PaymentMethodEnum {
 
 @Schema({ timestamps: true, collection: 'orders' })
 export class Order extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   orderNumber: string; // ORD-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
@@ -162,7 +165,7 @@ export class Order extends Document {
 export const OrderSchema = SchemaFactory.createForClass(Order);
 
 // Indexes
-OrderSchema.index({ orderNumber: 1 }, { unique: true });
+OrderSchema.index({ branchId: 1, orderNumber: 1 }, { unique: true });
 OrderSchema.index({ patientId: 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });

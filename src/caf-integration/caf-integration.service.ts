@@ -96,7 +96,7 @@ export class CafIntegrationService implements OnModuleInit {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
-  async searchProducts(query: string): Promise<CafProduct[]> {
+  async searchProducts(query: string, branchId?: string): Promise<CafProduct[]> {
     if (!this.isConfigured()) return [];
     await this.ensureAuthenticated();
 
@@ -104,7 +104,7 @@ export class CafIntegrationService implements OnModuleInit {
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products/search`, {
           headers: this.headers,
-          params: { query, branchId: this.branchId },
+          params: { query, branchId: branchId || this.branchId },
         }),
       );
       return data.data || data;
@@ -120,15 +120,17 @@ export class CafIntegrationService implements OnModuleInit {
     barcode?: string;
     page?: number;
     limit?: number;
+    branchId?: string;
   } = {}): Promise<CafProduct[]> {
     if (!this.isConfigured()) return [];
     await this.ensureAuthenticated();
 
     try {
+      const { branchId, ...rest } = params;
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products`, {
           headers: this.headers,
-          params: { ...params, branchId: this.branchId },
+          params: { ...rest, branchId: branchId || this.branchId },
         }),
       );
       return data.data || data;
@@ -138,7 +140,7 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async getProductByBarcode(barcode: string): Promise<CafProduct | null> {
+  async getProductByBarcode(barcode: string, branchId?: string): Promise<CafProduct | null> {
     if (!this.isConfigured()) return null;
     await this.ensureAuthenticated();
 
@@ -146,6 +148,7 @@ export class CafIntegrationService implements OnModuleInit {
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products/barcode/${barcode}`, {
           headers: this.headers,
+          params: { branchId: branchId || this.branchId },
         }),
       );
       return data.data || data;
@@ -154,7 +157,7 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async getLowStockAlerts(): Promise<any[]> {
+  async getLowStockAlerts(branchId?: string): Promise<any[]> {
     if (!this.isConfigured()) return [];
     await this.ensureAuthenticated();
 
@@ -162,7 +165,7 @@ export class CafIntegrationService implements OnModuleInit {
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/inventory/low-stock-alerts`, {
           headers: this.headers,
-          params: { branchId: this.branchId },
+          params: { branchId: branchId || this.branchId },
         }),
       );
       return data.data || [];
@@ -171,9 +174,11 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async getProductStock(productId: string): Promise<number> {
+  async getProductStock(productId: string, branchId?: string): Promise<number> {
     if (!this.isConfigured()) return 0;
     await this.ensureAuthenticated();
+
+    const effectiveBranchId = branchId || this.branchId;
 
     try {
       const productRes = await firstValueFrom(
@@ -189,7 +194,7 @@ export class CafIntegrationService implements OnModuleInit {
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/inventory/product-stock`, {
           headers: this.headers,
-          params: { branchId: this.branchId, productId },
+          params: { branchId: effectiveBranchId, productId },
         }),
       );
       return data?.data?.calculatedStock ?? data?.data?.quantityAvailable ?? 0;
@@ -199,13 +204,14 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async ensureOpenShift(): Promise<string> {
+  async ensureOpenShift(branchId?: string): Promise<string> {
     const { cafUserId } = await this.ensureAuthenticated();
+    const effectiveBranchId = branchId || this.branchId;
 
     const currentRes = await firstValueFrom(
       this.httpService.get(`${this.baseUrl}/shifts/current`, {
         headers: this.headers,
-        params: { branchId: this.branchId, cashierId: cafUserId, terminalId: 'emr-integration' },
+        params: { branchId: effectiveBranchId, cashierId: cafUserId, terminalId: 'emr-integration' },
       }),
     ).catch(() => ({ data: null }));
 
@@ -217,7 +223,7 @@ export class CafIntegrationService implements OnModuleInit {
     const openRes = await firstValueFrom(
       this.httpService.post(
         `${this.baseUrl}/shifts/open`,
-        { branchId: this.branchId, cashierId: cafUserId, terminalId: 'emr-integration', openingCash: 0 },
+        { branchId: effectiveBranchId, cashierId: cafUserId, terminalId: 'emr-integration', openingCash: 0 },
         {
           headers: {
             ...this.headers,
@@ -243,8 +249,10 @@ export class CafIntegrationService implements OnModuleInit {
     prescriptionRef: string;
     paymentMethod?: string;
     notes?: string;
+    branchId?: string;
   }): Promise<{ saleId: string; receiptNumber: string }> {
     await this.ensureAuthenticated();
+    const effectiveBranchId = params.branchId || this.branchId;
 
     const checkoutItems = params.items.map((item) => ({
       productId: item.productId,
@@ -256,7 +264,7 @@ export class CafIntegrationService implements OnModuleInit {
       this.httpService.post(
         `${this.baseUrl}/sales/checkout`,
         {
-          branchId: this.branchId,
+          branchId: effectiveBranchId,
           shiftId: params.shiftId,
           terminalId: 'emr-integration',
           items: checkoutItems,

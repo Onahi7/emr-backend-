@@ -12,7 +12,10 @@ export enum AppointmentStatusEnum {
 
 @Schema({ timestamps: true, collection: 'appointments' })
 export class Appointment extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   appointmentNumber: string; // APT-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
@@ -60,7 +63,7 @@ export class Appointment extends Document {
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);
 
-AppointmentSchema.index({ appointmentNumber: 1 }, { unique: true });
+AppointmentSchema.index({ branchId: 1, appointmentNumber: 1 }, { unique: true });
 AppointmentSchema.index({ patientId: 1 });
 AppointmentSchema.index({ doctorId: 1 });
 AppointmentSchema.index({ date: 1, time: 1 });

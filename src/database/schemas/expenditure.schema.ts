@@ -15,6 +15,9 @@ export enum ExpenseCategoryEnum {
 
 @Schema({ timestamps: true })
 export class Expenditure extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ required: true })
   description: string;
 

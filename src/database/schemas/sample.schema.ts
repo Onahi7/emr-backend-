@@ -18,7 +18,10 @@ export enum SampleStatusEnum {
 
 @Schema({ timestamps: true, collection: 'samples' })
 export class Sample extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   sampleId: string; // SMP-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Order', required: true })
@@ -54,6 +57,6 @@ export class Sample extends Document {
 export const SampleSchema = SchemaFactory.createForClass(Sample);
 
 // Indexes
-SampleSchema.index({ sampleId: 1 }, { unique: true });
+SampleSchema.index({ branchId: 1, sampleId: 1 }, { unique: true });
 SampleSchema.index({ orderId: 1 });
 SampleSchema.index({ status: 1 });

@@ -24,7 +24,10 @@ export enum RouteOfAdministrationEnum {
 
 @Schema({ timestamps: true, collection: 'prescriptions' })
 export class Prescription extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   prescriptionNumber: string; // RX-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
@@ -131,7 +134,7 @@ export class Prescription extends Document {
 export const PrescriptionSchema = SchemaFactory.createForClass(Prescription);
 
 // Indexes
-PrescriptionSchema.index({ prescriptionNumber: 1 }, { unique: true });
+PrescriptionSchema.index({ branchId: 1, prescriptionNumber: 1 }, { unique: true });
 PrescriptionSchema.index({ patientId: 1 });
 PrescriptionSchema.index({ consultationId: 1 });
 PrescriptionSchema.index({ prescribedBy: 1 });

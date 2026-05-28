@@ -17,6 +17,9 @@ export enum ResultStatusEnum {
 
 @Schema({ timestamps: true, collection: 'results' })
 export class Result extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: 'Order', required: true })
   orderId: Types.ObjectId;
 

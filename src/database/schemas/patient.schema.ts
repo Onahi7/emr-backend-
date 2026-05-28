@@ -25,7 +25,10 @@ export enum PatientCategoryEnum {
 
 @Schema({ timestamps: true, collection: 'patients' })
 export class Patient extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   patientId: string; // PAT-YYYYMMDD-XXXX
 
   @Prop({ required: true })
@@ -64,7 +67,7 @@ export class Patient extends Document {
   @Prop()
   nationality?: string;
 
-  @Prop({ sparse: true, unique: true })
+  @Prop({ sparse: true })
   mrn?: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
@@ -158,9 +161,9 @@ export class Patient extends Document {
 export const PatientSchema = SchemaFactory.createForClass(Patient);
 
 // Indexes
-PatientSchema.index({ patientId: 1 }, { unique: true });
+PatientSchema.index({ branchId: 1, patientId: 1 }, { unique: true });
 PatientSchema.index({ firstName: 1, lastName: 1 });
-PatientSchema.index({ mrn: 1 }, { sparse: true, unique: true });
+PatientSchema.index({ branchId: 1, mrn: 1 }, { sparse: true, unique: true });
 
 // Text search index for name search
 PatientSchema.index({ firstName: 'text', lastName: 'text' });

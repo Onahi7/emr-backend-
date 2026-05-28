@@ -26,7 +26,10 @@ export enum VisitTypeEnum {
 
 @Schema({ timestamps: true, collection: 'visits' })
 export class Visit extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   visitNumber: string; // VIS-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
@@ -179,7 +182,7 @@ export class Visit extends Document {
 export const VisitSchema = SchemaFactory.createForClass(Visit);
 
 // Indexes
-VisitSchema.index({ visitNumber: 1 }, { unique: true });
+VisitSchema.index({ branchId: 1, visitNumber: 1 }, { unique: true });
 VisitSchema.index({ patientId: 1 });
 VisitSchema.index({ doctorId: 1 });
 VisitSchema.index({ status: 1 });

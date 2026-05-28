@@ -18,7 +18,10 @@ export enum PriorityLevelEnum {
 
 @Schema({ timestamps: true, collection: 'queue' })
 export class Queue extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
+  @Prop({ required: true })
   queueNumber: string; // Q-YYYYMMDD-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
@@ -75,7 +78,7 @@ export class Queue extends Document {
 export const QueueSchema = SchemaFactory.createForClass(Queue);
 
 // Indexes
-QueueSchema.index({ queueNumber: 1 }, { unique: true });
+QueueSchema.index({ branchId: 1, queueNumber: 1 }, { unique: true });
 QueueSchema.index({ patientId: 1 });
 QueueSchema.index({ status: 1 });
 QueueSchema.index({ queueOrder: 1 });

@@ -11,6 +11,7 @@ export interface JwtPayload {
   sub: string; // user ID
   email: string;
   roles: string[];
+  branchId?: string;
   iat?: number;
   exp?: number;
 }
@@ -23,7 +24,10 @@ export interface AuthResponse {
     email: string;
     fullName: string;
     roles: string[];
+    branchId?: string;
   };
+  requiresBranchSelection?: boolean;
+  availableBranches?: Array<{ _id: string; name: string; code: string }>;
 }
 
 @Injectable()
@@ -94,11 +98,12 @@ export class AuthService {
   /**
    * Generate JWT access token
    */
-  async generateAccessToken(user: { id: string; email: string; roles: string[] }): Promise<string> {
+  async generateAccessToken(user: { id: string; email: string; roles: string[] }, branchId?: string): Promise<string> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       roles: user.roles,
+      branchId,
     };
 
     return this.jwtService.sign(payload);
@@ -107,11 +112,12 @@ export class AuthService {
   /**
    * Generate JWT refresh token
    */
-  async generateRefreshToken(user: { id: string; email: string; roles: string[] }): Promise<string> {
+  async generateRefreshToken(user: { id: string; email: string; roles: string[] }, branchId?: string): Promise<string> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       roles: user.roles,
+      branchId,
     };
 
     const refreshTokenExpiry = this.configService.get<string>('jwt.refreshTokenExpiry', '7d');
@@ -213,5 +219,45 @@ export class AuthService {
     this.logger.log(`User logged out: ${userId}`);
     // In a JWT-based system, logout is typically handled client-side by removing tokens
     // If you need server-side token blacklisting, implement it here
+  }
+
+  /**
+   * Select a branch and regenerate tokens with branchId
+   */
+  async selectBranch(userId: string, branchId: string): Promise<AuthResponse> {
+    const user = await this.profileModel.findById(userId).exec();
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
+    const roles = userRoles.map((ur) => ur.role);
+
+    const userObj = {
+      id: user._id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+      roles,
+    };
+
+    const accessToken = await this.generateAccessToken(userObj, branchId);
+    const refreshToken = await this.generateRefreshToken(userObj, branchId);
+
+    this.logger.log(`User ${user.email} selected branch ${branchId}`);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: { ...userObj, branchId },
+    };
+  }
+
+  /**
+   * Get available branches for a user
+   */
+  async getUserBranches(userId: string): Promise<Array<{ _id: string; name: string; code: string }>> {
+    const BranchModel = this.profileModel.db.model('Branch');
+    const branches = await BranchModel.find({ isActive: true }).select('name code').lean().exec();
+    return branches.map((b: any) => ({ _id: b._id?.toString() || '', name: b.name || '', code: b.code || '' }));
   }
 }

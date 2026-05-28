@@ -9,6 +9,9 @@ export enum ReconciliationStatusEnum {
 
 @Schema({ timestamps: true, collection: 'cash_reconciliations' })
 export class CashReconciliation extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ required: true, type: Date })
   reconciliationDate: Date; // The business day being reconciled
 
