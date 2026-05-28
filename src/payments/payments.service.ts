@@ -25,8 +25,9 @@ export class PaymentsService {
     prescriptionId?: string;
     receivedBy: string;
     notes?: string;
+    branchId?: string;
   }): Promise<Payment> {
-    const { paymentType, amount, paymentMethod, visitId, orderId, consultationId, prescriptionId, receivedBy, notes } = data;
+    const { paymentType, amount, paymentMethod, visitId, orderId, consultationId, prescriptionId, receivedBy, notes, branchId } = data;
 
     // Verify the referenced entity exists and update payment status
     if ((paymentType === PaymentTypeEnum.LAB_ORDER || paymentType === PaymentTypeEnum.PHARMACY_ORDER) && orderId) {
@@ -78,38 +79,47 @@ export class PaymentsService {
       receivedBy: new Types.ObjectId(receivedBy),
       notes,
       isRefunded: false,
+      branchId,
     });
 
     return payment.save();
   }
 
-  async findByVisit(visitId: string): Promise<Payment[]> {
+  async findByVisit(visitId: string, branchId?: string): Promise<Payment[]> {
+    const filter: any = { visitId: new Types.ObjectId(visitId) };
+    if (branchId) filter.branchId = branchId;
     return this.paymentModel
-      .find({ visitId: new Types.ObjectId(visitId) })
+      .find(filter)
       .populate('receivedBy', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  async findByOrder(orderId: string): Promise<Payment[]> {
+  async findByOrder(orderId: string, branchId?: string): Promise<Payment[]> {
+    const filter: any = { orderId: new Types.ObjectId(orderId) };
+    if (branchId) filter.branchId = branchId;
     return this.paymentModel
-      .find({ orderId: new Types.ObjectId(orderId) })
+      .find(filter)
       .populate('receivedBy', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  async findByConsultation(consultationId: string): Promise<Payment[]> {
+  async findByConsultation(consultationId: string, branchId?: string): Promise<Payment[]> {
+    const filter: any = { consultationId: new Types.ObjectId(consultationId) };
+    if (branchId) filter.branchId = branchId;
     return this.paymentModel
-      .find({ consultationId: new Types.ObjectId(consultationId) })
+      .find(filter)
       .populate('receivedBy', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  async findByPrescription(prescriptionId: string): Promise<Payment[]> {
+  async findByPrescription(prescriptionId: string, branchId?: string): Promise<Payment[]> {
+    const filter: any = { prescriptionId: new Types.ObjectId(prescriptionId) };
+    if (branchId) filter.branchId = branchId;
     return this.paymentModel
-      .find({ prescriptionId: new Types.ObjectId(prescriptionId) })
+      .find(filter)
       .populate('receivedBy', 'fullName')
       .sort({ createdAt: -1 })
       .exec();

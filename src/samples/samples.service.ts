@@ -51,7 +51,7 @@ export class SamplesService {
   /**
    * Create a new sample
    */
-  async create(createSampleDto: CreateSampleDto, userId?: string): Promise<Sample> {
+  async create(createSampleDto: CreateSampleDto, userId?: string, branchId?: string): Promise<Sample> {
     // Validate order ID
     if (!Types.ObjectId.isValid(createSampleDto.orderId)) {
       throw new BadRequestException('Invalid order ID');
@@ -63,7 +63,9 @@ export class SamplesService {
     }
 
     // Verify order exists
-    const order = await this.orderModel.findById(createSampleDto.orderId).exec();
+    const orderQuery: any = { _id: createSampleDto.orderId };
+    if (branchId) orderQuery.branchId = branchId;
+    const order = await this.orderModel.findOne(orderQuery).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${createSampleDto.orderId} not found`);
     }
@@ -87,7 +89,7 @@ export class SamplesService {
     const sampleId = await this.generateSampleId();
 
     // Create sample
-    const sample = new this.sampleModel({
+    const sampleData: any = {
       sampleId,
       orderId: new Types.ObjectId(createSampleDto.orderId),
       patientId: new Types.ObjectId(createSampleDto.patientId),
@@ -95,7 +97,10 @@ export class SamplesService {
       status: SampleStatusEnum.COLLECTED,
       collectedAt: new Date(),
       collectedBy: userId ? new Types.ObjectId(userId) : undefined,
-    });
+    };
+    if (branchId) sampleData.branchId = branchId;
+
+    const sample = new this.sampleModel(sampleData);
 
     const savedSample = await sample.save();
 
@@ -111,7 +116,7 @@ export class SamplesService {
     this.logger.log(`Sample created: ${savedSample.sampleId}`);
     this.realtimeGateway.notifySampleCollected(savedSample);
 
-    return this.findOne(savedSample._id.toString());
+    return this.findOne(savedSample._id.toString(), branchId);
   }
 
   /**
@@ -123,6 +128,7 @@ export class SamplesService {
     status?: string,
     orderId?: string,
     patientId?: string,
+    branchId?: string,
   ): Promise<{ data: Sample[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
     const query: any = {};
@@ -137,6 +143,10 @@ export class SamplesService {
 
     if (patientId && Types.ObjectId.isValid(patientId)) {
       query.patientId = new Types.ObjectId(patientId);
+    }
+
+    if (branchId) {
+      query.branchId = branchId;
     }
 
     const [data, total] = await Promise.all([
@@ -159,13 +169,16 @@ export class SamplesService {
   /**
    * Find sample by ID
    */
-  async findOne(id: string): Promise<Sample> {
+  async findOne(id: string, branchId?: string): Promise<Sample> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Sample with ID ${id} not found`);
     }
 
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
     const sample = await this.sampleModel
-      .findById(id)
+      .findOne(query)
       .populate('orderId', 'orderNumber status priority')
       .populate('patientId', 'patientId firstName lastName')
       .populate('collectedBy', 'fullName email')
@@ -182,9 +195,12 @@ export class SamplesService {
   /**
    * Find sample by sample ID (SMP-YYYYMMDD-XXXX)
    */
-  async findBySampleId(sampleId: string): Promise<Sample> {
+  async findBySampleId(sampleId: string, branchId?: string): Promise<Sample> {
+    const query: any = { sampleId };
+    if (branchId) query.branchId = branchId;
+
     const sample = await this.sampleModel
-      .findOne({ sampleId })
+      .findOne(query)
       .populate('orderId', 'orderNumber status priority')
       .populate('patientId', 'patientId firstName lastName')
       .populate('collectedBy', 'fullName email')
@@ -201,13 +217,16 @@ export class SamplesService {
   /**
    * Update sample
    */
-  async update(id: string, updateSampleDto: UpdateSampleDto): Promise<Sample> {
+  async update(id: string, updateSampleDto: UpdateSampleDto, branchId?: string): Promise<Sample> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Sample with ID ${id} not found`);
     }
 
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
     const sample = await this.sampleModel
-      .findByIdAndUpdate(id, updateSampleDto, { new: true })
+      .findOneAndUpdate(query, updateSampleDto, { new: true })
       .populate('orderId', 'orderNumber status priority')
       .populate('patientId', 'patientId firstName lastName')
       .populate('collectedBy', 'fullName email')
@@ -229,12 +248,16 @@ export class SamplesService {
     id: string,
     rejectSampleDto: RejectSampleDto,
     userId?: string,
+    branchId?: string,
   ): Promise<Sample> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Sample with ID ${id} not found`);
     }
 
-    const sample = await this.sampleModel.findById(id).exec();
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
+    const sample = await this.sampleModel.findOne(query).exec();
 
     if (!sample) {
       throw new NotFoundException(`Sample with ID ${id} not found`);
@@ -257,6 +280,6 @@ export class SamplesService {
 
     this.logger.log(`Sample rejected: ${sample.sampleId}`);
 
-    return this.findOne(id);
+    return this.findOne(id, branchId);
   }
 }

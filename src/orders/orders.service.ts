@@ -197,7 +197,7 @@ export class OrdersService {
     return OrderStatusEnum.PAID;
   }
 
-  async create(createOrderDto: CreateOrderDto, userId?: string): Promise<Order> {
+  async create(createOrderDto: CreateOrderDto, userId?: string, branchId?: string): Promise<Order> {
     // Validate patient ID
     if (!Types.ObjectId.isValid(createOrderDto.patientId)) {
       throw new BadRequestException('Invalid patient ID');
@@ -284,6 +284,7 @@ export class OrdersService {
       orderNumber,
       patientId: new Types.ObjectId(createOrderDto.patientId),
       visitId: createOrderDto.visitId ? new Types.ObjectId(createOrderDto.visitId) : undefined,
+      branchId,
       orderType,
       status: initialStatus,
       priority: createOrderDto.priority,
@@ -363,7 +364,7 @@ export class OrdersService {
 
     this.logger.log(`Order created: ${savedOrder.orderNumber}`);
 
-    const populatedOrder = await this.findOne(savedOrder._id.toString());
+    const populatedOrder = await this.findOne(savedOrder._id.toString(), branchId);
 
     // Sync visit status if this order belongs to a visit
     if (savedOrder.visitId) {
@@ -390,6 +391,7 @@ export class OrdersService {
     patientId?: string,
     search?: string,
     orderType?: OrderTypeEnum,
+    branchId?: string,
   ): Promise<{ data: Order[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
     const query: any = {};
@@ -408,6 +410,10 @@ export class OrdersService {
 
     if (search) {
       query.orderNumber = { $regex: search, $options: 'i' };
+    }
+
+    if (branchId) {
+      query.branchId = branchId;
     }
 
     const [data, total] = await Promise.all([
@@ -441,13 +447,18 @@ export class OrdersService {
   /**
    * Find order by ID
    */
-  async findOne(id: string): Promise<any> {
+  async findOne(id: string, branchId?: string): Promise<any> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
     const order = await this.orderModel
-      .findById(id)
+      .findOne(filter)
       .populate('patientId', 'patientId firstName lastName age gender')
       .populate('orderedBy', 'fullName email')
       .populate('doctorId', 'fullName phone facility')
@@ -472,9 +483,14 @@ export class OrdersService {
   /**
    * Find order by order number
    */
-  async findByOrderNumber(orderNumber: string): Promise<Order> {
+  async findByOrderNumber(orderNumber: string, branchId?: string): Promise<Order> {
+    const filter: any = { orderNumber };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
     const order = await this.orderModel
-      .findOne({ orderNumber })
+      .findOne(filter)
       .populate('patientId', 'patientId firstName lastName age gender')
       .populate('orderedBy', 'fullName email')
       .populate('doctorId', 'fullName phone facility')
@@ -515,12 +531,17 @@ export class OrdersService {
    *  - Payment-related fields (paymentStatus, paymentMethod) are ignored here —
    *    use markAsPaid / addPayment endpoints instead.
    */
-  async update(id: string, updateOrderDto: UpdateOrderDto): Promise<Order> {
+  async update(id: string, updateOrderDto: UpdateOrderDto, branchId?: string): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
+    const order = await this.orderModel.findOne(filter).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -625,7 +646,7 @@ export class OrdersService {
 
     this.logger.log(`Order updated: ${order.orderNumber}${testsChanged ? ' (tests replaced)' : ''}`);
 
-    const populatedOrder = await this.findOne(id);
+    const populatedOrder = await this.findOne(id, branchId);
 
     // Emit real-time event
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
@@ -645,12 +666,18 @@ export class OrdersService {
     id: string,
     cancelOrderDto: CancelOrderDto,
     userId?: string,
+    branchId?: string,
   ): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
+    const order = await this.orderModel.findOne(filter).exec();
 
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
@@ -673,7 +700,7 @@ export class OrdersService {
 
     this.logger.log(`Order cancelled: ${order.orderNumber}`);
 
-    const populatedOrder = await this.findOne(id);
+    const populatedOrder = await this.findOne(id, branchId);
 
     // Emit real-time event
     this.realtimeGateway.notifyOrderStatusChanged(
@@ -688,12 +715,17 @@ export class OrdersService {
   /**
    * Mark samples as collected
    */
-  async collect(id: string, userId?: string): Promise<Order> {
+  async collect(id: string, userId?: string, branchId?: string): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
+    const order = await this.orderModel.findOne(filter).exec();
 
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
@@ -719,7 +751,7 @@ export class OrdersService {
 
     this.logger.log(`Samples collected for order: ${order.orderNumber}`);
 
-    const populatedOrder = await this.findOne(id);
+    const populatedOrder = await this.findOne(id, branchId);
 
     // Emit real-time event
     this.realtimeGateway.notifyOrderStatusChanged(
@@ -734,9 +766,14 @@ export class OrdersService {
   /**
    * Get orders pending collection
    */
-  async getPendingCollection(): Promise<Order[]> {
+  async getPendingCollection(branchId?: string): Promise<Order[]> {
+    const query: any = { status: OrderStatusEnum.PENDING_COLLECTION };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const orders = await this.orderModel
-      .find({ status: OrderStatusEnum.PENDING_COLLECTION })
+      .find(query)
       .populate('patientId', 'patientId firstName lastName age gender')
       .populate('orderedBy', 'fullName email')
       .populate('doctorId', 'fullName phone facility')
@@ -764,13 +801,18 @@ export class OrdersService {
   /**
    * Get orders pending results
    */
-  async getPendingResults(): Promise<Order[]> {
+  async getPendingResults(branchId?: string): Promise<Order[]> {
+    const query: any = {
+      status: {
+        $in: [OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING],
+      },
+    };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const orders = await this.orderModel
-      .find({
-        status: {
-          $in: [OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING],
-        },
-      })
+      .find(query)
       .populate('patientId', 'patientId firstName lastName age gender')
       .populate('orderedBy', 'fullName email')
       .populate('doctorId', 'fullName phone facility')
@@ -798,7 +840,7 @@ export class OrdersService {
   /**
    * Get payment statistics — aggregates from Payment collection for accurate split-payment reporting
    */
-  async getPaymentStats(startDate?: string, endDate?: string) {
+  async getPaymentStats(startDate?: string, endDate?: string, branchId?: string) {
     const orderQuery: any = {};
     const paymentQuery: any = {};
 
@@ -812,6 +854,11 @@ export class OrdersService {
       }
       orderQuery.createdAt = dateFilter;
       paymentQuery.createdAt = dateFilter;
+    }
+
+    if (branchId) {
+      orderQuery.branchId = branchId;
+      paymentQuery.branchId = branchId;
     }
 
     const [totalOrders, paidOrders, pendingOrders, totalRevenue, collectedByMethod] =
@@ -859,7 +906,7 @@ export class OrdersService {
   /**
    * Get daily income breakdown — aggregates from Payment collection for accurate split-payment reporting
    */
-  async getDailyIncome(startDate?: string, endDate?: string) {
+  async getDailyIncome(startDate?: string, endDate?: string, branchId?: string) {
     const matchQuery: any = {};
 
     if (startDate || endDate) {
@@ -870,6 +917,10 @@ export class OrdersService {
         endOfDay.setHours(23, 59, 59, 999);
         matchQuery.createdAt.$lte = endOfDay;
       }
+    }
+
+    if (branchId) {
+      matchQuery.branchId = branchId;
     }
 
     const dailyIncome = await this.paymentModel.aggregate([
@@ -904,12 +955,17 @@ export class OrdersService {
   /**
    * Get outstanding balances — orders with pending or partial payment status
    */
-  async getOutstandingBalances() {
+  async getOutstandingBalances(branchId?: string) {
+    const query: any = {
+      paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
+      status: { $ne: OrderStatusEnum.CANCELLED },
+    };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const orders = await this.orderModel
-      .find({
-        paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
-        status: { $ne: OrderStatusEnum.CANCELLED },
-      })
+      .find(query)
       .populate('patientId', 'firstName lastName')
       .sort({ createdAt: -1 })
       .lean()
@@ -949,12 +1005,18 @@ export class OrdersService {
     id: string,
     addPaymentDto: AddPaymentDto,
     userId?: string,
+    branchId?: string,
   ): Promise<{ order: Order; payment: any }> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
+    const order = await this.orderModel.findOne(filter).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -1040,7 +1102,7 @@ export class OrdersService {
       `Payment of ${addPaymentDto.amount} added to ${order.orderNumber} via ${addPaymentDto.paymentMethod}. Balance: ${order.balance}`,
     );
 
-    const populatedOrder = await this.findOne(id);
+    const populatedOrder = await this.findOne(id, branchId);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
     if (order.visitId) {
       await this.syncVisitStatus(order.visitId as Types.ObjectId);
@@ -1072,11 +1134,15 @@ export class OrdersService {
       .exec();
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, branchId?: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+    const order = await this.orderModel.findOne(filter).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -1090,12 +1156,18 @@ export class OrdersService {
   async assignDoctor(
     id: string,
     assignDoctorDto: AssignDoctorDto,
+    branchId?: string,
   ): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
+    const order = await this.orderModel.findOne(filter).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -1119,7 +1191,7 @@ export class OrdersService {
     }
 
     await order.save();
-    const populatedOrder = await this.findOne(id);
+    const populatedOrder = await this.findOne(id, branchId);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
     return populatedOrder;
   }
@@ -1133,6 +1205,7 @@ export class OrdersService {
     status?: OrderStatusEnum | OrderStatusEnum[],
     page: number = 1,
     limit: number = 50,
+    branchId?: string,
   ): Promise<{ data: Order[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
     const query: any = { orderType };
@@ -1143,6 +1216,10 @@ export class OrdersService {
       } else {
         query.status = status;
       }
+    }
+
+    if (branchId) {
+      query.branchId = branchId;
     }
 
     const [data, total] = await Promise.all([
@@ -1174,13 +1251,17 @@ export class OrdersService {
    * Used by Reception dashboard to show what needs to be paid
    * Covers both lab orders and pharmacy orders
    */
-  async getPendingClinicalOrders(orderType?: OrderTypeEnum): Promise<Order[]> {
+  async getPendingClinicalOrders(orderType?: OrderTypeEnum, branchId?: string): Promise<Order[]> {
     const query: any = { status: OrderStatusEnum.AWAITING_PAYMENT };
     if (orderType) {
       query.orderType = orderType;
     } else {
       // By default only show lab and pharmacy orders (not consultation orders)
       query.orderType = { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] };
+    }
+
+    if (branchId) {
+      query.branchId = branchId;
     }
 
     const orders = await this.orderModel
@@ -1208,12 +1289,17 @@ export class OrdersService {
    * Mark order as paid
    * Used by Reception when confirming payment
    */
-  async markAsPaid(id: string, paymentMethod: string, userId?: string): Promise<Order> {
+  async markAsPaid(id: string, paymentMethod: string, userId?: string, branchId?: string): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const order = await this.orderModel.findById(id).exec();
+    const filter: any = { _id: id };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
+    const order = await this.orderModel.findOne(filter).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -1231,6 +1317,7 @@ export class OrdersService {
           notes: `Wallet payment for ${order.orderType} order ${order.orderNumber}`,
         },
         userId,
+        branchId,
       );
       return result.order;
     }
@@ -1261,7 +1348,7 @@ export class OrdersService {
       await this.syncVisitStatus(order.visitId as Types.ObjectId);
     }
 
-    const populatedOrder = await this.findOne(id);
+    const populatedOrder = await this.findOne(id, branchId);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
 
     if (order.orderType === OrderTypeEnum.LAB) {
@@ -1393,12 +1480,17 @@ export class OrdersService {
    * Get lab orders for lab dashboard
    * Returns orders that are paid and ready for processing
    */
-  async getLabQueue(): Promise<Order[]> {
+  async getLabQueue(branchId?: string): Promise<Order[]> {
+    const query: any = {
+      orderType: OrderTypeEnum.LAB,
+      status: { $in: [OrderStatusEnum.PENDING_COLLECTION, OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING] },
+    };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const orders = await this.orderModel
-      .find({
-        orderType: OrderTypeEnum.LAB,
-        status: { $in: [OrderStatusEnum.PENDING_COLLECTION, OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING] },
-      })
+      .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
@@ -1416,12 +1508,17 @@ export class OrdersService {
     ) as any;
   }
 
-  async getPharmacyQueue(): Promise<Order[]> {
+  async getPharmacyQueue(branchId?: string): Promise<Order[]> {
+    const query: any = {
+      orderType: OrderTypeEnum.PHARMACY,
+      status: OrderStatusEnum.PAID,
+    };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const orders = await this.orderModel
-      .find({
-        orderType: OrderTypeEnum.PHARMACY,
-        status: OrderStatusEnum.PAID,
-      })
+      .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })

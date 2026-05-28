@@ -28,9 +28,6 @@ export class VisitsService {
     private ordersService: OrdersService,
   ) {}
 
-  /**
-   * Generate unique visit number in format: VIS-YYYYMMDD-XXXX
-   */
   private async generateVisitNumber(): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
@@ -49,19 +46,14 @@ export class VisitsService {
     return `VIS-${datePart}-${paddedValue}`;
   }
 
-  /**
-   * Create a new visit (Reception registers patient)
-   */
-  async create(createVisitDto: CreateVisitDto): Promise<Visit> {
+  async create(createVisitDto: CreateVisitDto, branchId?: string): Promise<Visit> {
     const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature } = createVisitDto;
 
-    // Verify patient exists
     const patient = await this.patientModel.findById(patientId);
     if (!patient) {
       throw new NotFoundException('Patient not found');
     }
 
-    // Verify doctor exists if provided
     if (doctorId) {
       const doctor = await this.doctorModel.findById(doctorId);
       if (!doctor) {
@@ -69,10 +61,9 @@ export class VisitsService {
       }
     }
 
-    // Generate visit number
     const visitNumber = await this.generateVisitNumber();
 
-    const visit = new this.visitModel({
+    const visitData: any = {
       visitNumber,
       patientId: new Types.ObjectId(patientId),
       doctorId: doctorId ? new Types.ObjectId(doctorId) : undefined,
@@ -84,11 +75,13 @@ export class VisitsService {
       status: VisitStatusEnum.WAITING_PAYMENT,
       consultationPaid: false,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
-    });
+    };
+    if (branchId) visitData.branchId = branchId;
+
+    const visit = new this.visitModel(visitData);
 
     const savedVisit = await visit.save();
 
-    // Auto-assign room based on visit type
     if (savedVisit.visitType === VisitTypeEnum.EMERGENCY) {
       const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
         { roomType: 'emergency', status: 'available' },
@@ -103,18 +96,15 @@ export class VisitsService {
     }
     this.logger.log(`Visit created: ${savedVisit.visitNumber}`);
 
-    // Emit real-time event
     this.realtimeGateway.emitToAll('visit:created', savedVisit);
 
     return savedVisit;
   }
 
-  /**
-   * Find all visits with optional filters
-   */
-  async findAll(query: any = {}): Promise<Visit[]> {
+  async findAll(query: any = {}, branchId?: string): Promise<Visit[]> {
+    const filter = branchId ? { ...query, branchId } : query;
     return this.visitModel
-      .find(query)
+      .find(filter)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .populate('registeredBy', 'fullName')
@@ -122,12 +112,9 @@ export class VisitsService {
       .exec();
   }
 
-  /**
-   * Find visit by ID
-   */
-  async findById(id: string): Promise<Visit> {
+  async findById(id: string, branchId?: string): Promise<Visit> {
     const visit = await this.visitModel
-      .findById(id)
+      .findOne({ _id: id, ...(branchId ? { branchId } : {}) })
       .populate('patientId')
       .populate('doctorId')
       .populate('registeredBy')
@@ -139,31 +126,22 @@ export class VisitsService {
     return visit;
   }
 
-  /**
-   * Find visits by patient ID
-   */
-  async findByPatient(patientId: string): Promise<Visit[]> {
+  async findByPatient(patientId: string, branchId?: string): Promise<Visit[]> {
     return this.visitModel
-      .find({ patientId: new Types.ObjectId(patientId) })
+      .find({ patientId: new Types.ObjectId(patientId), ...(branchId ? { branchId } : {}) })
       .populate('doctorId', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  /**
-   * Get doctor queue - visits waiting for consultation.
-   * If doctorId is provided, returns only visits assigned to that doctor
-   * plus unassigned visits (so doctors can see walk-ins with no assignment).
-   * Nurses see the full queue regardless.
-   */
-  async getDoctorQueue(doctorId?: string): Promise<Visit[]> {
+  async getDoctorQueue(doctorId?: string, branchId?: string): Promise<Visit[]> {
     const query: any = {
       status: VisitStatusEnum.IN_QUEUE,
       consultationPaid: true,
+      ...(branchId ? { branchId } : {}),
     };
 
     if (doctorId) {
-      // Show visits explicitly assigned to this doctor OR unassigned (doctorId not set)
       query.$or = [
         { doctorId: new Types.ObjectId(doctorId) },
         { doctorId: { $exists: false } },
@@ -175,50 +153,38 @@ export class VisitsService {
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName department')
-      .sort({ triagedAt: 1, createdAt: 1 }) // FCFS after nurse vitals/triage
+      .sort({ triagedAt: 1, createdAt: 1 })
       .exec();
   }
 
-  /**
-   * Get visits awaiting lab payment
-   */
-  async getAwaitingLabPayment(): Promise<Visit[]> {
+  async getAwaitingLabPayment(branchId?: string): Promise<Visit[]> {
     return this.visitModel
-      .find({ status: VisitStatusEnum.AWAITING_LAB })
+      .find({ status: VisitStatusEnum.AWAITING_LAB, ...(branchId ? { branchId } : {}) })
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
   }
 
-  /**
-   * Get visits awaiting pharmacy payment
-   */
-  async getAwaitingPharmacyPayment(): Promise<Visit[]> {
+  async getAwaitingPharmacyPayment(branchId?: string): Promise<Visit[]> {
     return this.visitModel
-      .find({ status: VisitStatusEnum.AWAITING_PHARMACY })
+      .find({ status: VisitStatusEnum.AWAITING_PHARMACY, ...(branchId ? { branchId } : {}) })
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
   }
 
-  /**
-   * Get visits awaiting dispensing (pharmacy paid, pharmacist to dispense)
-   */
-  async getAwaitingDispensing(): Promise<Visit[]> {
+  async getAwaitingDispensing(branchId?: string): Promise<Visit[]> {
     return this.visitModel
-      .find({ status: VisitStatusEnum.AWAITING_DISPENSING })
+      .find({ status: VisitStatusEnum.AWAITING_DISPENSING, ...(branchId ? { branchId } : {}) })
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
   }
 
-  /**
-   * Get doctor dashboard data — active patients + results ready for a specific doctor
-   */
-  async getDoctorDashboard(doctorId: string): Promise<{
+  async getDoctorDashboard(doctorId: string, branchId?: string): Promise<{
     waitingQueue: Visit[];
     activePatients: Visit[];
     awaitingLabPayment: Visit[];
@@ -237,6 +203,7 @@ export class VisitsService {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const doctorObjectId = new Types.ObjectId(doctorId);
+    const branchFilter = branchId ? { branchId } : {};
 
     const openEncounterStatuses = [
       VisitStatusEnum.IN_CONSULTATION,
@@ -265,78 +232,77 @@ export class VisitsService {
       todayCompleted,
     ] =
       await Promise.all([
-        // All paid patients waiting in queue (not yet assigned to a doctor)
         this.visitModel
-          .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true })
+          .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ triagedAt: 1, createdAt: 1 })
           .exec(),
-        // This doctor's open encounters stay visible until the doctor closes them.
         this.visitModel
-          .find({ status: { $in: openEncounterStatuses }, doctorId: doctorObjectId })
+          .find({ status: { $in: openEncounterStatuses }, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
           .sort({ updatedAt: -1, consultationStartedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_LAB, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.AWAITING_LAB, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_RESULTS, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.AWAITING_RESULTS, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_PHARMACY, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.AWAITING_PHARMACY, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_DISPENSING, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.AWAITING_DISPENSING, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.ADMITTED, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.ADMITTED, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
-        // Patients with results ready for this doctor to review
         this.visitModel
-          .find({ status: VisitStatusEnum.RESULTS_READY, doctorId: doctorObjectId })
+          .find({ status: VisitStatusEnum.RESULTS_READY, doctorId: doctorObjectId, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
-        // Incoming referrals for this specialist
         this.visitModel
           .find({
             referredToSpecialistId: doctorObjectId,
             status: VisitStatusEnum.REFERRED,
+            ...branchFilter,
           })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .populate('doctorId', 'fullName department')
           .sort({ referredAt: -1 })
           .exec(),
-        // Today's stats
         this.visitModel.countDocuments({
           doctorId: doctorObjectId,
           createdAt: { $gte: today, $lt: tomorrow },
           status: { $in: [...openEncounterStatuses, VisitStatusEnum.COMPLETED] },
+          ...branchFilter,
         }),
         this.visitModel.countDocuments({
           createdAt: { $gte: today, $lt: tomorrow },
           status: VisitStatusEnum.IN_QUEUE,
+          ...branchFilter,
         }),
         this.visitModel.countDocuments({
           doctorId: doctorObjectId,
           createdAt: { $gte: today, $lt: tomorrow },
           status: VisitStatusEnum.COMPLETED,
+          ...branchFilter,
         }),
       ]);
 
@@ -359,10 +325,7 @@ export class VisitsService {
     };
   }
 
-  /**
-   * Reception dashboard — aggregated view of all pending actions + today's stats
-   */
-  async getReceptionDashboard(): Promise<{
+  async getReceptionDashboard(branchId?: string): Promise<{
     pendingConsultationPayments: Visit[];
     pendingLabPayments: Visit[];
     pendingPharmacyPayments: Visit[];
@@ -380,7 +343,10 @@ export class VisitsService {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const todayFilter = { createdAt: { $gte: today, $lt: tomorrow } };
+    const todayFilter: any = { createdAt: { $gte: today, $lt: tomorrow } };
+    if (branchId) todayFilter.branchId = branchId;
+
+    const branchFilter = branchId ? { branchId } : {};
 
     const [
       pendingConsultationPayments,
@@ -395,24 +361,24 @@ export class VisitsService {
       cancelled,
     ] = await Promise.all([
       this.visitModel
-        .find({ status: VisitStatusEnum.WAITING_PAYMENT })
+        .find({ status: VisitStatusEnum.WAITING_PAYMENT, ...branchFilter })
         .populate('patientId', 'patientId firstName lastName age gender phone')
         .sort({ createdAt: 1 })
         .exec(),
       this.visitModel
-        .find({ status: VisitStatusEnum.AWAITING_LAB })
-        .populate('patientId', 'patientId firstName lastName age gender phone')
-        .populate('doctorId', 'fullName')
-        .sort({ createdAt: 1 })
-        .exec(),
-      this.visitModel
-        .find({ status: VisitStatusEnum.AWAITING_PHARMACY })
+        .find({ status: VisitStatusEnum.AWAITING_LAB, ...branchFilter })
         .populate('patientId', 'patientId firstName lastName age gender phone')
         .populate('doctorId', 'fullName')
         .sort({ createdAt: 1 })
         .exec(),
       this.visitModel
-        .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true })
+        .find({ status: VisitStatusEnum.AWAITING_PHARMACY, ...branchFilter })
+        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('doctorId', 'fullName')
+        .sort({ createdAt: 1 })
+        .exec(),
+      this.visitModel
+        .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true, ...branchFilter })
         .populate('patientId', 'patientId firstName lastName age gender phone')
         .populate('doctorId', 'fullName')
         .sort({ createdAt: 1 })
@@ -441,11 +407,8 @@ export class VisitsService {
     };
   }
 
-  /**
-   * Update visit
-   */
-  async update(id: string, updateVisitDto: UpdateVisitDto): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async update(id: string, updateVisitDto: UpdateVisitDto, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -459,11 +422,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Mark consultation as paid and route to nurse vitals/triage.
-   */
-  async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -487,7 +447,6 @@ export class VisitsService {
     });
     this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (awaiting triage)`);
 
-    // Auto-create queue entry for nurse triage/vitals.
     try {
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
@@ -517,9 +476,6 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Nurse triage — record vitals, priority, assign a doctor, and move to doctor queue
-   */
   async completeTriage(
     id: string,
     data: {
@@ -533,11 +489,12 @@ export class VisitsService {
       triagePriority?: string;
       triageNotes?: string;
       chiefComplaint?: string;
-      doctorId?: string; // Nurse must assign a specific doctor during triage
+      doctorId?: string;
     },
     nurseId?: string,
+    branchId?: string,
   ): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     if (visit.status !== VisitStatusEnum.AWAITING_TRIAGE) {
@@ -589,20 +546,17 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Nurse assigns (or reassigns) a patient in the queue to a specific doctor.
-   * Works on visits in IN_QUEUE status — can be called after triage to redirect a patient.
-   */
   async assignDoctorFromQueue(
     id: string,
     doctorId: string,
     nurseId?: string,
+    branchId?: string,
   ): Promise<Visit> {
     if (!Types.ObjectId.isValid(doctorId)) {
       throw new BadRequestException('Invalid doctor ID');
     }
 
-    const visit = await this.visitModel.findById(id);
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     if (visit.status !== VisitStatusEnum.IN_QUEUE) {
@@ -618,7 +572,6 @@ export class VisitsService {
     visit.doctorId = new Types.ObjectId(doctorId);
     const savedVisit = await visit.save();
 
-    // Keep queue entry in sync
     await this.queueModel.updateOne(
       { visitId: new Types.ObjectId(id) },
       { doctorId: new Types.ObjectId(doctorId) },
@@ -638,26 +591,21 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Get visits awaiting triage
-   */
-  async getAwaitingTriage(): Promise<Visit[]> {
+  async getAwaitingTriage(branchId?: string): Promise<Visit[]> {
     return this.visitModel
-      .find({ status: VisitStatusEnum.AWAITING_TRIAGE })
+      .find({ status: VisitStatusEnum.AWAITING_TRIAGE, ...(branchId ? { branchId } : {}) })
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
       .sort({ createdAt: 1 })
       .exec();
   }
 
-  /**
-   * Doctor refers patient to a specialist
-   */
   async referToSpecialist(
     id: string,
     data: { specialistId: string; reason: string; notes?: string },
     doctorId?: string,
+    branchId?: string,
   ): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     visit.referredToSpecialistId = new Types.ObjectId(data.specialistId);
@@ -673,14 +621,12 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Get visits referred to a specific specialist (incoming referrals)
-   */
-  async getSpecialistReferrals(specialistId: string): Promise<Visit[]> {
+  async getSpecialistReferrals(specialistId: string, branchId?: string): Promise<Visit[]> {
     return this.visitModel
       .find({
         referredToSpecialistId: new Types.ObjectId(specialistId),
         status: VisitStatusEnum.REFERRED,
+        ...(branchId ? { branchId } : {}),
       })
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
       .populate('doctorId', 'fullName department')
@@ -688,11 +634,8 @@ export class VisitsService {
       .exec();
   }
 
-  /**
-   * Specialist accepts referral - starts consultation
-   */
-  async acceptReferral(id: string, specialistId: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async acceptReferral(id: string, specialistId: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
     if (visit.status !== VisitStatusEnum.REFERRED) {
       throw new BadRequestException('Visit is not a referral');
@@ -708,11 +651,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Doctor accepts patient - start consultation
-   */
-  async acceptPatient(id: string, doctorId: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async acceptPatient(id: string, doctorId: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -721,7 +661,6 @@ export class VisitsService {
       throw new BadRequestException('Visit is not in queue');
     }
 
-    // Auto-assign consultation room if not already assigned
     if (!visit.room) {
       const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
         { roomType: 'consultation', status: 'available' },
@@ -755,11 +694,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Doctor orders lab tests - move to awaiting lab payment
-   */
-  async orderLab(id: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async orderLab(id: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -777,11 +713,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Doctor prescribes medication - move to awaiting pharmacy payment
-   */
-  async prescribeMedication(id: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async prescribeMedication(id: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -799,11 +732,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Lab payment confirmed - move to awaiting results
-   */
-  async markLabPaid(id: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async markLabPaid(id: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -821,11 +751,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Pharmacy payment confirmed - ready for dispensing
-   */
-  async markPharmacyPaid(id: string, paymentMethod = 'cash', receivedBy?: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async markPharmacyPaid(id: string, paymentMethod = 'cash', receivedBy?: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -837,11 +764,10 @@ export class VisitsService {
     visit.status = VisitStatusEnum.AWAITING_DISPENSING;
     const savedVisit = await visit.save();
 
-    // Record payment
     await this.paymentModel.create({
       visitId: new Types.ObjectId(id),
       paymentType: PaymentTypeEnum.PRESCRIPTION,
-      amount: 0, // Amount tracked on the prescription/order itself
+      amount: 0,
       paymentMethod,
       receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
       notes: `Pharmacy payment confirmed for visit ${visit.visitNumber}`,
@@ -853,12 +779,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Pharmacist has dispensed all drugs - return visit to doctor review.
-   * The doctor, not pharmacy, closes the encounter.
-   */
-  async markDispensed(id: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async markDispensed(id: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -876,11 +798,8 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Results released - doctor can review
-   */
-  async resultsReleased(id: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async resultsReleased(id: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -898,16 +817,12 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Complete visit
-   */
-  async complete(id: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async complete(id: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
 
-    // Only close encounters from valid doctor-owned closure states.
     if (
       ![
         VisitStatusEnum.IN_CONSULTATION,
@@ -918,7 +833,6 @@ export class VisitsService {
       throw new BadRequestException(`Visit cannot be completed from status '${visit.status}'`);
     }
 
-    // Enforce full service settlement for all linked clinical orders before closure.
     const linkedOrders = await this.visitModel.db
       .model('Order')
       .find({
@@ -949,7 +863,6 @@ export class VisitsService {
       throw new BadRequestException('Visit has pharmacy orders pending dispensing');
     }
 
-    // Release room if assigned
     if (visit.room) {
       const RoomModel = this.visitModel.db.model('Room');
       await RoomModel.findOneAndUpdate(
@@ -969,16 +882,12 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Cancel visit
-   */
-  async cancel(id: string, reason: string, cancelledBy: string): Promise<Visit> {
-    const visit = await this.visitModel.findById(id);
+  async cancel(id: string, reason: string, cancelledBy: string, branchId?: string): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
 
-    // Release room if assigned
     if (visit.room) {
       const RoomModel = this.visitModel.db.model('Room');
       await RoomModel.findOneAndUpdate(
@@ -998,11 +907,9 @@ export class VisitsService {
     return savedVisit;
   }
 
-  /**
-   * Get visit statistics for dashboard
-   */
-  async getStats(date?: string) {
+  async getStats(date?: string, branchId?: string) {
     const query: any = {};
+    if (branchId) query.branchId = branchId;
     if (date) {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);

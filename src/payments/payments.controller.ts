@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Patch, UseGuards, Request } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -13,32 +13,37 @@ export class PaymentsController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  create(@Body() createPaymentDto: CreatePaymentDto) {
-    return this.paymentsService.createPayment(createPaymentDto);
+  create(@Body() createPaymentDto: CreatePaymentDto, @Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.createPayment({ ...createPaymentDto, branchId });
   }
 
   @Get('visit/:visitId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR)
-  findByVisit(@Param('visitId') visitId: string) {
-    return this.paymentsService.findByVisit(visitId);
+  findByVisit(@Param('visitId') visitId: string, @Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.findByVisit(visitId, branchId);
   }
 
   @Get('order/:orderId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  findByOrder(@Param('orderId') orderId: string) {
-    return this.paymentsService.findByOrder(orderId);
+  findByOrder(@Param('orderId') orderId: string, @Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.findByOrder(orderId, branchId);
   }
 
   @Get('consultation/:consultationId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  findByConsultation(@Param('consultationId') consultationId: string) {
-    return this.paymentsService.findByConsultation(consultationId);
+  findByConsultation(@Param('consultationId') consultationId: string, @Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.findByConsultation(consultationId, branchId);
   }
 
   @Get('prescription/:prescriptionId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
-  findByPrescription(@Param('prescriptionId') prescriptionId: string) {
-    return this.paymentsService.findByPrescription(prescriptionId);
+  findByPrescription(@Param('prescriptionId') prescriptionId: string, @Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.findByPrescription(prescriptionId, branchId);
   }
 
   @Patch(':id/refund')

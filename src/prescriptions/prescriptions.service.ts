@@ -87,7 +87,7 @@ export class PrescriptionsService {
     }
   }
 
-  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string): Promise<Prescription> {
+  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string): Promise<Prescription> {
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
 
     // Verify patient exists
@@ -129,12 +129,14 @@ export class PrescriptionsService {
     // Generate prescription number
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
-    const count = await this.prescriptionModel.countDocuments({
+    const countFilter: any = {
       createdAt: {
         $gte: new Date(today.setHours(0, 0, 0, 0)),
         $lt: new Date(today.setHours(23, 59, 59, 999)),
       },
-    });
+    };
+    if (branchId) countFilter.branchId = branchId;
+    const count = await this.prescriptionModel.countDocuments(countFilter);
     const prescriptionNumber = `RX-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 
     const prescription = new this.prescriptionModel({
@@ -155,6 +157,7 @@ export class PrescriptionsService {
       notes,
       isPaid: false,
       totalAmount,
+      branchId,
     });
 
     const savedPrescription = await prescription.save();
@@ -164,9 +167,10 @@ export class PrescriptionsService {
     return populatedPrescription;
   }
 
-  async findAll(query: any = {}): Promise<Prescription[]> {
+  async findAll(query: any = {}, branchId?: string): Promise<Prescription[]> {
+    const filter = branchId ? { ...query, branchId } : query;
     return this.prescriptionModel
-      .find(query)
+      .find(filter)
       .populate('patientId', 'patientId firstName lastName')
       .populate('prescribedBy', 'fullName email')
       .populate('doctorId', 'fullName')
@@ -193,9 +197,11 @@ export class PrescriptionsService {
   /**
    * Get prescriptions awaiting payment — shown on Reception pending clinical orders
    */
-  async findPendingPayment(): Promise<Prescription[]> {
+  async findPendingPayment(branchId?: string): Promise<Prescription[]> {
+    const filter: any = { status: PrescriptionStatusEnum.PENDING, isPaid: false };
+    if (branchId) filter.branchId = branchId;
     return this.prescriptionModel
-      .find({ status: PrescriptionStatusEnum.PENDING, isPaid: false })
+      .find(filter)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('prescribedBy', 'fullName')
       .populate('doctorId', 'fullName')
@@ -206,9 +212,11 @@ export class PrescriptionsService {
   /**
    * Get prescriptions paid and awaiting dispensing — shown on Pharmacy dashboard
    */
-  async findPendingDispense(): Promise<Prescription[]> {
+  async findPendingDispense(branchId?: string): Promise<Prescription[]> {
+    const filter: any = { status: PrescriptionStatusEnum.PENDING, isPaid: true };
+    if (branchId) filter.branchId = branchId;
     return this.prescriptionModel
-      .find({ status: PrescriptionStatusEnum.PENDING, isPaid: true })
+      .find(filter)
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('prescribedBy', 'fullName')
       .populate('doctorId', 'fullName')

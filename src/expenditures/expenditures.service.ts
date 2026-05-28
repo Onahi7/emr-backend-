@@ -17,23 +17,26 @@ export class ExpendituresService {
     private expenditureModel: Model<Expenditure>,
   ) {}
 
-  async create(createDto: CreateExpenditureDto, userId: string) {
-    const expenditure = new this.expenditureModel({
+  async create(createDto: CreateExpenditureDto, userId: string, branchId?: string) {
+    const expenditureData: any = {
       ...createDto,
       recordedBy: new Types.ObjectId(userId),
-    });
+    };
+    if (branchId) expenditureData.branchId = branchId;
+
+    const expenditure = new this.expenditureModel(expenditureData);
 
     await expenditure.save();
     this.logger.log(`Expenditure created: ${createDto.description} - Le ${createDto.amount}`);
 
-    return this.findOne(expenditure._id.toString());
+    return this.findOne(expenditure._id.toString(), branchId);
   }
 
   async findAll(filters?: {
     startDate?: string;
     endDate?: string;
     category?: string;
-  }) {
+  }, branchId?: string) {
     const query: any = {};
 
     if (filters?.startDate || filters?.endDate) {
@@ -50,6 +53,8 @@ export class ExpendituresService {
       query.category = filters.category;
     }
 
+    if (branchId) query.branchId = branchId;
+
     return this.expenditureModel
       .find(query)
       .populate('recordedBy', 'fullName email')
@@ -58,13 +63,13 @@ export class ExpendituresService {
       .exec();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, branchId?: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
 
     const expenditure = await this.expenditureModel
-      .findById(id)
+      .findOne({ _id: id, ...(branchId ? { branchId } : {}) })
       .populate('recordedBy', 'fullName email')
       .populate('flaggedBy', 'fullName email')
       .exec();
@@ -76,8 +81,8 @@ export class ExpendituresService {
     return expenditure;
   }
 
-  async update(id: string, updateData: Partial<CreateExpenditureDto>) {
-    const expenditure = await this.expenditureModel.findById(id).exec();
+  async update(id: string, updateData: Partial<CreateExpenditureDto>, branchId?: string) {
+    const expenditure = await this.expenditureModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -85,19 +90,21 @@ export class ExpendituresService {
     Object.assign(expenditure, updateData);
     await expenditure.save();
 
-    return this.findOne(id);
+    return this.findOne(id, branchId);
   }
 
-  async delete(id: string) {
-    const result = await this.expenditureModel.findByIdAndDelete(id).exec();
+  async delete(id: string, branchId?: string) {
+    const filter: any = { _id: id };
+    if (branchId) filter.branchId = branchId;
+    const result = await this.expenditureModel.findOneAndDelete(filter).exec();
     if (!result) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
     this.logger.log(`Expenditure deleted: ${id}`);
   }
 
-  async flag(id: string, userId: string, reason: string) {
-    const expenditure = await this.expenditureModel.findById(id).exec();
+  async flag(id: string, userId: string, reason: string, branchId?: string) {
+    const expenditure = await this.expenditureModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -109,11 +116,11 @@ export class ExpendituresService {
     await expenditure.save();
 
     this.logger.log(`Expenditure flagged: ${id} by ${userId} reason: ${reason}`);
-    return this.findOne(id);
+    return this.findOne(id, branchId);
   }
 
-  async unflag(id: string) {
-    const expenditure = await this.expenditureModel.findById(id).exec();
+  async unflag(id: string, branchId?: string) {
+    const expenditure = await this.expenditureModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -125,10 +132,10 @@ export class ExpendituresService {
     await expenditure.save();
 
     this.logger.log(`Expenditure unflagged: ${id}`);
-    return this.findOne(id);
+    return this.findOne(id, branchId);
   }
 
-  async getSummary(startDate?: string, endDate?: string) {
+  async getSummary(startDate?: string, endDate?: string, branchId?: string) {
     const match: any = {};
 
     if (startDate || endDate) {
@@ -137,8 +144,9 @@ export class ExpendituresService {
       if (endDate) match.expenditureDate.$lte = new Date(endDate);
     }
 
+    if (branchId) match.branchId = branchId;
+
     const [byCategory, totals, dailyTotals] = await Promise.all([
-      // Breakdown by category
       this.expenditureModel.aggregate([
         { $match: match },
         {
@@ -151,7 +159,6 @@ export class ExpendituresService {
         { $sort: { total: -1 } },
       ]),
 
-      // Overall totals
       this.expenditureModel.aggregate([
         { $match: match },
         {
@@ -169,7 +176,6 @@ export class ExpendituresService {
         },
       ]),
 
-      // Daily breakdown
       this.expenditureModel.aggregate([
         { $match: match },
         {

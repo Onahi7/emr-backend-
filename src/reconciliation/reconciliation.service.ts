@@ -40,15 +40,17 @@ export class ReconciliationService {
     private doctorModel: Model<Doctor>,
   ) {}
 
-  async getExpectedAmounts(date: Date) {
+  async getExpectedAmounts(date: Date, branchId?: string) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
     // Use Payment model (same source as getDailyIncome) for gross collected
+    const paymentQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) paymentQuery.branchId = branchId;
     const payments = await this.paymentModel
-      .find({ createdAt: { $gte: startOfDay, $lte: endOfDay } })
+      .find(paymentQuery)
       .exec();
 
     // Gross collected by payment method
@@ -63,10 +65,12 @@ export class ReconciliationService {
       .reduce((sum, p) => sum + p.amount, 0);
 
     // Get all expenditures for the day
+    const expenditureQuery: any = {
+      expenditureDate: { $gte: startOfDay, $lte: endOfDay },
+    };
+    if (branchId) expenditureQuery.branchId = branchId;
     const expenditures = await this.expenditureModel
-      .find({
-        expenditureDate: { $gte: startOfDay, $lte: endOfDay },
-      })
+      .find(expenditureQuery)
       .exec();
 
     // Deduct expenditures per payment method
@@ -87,8 +91,10 @@ export class ReconciliationService {
     const expectedAfrimoney = incomeAfrimoney - afriExpenditures;
 
     // Get order counts
+    const orderQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) orderQuery.branchId = branchId;
     const allOrders = await this.orderModel
-      .find({ createdAt: { $gte: startOfDay, $lte: endOfDay } })
+      .find(orderQuery)
       .exec();
     const paidOrders = allOrders.filter(
       (o) => o.paymentStatus === PaymentStatusEnum.PAID,
@@ -109,24 +115,26 @@ export class ReconciliationService {
     };
   }
 
-  async create(createDto: CreateReconciliationDto, userId: string) {
+  async create(createDto: CreateReconciliationDto, userId: string, branchId?: string) {
     const startOfDay = new Date(createDto.reconciliationDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(createDto.reconciliationDate);
     endOfDay.setHours(23, 59, 59, 999);
 
+    const existingQuery: any = { reconciliationDate: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) existingQuery.branchId = branchId;
     const existing = await this.reconciliationModel
-      .findOne({ reconciliationDate: { $gte: startOfDay, $lte: endOfDay } })
+      .findOne(existingQuery)
       .exec();
 
     if (existing) {
       throw new BadRequestException('Reconciliation already exists for this date');
     }
 
-    const expected = await this.getExpectedAmounts(createDto.reconciliationDate);
+    const expected = await this.getExpectedAmounts(createDto.reconciliationDate, branchId);
     const actualTotal = createDto.actualCash + createDto.actualOrangeMoney + createDto.actualAfrimoney;
 
-    const reconciliation = new this.reconciliationModel({
+    const reconciliationData: any = {
       reconciliationDate: createDto.reconciliationDate,
       submittedBy: new Types.ObjectId(userId),
       submittedAt: new Date(),
@@ -148,17 +156,23 @@ export class ReconciliationService {
       pendingOrders: expected.pendingOrders,
       notes: createDto.notes,
       status: ReconciliationStatusEnum.PENDING,
-    });
+    };
+    if (branchId) reconciliationData.branchId = branchId;
+
+    const reconciliation = new this.reconciliationModel(reconciliationData);
 
     await reconciliation.save();
     this.logger.log(`Reconciliation created for ${createDto.reconciliationDate}`);
-    return this.findOne(reconciliation._id.toString());
+    return this.findOne(reconciliation._id.toString(), branchId);
   }
 
-  async findAll(status?: string) {
+  async findAll(status?: string, branchId?: string) {
     const query: any = {};
     if (status && status !== 'all') {
       query.status = status;
+    }
+    if (branchId) {
+      query.branchId = branchId;
     }
 
     return this.reconciliationModel
@@ -169,13 +183,16 @@ export class ReconciliationService {
       .exec();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, branchId?: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Reconciliation with ID ${id} not found`);
     }
 
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
     const reconciliation = await this.reconciliationModel
-      .findById(id)
+      .findOne(query)
       .populate('submittedBy', 'fullName email')
       .populate('reviewedBy', 'fullName email')
       .exec();
@@ -187,8 +204,11 @@ export class ReconciliationService {
     return reconciliation;
   }
 
-  async review(id: string, reviewDto: ReviewReconciliationDto, userId: string) {
-    const reconciliation = await this.reconciliationModel.findById(id).exec();
+  async review(id: string, reviewDto: ReviewReconciliationDto, userId: string, branchId?: string) {
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
+    const reconciliation = await this.reconciliationModel.findOne(query).exec();
 
     if (!reconciliation) {
       throw new NotFoundException(`Reconciliation with ID ${id} not found`);
@@ -208,24 +228,29 @@ export class ReconciliationService {
     await reconciliation.save();
     this.logger.log(`Reconciliation ${reviewDto.approved ? 'approved' : 'rejected'} by ${userId}`);
 
-    return this.findOne(id);
+    return this.findOne(id, branchId);
   }
 
-  async getPendingCount() {
+  async getPendingCount(branchId?: string) {
+    const query: any = { status: ReconciliationStatusEnum.PENDING };
+    if (branchId) query.branchId = branchId;
+
     return this.reconciliationModel
-      .countDocuments({ status: ReconciliationStatusEnum.PENDING })
+      .countDocuments(query)
       .exec();
   }
 
-  async getDailyReport(date: Date) {
+  async getDailyReport(date: Date, branchId?: string) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
     // 1. Orders
+    const orderQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) orderQuery.branchId = branchId;
     const orders = await this.orderModel
-      .find({ createdAt: { $gte: startOfDay, $lte: endOfDay } })
+      .find(orderQuery)
       .lean();
 
     const totalOrders = orders.length;
@@ -242,8 +267,10 @@ export class ReconciliationService {
     const totalBilled = orders.reduce((s, o) => s + (o.total || 0), 0);
 
     // 2. Tests done (from OrderTest)
+    const orderTestQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) orderTestQuery.branchId = branchId;
     const orderTests = await this.orderTestModel
-      .find({ createdAt: { $gte: startOfDay, $lte: endOfDay } })
+      .find(orderTestQuery)
       .lean();
 
     const totalTestsDone = orderTests.length;
@@ -278,8 +305,10 @@ export class ReconciliationService {
     testBreakdown.sort((a, b) => b.count - a.count);
 
     // 3. Payments (actual money received)
+    const paymentQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) paymentQuery.branchId = branchId;
     const payments = await this.paymentModel
-      .find({ createdAt: { $gte: startOfDay, $lte: endOfDay } })
+      .find(paymentQuery)
       .lean();
 
     const cashCollected = payments
@@ -294,8 +323,10 @@ export class ReconciliationService {
     const totalCollected = cashCollected + orangeCollected + afriCollected;
 
     // 4. Expenditures
+    const expenditureQuery: any = { expenditureDate: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) expenditureQuery.branchId = branchId;
     const expenditures = await this.expenditureModel
-      .find({ expenditureDate: { $gte: startOfDay, $lte: endOfDay } })
+      .find(expenditureQuery)
       .lean();
 
     const cashExpenditure = expenditures
@@ -316,8 +347,10 @@ export class ReconciliationService {
     const netExpectedTotal = totalCollected - totalExpenditure;
 
     // 6. Reconciliation (if submitted)
+    const reconQuery: any = { reconciliationDate: { $gte: startOfDay, $lte: endOfDay } };
+    if (branchId) reconQuery.branchId = branchId;
     const reconciliation = await this.reconciliationModel
-      .findOne({ reconciliationDate: { $gte: startOfDay, $lte: endOfDay } })
+      .findOne(reconQuery)
       .populate('submittedBy', 'fullName')
       .lean();
 
@@ -381,7 +414,7 @@ export class ReconciliationService {
     };
   }
 
-  async getDoctorReferralReport(params: { startDate?: Date; endDate?: Date; doctor?: string; doctorId?: string }) {
+  async getDoctorReferralReport(params: { startDate?: Date; endDate?: Date; doctor?: string; doctorId?: string; branchId?: string }) {
     const filter: any = {
       $or: [
         { referredByDoctor: { $exists: true, $nin: [null, ''] } },
@@ -401,6 +434,10 @@ export class ReconciliationService {
         e.setHours(23, 59, 59, 999);
         filter.createdAt.$lte = e;
       }
+    }
+
+    if (params.branchId) {
+      filter.branchId = params.branchId;
     }
 
     if (params.doctorId && Types.ObjectId.isValid(params.doctorId)) {

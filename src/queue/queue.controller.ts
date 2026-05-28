@@ -14,14 +14,14 @@ export class QueueController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  addToQueue(@Body() createQueueDto: CreateQueueDto) {
-    return this.queueService.addToQueue(createQueueDto);
+  addToQueue(@Body() createQueueDto: CreateQueueDto, @Query('branchId') branchId?: string) {
+    return this.queueService.addToQueue(createQueueDto, branchId);
   }
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  getQueue(@Query('status') status?: QueueStatusEnum) {
-    return this.queueService.getQueue(status);
+  getQueue(@Query('status') status?: QueueStatusEnum, @Query('branchId') branchId?: string) {
+    return this.queueService.getQueue(status, branchId);
   }
 
   /**
@@ -30,14 +30,14 @@ export class QueueController {
    */
   @Patch('reorder')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.NURSE)
-  reorderQueue(@Body() body: { queueIds: string[] }) {
-    return this.queueService.reorderQueue(body.queueIds);
+  reorderQueue(@Body() body: { queueIds: string[] }, @Query('branchId') branchId?: string) {
+    return this.queueService.reorderQueue(body.queueIds, branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string) {
-    return this.queueService.findById(id);
+  findOne(@Param('id') id: string, @Query('branchId') branchId?: string) {
+    return this.queueService.findById(id, branchId);
   }
 
   @Patch(':id/status')
@@ -45,8 +45,9 @@ export class QueueController {
   updateStatus(
     @Param('id') id: string,
     @Body() body: { status: QueueStatusEnum; userId?: string },
+    @Query('branchId') branchId?: string,
   ) {
-    return this.queueService.updateStatus(id, body.status, body.userId);
+    return this.queueService.updateStatus(id, body.status, body.userId, branchId);
   }
 
   @Patch(':id/remove')
@@ -54,7 +55,8 @@ export class QueueController {
   removeFromQueue(
     @Param('id') id: string,
     @Body() body: { reason: string; cancelledBy: string },
+    @Query('branchId') branchId?: string,
   ) {
-    return this.queueService.removeFromQueue(id, body.reason, body.cancelledBy);
+    return this.queueService.removeFromQueue(id, body.reason, body.cancelledBy, branchId);
   }
 }

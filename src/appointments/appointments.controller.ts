@@ -11,8 +11,8 @@ export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   @Post()
-  create(@Body() dto: CreateAppointmentDto, @Query('userId') userId?: string) {
-    return this.appointmentsService.create(dto, userId);
+  create(@Body() dto: CreateAppointmentDto, @Query('userId') userId?: string, @Query('branchId') branchId?: string) {
+    return this.appointmentsService.create(dto, userId, branchId);
   }
 
   @Get()
@@ -21,27 +21,27 @@ export class AppointmentsController {
   }
 
   @Get('today')
-  getTodaySchedule(@Query('doctorId') doctorId?: string) {
-    return this.appointmentsService.getTodaySchedule(doctorId);
+  getTodaySchedule(@Query('doctorId') doctorId?: string, @Query('branchId') branchId?: string) {
+    return this.appointmentsService.getTodaySchedule(doctorId, branchId);
   }
 
   @Get('upcoming/:patientId')
-  getUpcoming(@Param('patientId') patientId: string) {
-    return this.appointmentsService.getUpcoming(patientId);
+  getUpcoming(@Param('patientId') patientId: string, @Query('branchId') branchId?: string) {
+    return this.appointmentsService.getUpcoming(patientId, branchId);
   }
 
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.appointmentsService.findById(id);
+  findById(@Param('id') id: string, @Query('branchId') branchId?: string) {
+    return this.appointmentsService.findById(id, branchId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateAppointmentDto) {
-    return this.appointmentsService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateAppointmentDto, @Query('branchId') branchId?: string) {
+    return this.appointmentsService.update(id, dto, branchId);
   }
 
   @Patch(':id/check-in')
-  checkIn(@Param('id') id: string) {
-    return this.appointmentsService.checkIn(id);
+  checkIn(@Param('id') id: string, @Query('branchId') branchId?: string) {
+    return this.appointmentsService.checkIn(id, branchId);
   }
 }

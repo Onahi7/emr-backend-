@@ -35,7 +35,8 @@ export class ResultsController {
   create(@Body() createResultDto: CreateResultDto, @Request() req: any) {
     const userId = req.user?.userId;
     const userRoles = req.user?.roles || [];
-    return this.resultsService.create(createResultDto, userId, userRoles);
+    const branchId = req.user?.branchId;
+    return this.resultsService.create(createResultDto, userId, userRoles, branchId);
   }
 
   /**
@@ -48,7 +49,8 @@ export class ResultsController {
   createBulk(@Body() createResultDtos: CreateResultDto[], @Request() req: any) {
     const userId = req.user?.userId;
     const userRoles = req.user?.roles || [];
-    return this.resultsService.createBulk(createResultDtos, userId, userRoles);
+    const branchId = req.user?.branchId;
+    return this.resultsService.createBulk(createResultDtos, userId, userRoles, branchId);
   }
 
   /**
@@ -64,6 +66,7 @@ export class ResultsController {
     @Query('flag') flag?: ResultFlagEnum,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     return this.resultsService.findAll({
       orderId,
@@ -72,6 +75,7 @@ export class ResultsController {
       flag,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
+      branchId: req?.user?.branchId,
     });
   }
 
@@ -85,10 +89,12 @@ export class ResultsController {
   findPendingVerification(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     return this.resultsService.findPendingVerification(
       page ? parseInt(page, 10) : undefined,
       limit ? parseInt(limit, 10) : undefined,
+      req?.user?.branchId,
     );
   }
 
@@ -102,10 +108,12 @@ export class ResultsController {
   findCritical(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     return this.resultsService.findCritical(
       page ? parseInt(page, 10) : undefined,
       limit ? parseInt(limit, 10) : undefined,
+      req?.user?.branchId,
     );
   }
 

@@ -57,6 +57,7 @@ export class PatientsService {
   async create(
     createPatientDto: CreatePatientDto,
     userId?: string,
+    branchId?: string,
   ): Promise<Patient> {
     try {
       const patientId = await this.generatePatientId();
@@ -64,6 +65,7 @@ export class PatientsService {
       const patient = new this.patientModel({
         ...createPatientDto,
         patientId,
+        branchId,
         registeredBy: userId ? new Types.ObjectId(userId) : undefined,
       });
 
@@ -95,20 +97,22 @@ export class PatientsService {
     page: number = 1,
     limit: number = 1000,
     search?: string,
+    branchId?: string,
   ): Promise<{ data: Patient[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
-    let query = {};
+    const query: any = {};
 
     if (search) {
-      // Search by patient ID, name, or MRN
-      query = {
-        $or: [
-          { patientId: { $regex: search, $options: 'i' } },
-          { firstName: { $regex: search, $options: 'i' } },
-          { lastName: { $regex: search, $options: 'i' } },
-          { mrn: { $regex: search, $options: 'i' } },
-        ],
-      };
+      query.$or = [
+        { patientId: { $regex: search, $options: 'i' } },
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { mrn: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    if (branchId) {
+      query.branchId = branchId;
     }
 
     const [data, total] = await Promise.all([
@@ -129,13 +133,18 @@ export class PatientsService {
   /**
    * Find patient by ID
    */
-  async findOne(id: string): Promise<Patient> {
+  async findOne(id: string, branchId?: string): Promise<Patient> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Patient with ID ${id} not found`);
     }
 
+    const query: any = { _id: id };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const patient = await this.patientModel
-      .findById(id)
+      .findOne(query)
       .populate('registeredBy', 'fullName email')
       .exec();
 
@@ -149,9 +158,14 @@ export class PatientsService {
   /**
    * Find patient by patient ID (PAT-YYYYMMDD-XXXX)
    */
-  async findByPatientId(patientId: string): Promise<Patient> {
+  async findByPatientId(patientId: string, branchId?: string): Promise<Patient> {
+    const query: any = { patientId };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
     const patient = await this.patientModel
-      .findOne({ patientId })
+      .findOne(query)
       .populate('registeredBy', 'fullName email')
       .exec();
 
@@ -165,17 +179,23 @@ export class PatientsService {
   /**
    * Search patients by name, ID, phone, or MRN
    */
-  async search(query: string): Promise<Patient[]> {
+  async search(query: string, branchId?: string): Promise<Patient[]> {
+    const filter: any = {
+      $or: [
+        { patientId: { $regex: query, $options: 'i' } },
+        { firstName: { $regex: query, $options: 'i' } },
+        { lastName: { $regex: query, $options: 'i' } },
+        { mrn: { $regex: query, $options: 'i' } },
+        { phone: { $regex: query, $options: 'i' } },
+      ],
+    };
+
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
     const patients = await this.patientModel
-      .find({
-        $or: [
-          { patientId: { $regex: query, $options: 'i' } },
-          { firstName: { $regex: query, $options: 'i' } },
-          { lastName: { $regex: query, $options: 'i' } },
-          { mrn: { $regex: query, $options: 'i' } },
-          { phone: { $regex: query, $options: 'i' } },
-        ],
-      })
+      .find(filter)
       .populate('registeredBy', 'fullName email')
       .limit(1000)
       .exec();
@@ -186,14 +206,19 @@ export class PatientsService {
   /**
    * Update patient
    */
-  async update(id: string, updatePatientDto: UpdatePatientDto): Promise<Patient> {
+  async update(id: string, updatePatientDto: UpdatePatientDto, branchId?: string): Promise<Patient> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Patient with ID ${id} not found`);
     }
 
     try {
+      const query: any = { _id: id };
+      if (branchId) {
+        query.branchId = branchId;
+      }
+
       const patient = await this.patientModel
-        .findByIdAndUpdate(id, updatePatientDto, { new: true })
+        .findOneAndUpdate(query, updatePatientDto, { new: true })
         .populate('registeredBy', 'fullName email')
         .exec();
 
@@ -220,12 +245,17 @@ export class PatientsService {
   /**
    * Delete patient (admin only)
    */
-  async remove(id: string): Promise<void> {
+  async remove(id: string, branchId?: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Patient with ID ${id} not found`);
     }
 
-    const result = await this.patientModel.findByIdAndDelete(id).exec();
+    const query: any = { _id: id };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
+    const result = await this.patientModel.findOneAndDelete(query).exec();
 
     if (!result) {
       throw new NotFoundException(`Patient with ID ${id} not found`);
@@ -241,13 +271,19 @@ export class PatientsService {
     patientId: string,
     createNoteDto: CreatePatientNoteDto,
     userId?: string,
+    branchId?: string,
   ): Promise<PatientNote> {
     if (!Types.ObjectId.isValid(patientId)) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
 
     // Verify patient exists
-    const patient = await this.patientModel.findById(patientId).exec();
+    const patientQuery: any = { _id: patientId };
+    if (branchId) {
+      patientQuery.branchId = branchId;
+    }
+
+    const patient = await this.patientModel.findOne(patientQuery).exec();
     if (!patient) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
@@ -267,13 +303,18 @@ export class PatientsService {
   /**
    * Get patient notes
    */
-  async getNotes(patientId: string): Promise<PatientNote[]> {
+  async getNotes(patientId: string, branchId?: string): Promise<PatientNote[]> {
     if (!Types.ObjectId.isValid(patientId)) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
 
+    const noteQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      noteQuery.branchId = branchId;
+    }
+
     const notes = await this.patientNoteModel
-      .find({ patientId: new Types.ObjectId(patientId) })
+      .find(noteQuery)
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 })
       .exec();
@@ -284,13 +325,18 @@ export class PatientsService {
   /**
    * Get patient orders
    */
-  async getOrders(patientId: string): Promise<any[]> {
+  async getOrders(patientId: string, branchId?: string): Promise<any[]> {
     if (!Types.ObjectId.isValid(patientId)) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
 
     // Verify patient exists
-    const patient = await this.patientModel.findById(patientId).exec();
+    const patientQuery: any = { _id: patientId };
+    if (branchId) {
+      patientQuery.branchId = branchId;
+    }
+
+    const patient = await this.patientModel.findOne(patientQuery).exec();
     if (!patient) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
@@ -299,7 +345,12 @@ export class PatientsService {
     const Order = this.patientModel.db.model('Order');
     const OrderTest = this.patientModel.db.model('OrderTest');
 
-    const orders = await Order.find({ patientId: new Types.ObjectId(patientId) })
+    const orderQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      orderQuery.branchId = branchId;
+    }
+
+    const orders = await Order.find(orderQuery)
       .populate('orderedBy', 'fullName email')
       .sort({ createdAt: -1 })
       .lean()
@@ -308,7 +359,11 @@ export class PatientsService {
     // Attach order_tests so callers can display test names/codes
     const ordersWithTests = await Promise.all(
       orders.map(async (order: any) => {
-        const tests = await OrderTest.find({ orderId: order._id }).lean().exec();
+        const testQuery: any = { orderId: order._id };
+        if (branchId) {
+          testQuery.branchId = branchId;
+        }
+        const tests = await OrderTest.find(testQuery).lean().exec();
         return { ...order, order_tests: tests };
       }),
     );
@@ -319,25 +374,38 @@ export class PatientsService {
   /**
    * Get patient results
    */
-  async getResults(patientId: string): Promise<any[]> {
+  async getResults(patientId: string, branchId?: string): Promise<any[]> {
     if (!Types.ObjectId.isValid(patientId)) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
 
     // Verify patient exists
-    const patient = await this.patientModel.findById(patientId).exec();
+    const patientQuery: any = { _id: patientId };
+    if (branchId) {
+      patientQuery.branchId = branchId;
+    }
+
+    const patient = await this.patientModel.findOne(patientQuery).exec();
     if (!patient) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
 
     // Get all orders for this patient
     const Order = this.patientModel.db.model('Order');
-    const orders = await Order.find({ patientId: new Types.ObjectId(patientId) }).exec();
+    const orderQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      orderQuery.branchId = branchId;
+    }
+    const orders = await Order.find(orderQuery).exec();
     const orderIds = orders.map((order: any) => order._id);
 
     // Get all results for these orders
     const Result = this.patientModel.db.model('Result');
-    const results = await Result.find({ orderId: { $in: orderIds } })
+    const resultQuery: any = { orderId: { $in: orderIds } };
+    if (branchId) {
+      resultQuery.branchId = branchId;
+    }
+    const results = await Result.find(resultQuery)
       .populate('orderId', 'orderNumber')
       .populate('resultedBy', 'fullName email')
       .populate('verifiedBy', 'fullName email')
@@ -351,14 +419,19 @@ export class PatientsService {
    * Get comprehensive patient chart (EMR data)
    * Returns patient info, consultations, prescriptions, SOAP notes, orders with results, vitals history
    */
-  async getPatientChart(patientId: string, userRoles: string[] = []): Promise<any> {
+  async getPatientChart(patientId: string, userRoles: string[] = [], branchId?: string): Promise<any> {
     if (!Types.ObjectId.isValid(patientId)) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
 
     // Get patient
+    const patientQuery: any = { _id: patientId };
+    if (branchId) {
+      patientQuery.branchId = branchId;
+    }
+
     const patient = await this.patientModel
-      .findById(patientId)
+      .findOne(patientQuery)
       .populate('registeredBy', 'fullName email')
       .exec();
 
@@ -368,7 +441,11 @@ export class PatientsService {
 
     // Get consultations with SOAP notes
     const Consultation = this.patientModel.db.model('Consultation');
-    const consultations = await Consultation.find({ patientId: new Types.ObjectId(patientId) })
+    const consultationQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      consultationQuery.branchId = branchId;
+    }
+    const consultations = await Consultation.find(consultationQuery)
       .populate('doctorId', 'fullName')
       .populate('nurseId', 'fullName')
       .sort({ createdAt: -1 })
@@ -376,7 +453,11 @@ export class PatientsService {
 
     // Get SOAP notes separately to get vitals
     const SoapNote = this.patientModel.db.model('SoapNote');
-    const soapNotes = await SoapNote.find({ patientId: new Types.ObjectId(patientId) })
+    const soapQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      soapQuery.branchId = branchId;
+    }
+    const soapNotes = await SoapNote.find(soapQuery)
       .populate('doctorId', 'fullName')
       .populate('nurseId', 'fullName')
       .sort({ createdAt: -1 })
@@ -384,7 +465,11 @@ export class PatientsService {
 
     // Get visit-level triage vitals recorded by nurses before doctor consultation.
     const Visit = this.patientModel.db.model('Visit');
-    const visits = await Visit.find({ patientId: new Types.ObjectId(patientId) })
+    const visitQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      visitQuery.branchId = branchId;
+    }
+    const visits = await Visit.find(visitQuery)
       .populate('triagedBy', 'fullName')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: -1 })
@@ -392,7 +477,11 @@ export class PatientsService {
 
     // Get prescriptions with items
     const Prescription = this.patientModel.db.model('Prescription');
-    const prescriptions = await Prescription.find({ patientId: new Types.ObjectId(patientId) })
+    const prescriptionQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      prescriptionQuery.branchId = branchId;
+    }
+    const prescriptions = await Prescription.find(prescriptionQuery)
       .populate('doctorId', 'fullName')
       .populate('dispensedBy', 'fullName')
       .sort({ createdAt: -1 })
@@ -403,7 +492,12 @@ export class PatientsService {
     const OrderTest = this.patientModel.db.model('OrderTest');
     const Result = this.patientModel.db.model('Result');
 
-    const orders = await Order.find({ patientId: new Types.ObjectId(patientId) })
+    const orderQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      orderQuery.branchId = branchId;
+    }
+
+    const orders = await Order.find(orderQuery)
       .populate('doctorId', 'fullName')
       .populate('orderedBy', 'fullName')
       .sort({ createdAt: -1 })
@@ -412,11 +506,19 @@ export class PatientsService {
     // For each order, get order tests and results
     const ordersWithDetails = await Promise.all(
       orders.map(async (order: any) => {
-        const orderTests = await OrderTest.find({ orderId: order._id })
+        const otQuery: any = { orderId: order._id };
+        if (branchId) {
+          otQuery.branchId = branchId;
+        }
+        const orderTests = await OrderTest.find(otQuery)
           .populate('testId')
           .exec();
 
-        const results = await Result.find({ orderId: order._id })
+        const resQuery: any = { orderId: order._id };
+        if (branchId) {
+          resQuery.branchId = branchId;
+        }
+        const results = await Result.find(resQuery)
           .populate('resultedBy', 'fullName')
           .populate('verifiedBy', 'fullName')
           .exec();
@@ -430,15 +532,23 @@ export class PatientsService {
     );
 
     // Get patient notes
+    const notesQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      notesQuery.branchId = branchId;
+    }
     const notes = await this.patientNoteModel
-      .find({ patientId: new Types.ObjectId(patientId) })
+      .find(notesQuery)
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 })
       .exec();
 
     // Get admissions with ward nursing records for follow-up and future reference
     const Admission = this.patientModel.db.model('Admission');
-    const admissions = await Admission.find({ patientId: new Types.ObjectId(patientId) })
+    const admissionQuery: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      admissionQuery.branchId = branchId;
+    }
+    const admissions = await Admission.find(admissionQuery)
       .populate('doctorId', 'fullName department')
       .populate('primaryNurseId', 'fullName')
       .populate('vitalsLog.recordedBy', 'fullName')
@@ -542,8 +652,12 @@ export class PatientsService {
 
   // ─── Wallet System ───
 
-  async getWalletBalance(patientId: string): Promise<{ patientId: string; balance: number; lastUpdated: Date | null }> {
-    const patient = await this.patientModel.findById(patientId).select('walletBalance walletLastUpdated').lean();
+  async getWalletBalance(patientId: string, branchId?: string): Promise<{ patientId: string; balance: number; lastUpdated: Date | null }> {
+    const query: any = { _id: patientId };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+    const patient = await this.patientModel.findOne(query).select('walletBalance walletLastUpdated').lean();
     if (!patient) throw new NotFoundException('Patient not found');
     return {
       patientId,
@@ -558,10 +672,12 @@ export class PatientsService {
     amount: number,
     balanceBefore: number,
     balanceAfter: number,
+    branchId?: string,
     opts?: { notes?: string; reference?: string; paymentMethod?: string; performedBy?: string; orderId?: string },
   ): Promise<WalletTransaction> {
     const tx = new this.walletTransactionModel({
       patientId,
+      branchId,
       type,
       amount,
       balanceBefore,
@@ -575,9 +691,13 @@ export class PatientsService {
     return tx.save();
   }
 
-  async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string, paymentMethod = 'cash'): Promise<any> {
+  async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string, paymentMethod = 'cash', branchId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Deposit amount must be positive');
-    const patient = await this.patientModel.findById(patientId);
+    const query: any = { _id: patientId };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+    const patient = await this.patientModel.findOne(query);
     if (!patient) throw new NotFoundException('Patient not found');
     const balanceBefore = patient.walletBalance || 0;
     patient.walletBalance = balanceBefore + amount;
@@ -589,15 +709,20 @@ export class PatientsService {
       amount,
       balanceBefore,
       patient.walletBalance,
+      branchId,
       { notes, performedBy: userId, paymentMethod },
     );
     this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod });
     return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: new Date() };
   }
 
-  async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string): Promise<any> {
+  async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string, branchId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Withdrawal amount must be positive');
-    const patient = await this.patientModel.findById(patientId);
+    const query: any = { _id: patientId };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+    const patient = await this.patientModel.findOne(query);
     if (!patient) throw new NotFoundException('Patient not found');
     const currentBalance = patient.walletBalance || 0;
     if (amount > currentBalance) {
@@ -613,26 +738,31 @@ export class PatientsService {
       amount,
       balanceBefore,
       patient.walletBalance,
+      branchId,
       { notes, performedBy: userId },
     );
     this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes });
     return { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes, timestamp: new Date() };
   }
 
-  async payFromWallet(patientId: string, amount: number, orderId?: string, userId?: string): Promise<any> {
-    return this.withdrawFromWallet(patientId, amount, orderId ? `Payment for order ${orderId}` : 'Order payment', userId);
+  async payFromWallet(patientId: string, amount: number, orderId?: string, userId?: string, branchId?: string): Promise<any> {
+    return this.withdrawFromWallet(patientId, amount, orderId ? `Payment for order ${orderId}` : 'Order payment', userId, branchId);
   }
 
   async getWalletTransactions(
     patientId: string,
     page: number = 1,
     limit: number = 50,
+    branchId?: string,
   ): Promise<{ data: WalletTransaction[]; total: number; page: number; limit: number }> {
     if (!Types.ObjectId.isValid(patientId)) {
       throw new NotFoundException(`Patient with ID ${patientId} not found`);
     }
     const skip = (page - 1) * limit;
-    const filter = { patientId: new Types.ObjectId(patientId) };
+    const filter: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
     const [data, total] = await Promise.all([
       this.walletTransactionModel
         .find(filter)

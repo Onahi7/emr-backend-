@@ -32,7 +32,7 @@ export class OrdersController {
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   async create(@Body() createOrderDto: CreateOrderDto, @Request() req: any) {
-    return this.ordersService.create(createOrderDto, req.user?.userId);
+    return this.ordersService.create(createOrderDto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
@@ -44,10 +44,11 @@ export class OrdersController {
     @Query('patientId') patientId?: string,
     @Query('search') search?: string,
     @Query('orderType') orderType?: OrderTypeEnum,
+    @Request() req?: any,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.ordersService.findAll(pageNum, limitNum, status, patientId, search, orderType);
+    return this.ordersService.findAll(pageNum, limitNum, status, patientId, search, orderType, req.user?.branchId);
   }
 
   /**
@@ -56,8 +57,8 @@ export class OrdersController {
    */
   @Get('pending-clinical')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async getPendingClinicalOrders(@Query('orderType') orderType?: OrderTypeEnum) {
-    return this.ordersService.getPendingClinicalOrders(orderType);
+  async getPendingClinicalOrders(@Query('orderType') orderType?: OrderTypeEnum, @Request() req?: any) {
+    return this.ordersService.getPendingClinicalOrders(orderType, req.user?.branchId);
   }
 
   /**
@@ -66,8 +67,8 @@ export class OrdersController {
    */
   @Get('lab-queue')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  async getLabQueue() {
-    return this.ordersService.getLabQueue();
+  async getLabQueue(@Request() req: any) {
+    return this.ordersService.getLabQueue(req.user?.branchId);
   }
 
   /**
@@ -76,20 +77,20 @@ export class OrdersController {
    */
   @Get('pharmacy-queue')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST)
-  async getPharmacyQueue() {
-    return this.ordersService.getPharmacyQueue();
+  async getPharmacyQueue(@Request() req: any) {
+    return this.ordersService.getPharmacyQueue(req.user?.branchId);
   }
 
   @Get('pending-collection')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  async getPendingCollection() {
-    return this.ordersService.getPendingCollection();
+  async getPendingCollection(@Request() req: any) {
+    return this.ordersService.getPendingCollection(req.user?.branchId);
   }
 
   @Get('pending-results')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  async getPendingResults() {
-    return this.ordersService.getPendingResults();
+  async getPendingResults(@Request() req: any) {
+    return this.ordersService.getPendingResults(req.user?.branchId);
   }
 
   /**
@@ -107,8 +108,9 @@ export class OrdersController {
   async getPaymentStats(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.ordersService.getPaymentStats(startDate, endDate);
+    return this.ordersService.getPaymentStats(startDate, endDate, req.user?.branchId);
   }
 
   @Get('stats/daily-income')
@@ -116,20 +118,21 @@ export class OrdersController {
   async getDailyIncome(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.ordersService.getDailyIncome(startDate, endDate);
+    return this.ordersService.getDailyIncome(startDate, endDate, req.user?.branchId);
   }
 
   @Get('stats/outstanding')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async getOutstandingBalances() {
-    return this.ordersService.getOutstandingBalances();
+  async getOutstandingBalances(@Request() req: any) {
+    return this.ordersService.getOutstandingBalances(req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.PHARMACIST)
-  async findOne(@Param('id') id: string) {
-    return this.ordersService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.findOne(id, req.user?.branchId);
   }
 
   @Get(':id/tests')
@@ -165,8 +168,9 @@ export class OrdersController {
   async update(
     @Param('id') id: string,
     @Body() updateOrderDto: UpdateOrderDto,
+    @Request() req: any,
   ) {
-    return this.ordersService.update(id, updateOrderDto);
+    return this.ordersService.update(id, updateOrderDto, req.user?.branchId);
   }
 
   /**
@@ -180,7 +184,7 @@ export class OrdersController {
     @Body() body: { paymentMethod: string },
     @Request() req: any,
   ) {
-    return this.ordersService.markAsPaid(id, body.paymentMethod, req.user?.userId);
+    return this.ordersService.markAsPaid(id, body.paymentMethod, req.user?.userId, req.user?.branchId);
   }
 
   @Post(':id/cancel')
@@ -190,13 +194,13 @@ export class OrdersController {
     @Body() cancelOrderDto: CancelOrderDto,
     @Request() req: any,
   ) {
-    return this.ordersService.cancel(id, cancelOrderDto, req.user?.userId);
+    return this.ordersService.cancel(id, cancelOrderDto, req.user?.userId, req.user?.branchId);
   }
 
   @Post(':id/collect')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
   async collect(@Param('id') id: string, @Request() req: any) {
-    return this.ordersService.collect(id, req.user?.userId);
+    return this.ordersService.collect(id, req.user?.userId, req.user?.branchId);
   }
 
   @Post(':id/payment')
@@ -207,7 +211,7 @@ export class OrdersController {
     @Body() addPaymentDto: AddPaymentDto,
     @Request() req: any,
   ) {
-    return this.ordersService.addPayment(id, addPaymentDto, req.user?.userId);
+    return this.ordersService.addPayment(id, addPaymentDto, req.user?.userId, req.user?.branchId);
   }
 
   @Get(':id/payments')
@@ -221,14 +225,15 @@ export class OrdersController {
   async assignDoctor(
     @Param('id') id: string,
     @Body() assignDoctorDto: AssignDoctorDto,
+    @Request() req: any,
   ) {
-    return this.ordersService.assignDoctor(id, assignDoctorDto);
+    return this.ordersService.assignDoctor(id, assignDoctorDto, req.user?.branchId);
   }
 
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    return this.ordersService.remove(id);
+  async remove(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.remove(id, req.user?.branchId);
   }
 }

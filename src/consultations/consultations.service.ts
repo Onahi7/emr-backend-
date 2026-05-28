@@ -15,16 +15,14 @@ export class ConsultationsService {
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
   ) {}
 
-  async create(createConsultationDto: CreateConsultationDto): Promise<Consultation> {
+  async create(createConsultationDto: CreateConsultationDto, branchId?: string): Promise<Consultation> {
     const { patientId, doctorId, consultationType, consultationFee, chiefComplaint, nurseId } = createConsultationDto;
 
-    // Verify patient exists
     const patient = await this.patientModel.findById(patientId);
     if (!patient) {
       throw new NotFoundException('Patient not found');
     }
 
-    // Verify doctor exists
     if (!Types.ObjectId.isValid(doctorId)) {
       throw new BadRequestException('Invalid doctor ID');
     }
@@ -33,18 +31,19 @@ export class ConsultationsService {
       throw new NotFoundException('Doctor not found');
     }
 
-    // Generate consultation number
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
-    const count = await this.consultationModel.countDocuments({
+    const countQuery: any = {
       createdAt: {
         $gte: new Date(today.setHours(0, 0, 0, 0)),
         $lt: new Date(today.setHours(23, 59, 59, 999)),
       },
-    });
+    };
+    if (branchId) countQuery.branchId = branchId;
+    const count = await this.consultationModel.countDocuments(countQuery);
     const consultationNumber = `CONS-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 
-    const consultation = new this.consultationModel({
+    const consultationData: any = {
       consultationNumber,
       patientId: new Types.ObjectId(patientId),
       doctorId: new Types.ObjectId(doctorId),
@@ -54,14 +53,18 @@ export class ConsultationsService {
       status: ConsultationStatusEnum.SCHEDULED,
       isPaid: false,
       nurseId: nurseId ? new Types.ObjectId(nurseId) : undefined,
-    });
+    };
+    if (branchId) consultationData.branchId = branchId;
+
+    const consultation = new this.consultationModel(consultationData);
 
     return consultation.save();
   }
 
-  async findAll(query: any = {}): Promise<Consultation[]> {
+  async findAll(query: any = {}, branchId?: string): Promise<Consultation[]> {
+    const filter = branchId ? { ...query, branchId } : query;
     return this.consultationModel
-      .find(query)
+      .find(filter)
       .populate('patientId', 'patientId firstName lastName')
       .populate('doctorId', 'fullName')
       .populate('nurseId', 'fullName')
@@ -69,9 +72,9 @@ export class ConsultationsService {
       .exec();
   }
 
-  async findById(id: string): Promise<Consultation> {
+  async findById(id: string, branchId?: string): Promise<Consultation> {
     const consultation = await this.consultationModel
-      .findById(id)
+      .findOne({ _id: id, ...(branchId ? { branchId } : {}) })
       .populate('patientId')
       .populate('doctorId')
       .populate('nurseId')
@@ -82,16 +85,16 @@ export class ConsultationsService {
     return consultation;
   }
 
-  async findByPatient(patientId: string): Promise<Consultation[]> {
+  async findByPatient(patientId: string, branchId?: string): Promise<Consultation[]> {
     return this.consultationModel
-      .find({ patientId: new Types.ObjectId(patientId) })
+      .find({ patientId: new Types.ObjectId(patientId), ...(branchId ? { branchId } : {}) })
       .populate('doctorId', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  async update(id: string, updateConsultationDto: UpdateConsultationDto): Promise<Consultation> {
-    const consultation = await this.consultationModel.findById(id);
+  async update(id: string, updateConsultationDto: UpdateConsultationDto, branchId?: string): Promise<Consultation> {
+    const consultation = await this.consultationModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!consultation) {
       throw new NotFoundException('Consultation not found');
     }
@@ -108,8 +111,8 @@ export class ConsultationsService {
     return consultation.save();
   }
 
-  async markAsPaid(id: string): Promise<Consultation> {
-    const consultation = await this.consultationModel.findById(id);
+  async markAsPaid(id: string, branchId?: string): Promise<Consultation> {
+    const consultation = await this.consultationModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!consultation) {
       throw new NotFoundException('Consultation not found');
     }
@@ -117,8 +120,8 @@ export class ConsultationsService {
     return consultation.save();
   }
 
-  async cancel(id: string, reason: string, cancelledBy: string): Promise<Consultation> {
-    const consultation = await this.consultationModel.findById(id);
+  async cancel(id: string, reason: string, cancelledBy: string, branchId?: string): Promise<Consultation> {
+    const consultation = await this.consultationModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!consultation) {
       throw new NotFoundException('Consultation not found');
     }

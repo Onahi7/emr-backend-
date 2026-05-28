@@ -28,7 +28,7 @@ export class ExpendituresController {
     @Body() createDto: CreateExpenditureDto,
     @Request() req: any,
   ) {
-    return this.expendituresService.create(createDto, req.user?.userId);
+    return this.expendituresService.create(createDto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
@@ -37,8 +37,9 @@ export class ExpendituresController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('category') category?: string,
+    @Request() req?: any,
   ) {
-    return this.expendituresService.findAll({ startDate, endDate, category });
+    return this.expendituresService.findAll({ startDate, endDate, category }, req?.user?.branchId);
   }
 
   @Get('summary')
@@ -46,14 +47,15 @@ export class ExpendituresController {
   async getSummary(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.expendituresService.getSummary(startDate, endDate);
+    return this.expendituresService.getSummary(startDate, endDate, req?.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async findOne(@Param('id') id: string) {
-    return this.expendituresService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req?: any) {
+    return this.expendituresService.findOne(id, req?.user?.branchId);
   }
 
   @Patch(':id')
@@ -61,14 +63,15 @@ export class ExpendituresController {
   async update(
     @Param('id') id: string,
     @Body() updateDto: Partial<CreateExpenditureDto>,
+    @Request() req?: any,
   ) {
-    return this.expendituresService.update(id, updateDto);
+    return this.expendituresService.update(id, updateDto, req?.user?.branchId);
   }
 
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
-  async delete(@Param('id') id: string) {
-    return this.expendituresService.delete(id);
+  async delete(@Param('id') id: string, @Request() req?: any) {
+    return this.expendituresService.delete(id, req?.user?.branchId);
   }
 
   @Post(':id/flag')
@@ -78,14 +81,15 @@ export class ExpendituresController {
     @Body('reason') reason: string,
     @Request() req: any,
   ) {
-    return this.expendituresService.flag(id, req.user?.userId, reason);
+    return this.expendituresService.flag(id, req.user?.userId, reason, req.user?.branchId);
   }
 
   @Post(':id/unflag')
   @Roles(UserRoleEnum.ADMIN)
   async unflag(
     @Param('id') id: string,
+    @Request() req?: any,
   ) {
-    return this.expendituresService.unflag(id);
+    return this.expendituresService.unflag(id, req?.user?.branchId);
   }
 }

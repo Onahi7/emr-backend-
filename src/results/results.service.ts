@@ -323,6 +323,7 @@ export class ResultsService {
     createResultDto: CreateResultDto,
     userId?: string,
     userRoles: string[] = [],
+    branchId?: string,
   ): Promise<Result> {
     const isReceptionistEntry = userRoles.includes(UserRoleEnum.RECEPTIONIST);
     const orderObjectId = new Types.ObjectId(createResultDto.orderId);
@@ -387,6 +388,7 @@ export class ResultsService {
       resultedBy: userObjectId,
       verifiedAt: new Date(), // Set verification timestamp
       verifiedBy: userObjectId, // Set verifier to the same user who entered it
+      branchId,
     });
 
     const savedResult = await result.save();
@@ -421,6 +423,7 @@ export class ResultsService {
     createResultDtos: CreateResultDto[],
     userId?: string,
     userRoles: string[] = [],
+    branchId?: string,
   ): Promise<Result[]> {
     if (!createResultDtos || createResultDtos.length === 0) {
       return [];
@@ -483,6 +486,7 @@ export class ResultsService {
           resultedBy: userObjectId,
           verifiedAt: now,
           verifiedBy: userObjectId,
+          branchId: branchId ? new Types.ObjectId(branchId) : undefined,
         };
 
         // Use updateOne with upsert to handle existing results
@@ -528,6 +532,7 @@ export class ResultsService {
     flag?: ResultFlagEnum;
     page?: number;
     limit?: number;
+    branchId?: string;
   }): Promise<{ results: Result[]; total: number; page: number; limit: number }> {
     const page = filters?.page || 1;
     const limit = filters?.limit || 10;
@@ -549,6 +554,10 @@ export class ResultsService {
 
     if (filters?.flag) {
       query.flag = filters.flag;
+    }
+
+    if (filters?.branchId) {
+      query.branchId = filters.branchId;
     }
 
     const [results, total] = await Promise.all([
@@ -732,11 +741,13 @@ export class ResultsService {
   async findPendingVerification(
     page: number = 1,
     limit: number = 10,
+    branchId?: string,
   ): Promise<{ results: Result[]; total: number; page: number; limit: number }> {
     return this.findAll({
       status: ResultStatusEnum.PRELIMINARY,
       page,
       limit,
+      branchId,
     });
   }
 
@@ -746,14 +757,16 @@ export class ResultsService {
   async findCritical(
     page: number = 1,
     limit: number = 10,
+    branchId?: string,
   ): Promise<{ results: Result[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
 
-    const query = {
+    const query: any = {
       flag: {
         $in: [ResultFlagEnum.CRITICAL_LOW, ResultFlagEnum.CRITICAL_HIGH],
       },
     };
+    if (branchId) query.branchId = branchId;
 
     const [results, total] = await Promise.all([
       this.resultModel

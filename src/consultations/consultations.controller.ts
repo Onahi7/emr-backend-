@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Request } from '@nestjs/common';
 import { ConsultationsService } from './consultations.service';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
@@ -15,44 +15,44 @@ export class ConsultationsController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  create(@Body() createConsultationDto: CreateConsultationDto) {
-    return this.consultationsService.create(createConsultationDto);
+  create(@Body() createConsultationDto: CreateConsultationDto, @Request() req: any) {
+    return this.consultationsService.create(createConsultationDto, req.user?.branchId);
   }
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  findAll(@Query('status') status?: ConsultationStatusEnum) {
+  findAll(@Query('status') status?: ConsultationStatusEnum, @Request() req?: any) {
     const query = status ? { status } : {};
-    return this.consultationsService.findAll(query);
+    return this.consultationsService.findAll(query, req?.user?.branchId);
   }
 
   @Get('patient/:patientId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  findByPatient(@Param('patientId') patientId: string) {
-    return this.consultationsService.findByPatient(patientId);
+  findByPatient(@Param('patientId') patientId: string, @Request() req?: any) {
+    return this.consultationsService.findByPatient(patientId, req?.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string) {
-    return this.consultationsService.findById(id);
+  findOne(@Param('id') id: string, @Request() req?: any) {
+    return this.consultationsService.findById(id, req?.user?.branchId);
   }
 
   @Patch(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  update(@Param('id') id: string, @Body() updateConsultationDto: UpdateConsultationDto) {
-    return this.consultationsService.update(id, updateConsultationDto);
+  update(@Param('id') id: string, @Body() updateConsultationDto: UpdateConsultationDto, @Request() req?: any) {
+    return this.consultationsService.update(id, updateConsultationDto, req?.user?.branchId);
   }
 
   @Patch(':id/mark-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  markAsPaid(@Param('id') id: string) {
-    return this.consultationsService.markAsPaid(id);
+  markAsPaid(@Param('id') id: string, @Request() req?: any) {
+    return this.consultationsService.markAsPaid(id, req?.user?.branchId);
   }
 
   @Patch(':id/cancel')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  cancel(@Param('id') id: string, @Body() body: { reason: string; cancelledBy: string }) {
-    return this.consultationsService.cancel(id, body.reason, body.cancelledBy);
+  cancel(@Param('id') id: string, @Body() body: { reason: string; cancelledBy: string }, @Request() req?: any) {
+    return this.consultationsService.cancel(id, body.reason, body.cancelledBy, req?.user?.branchId);
   }
 }

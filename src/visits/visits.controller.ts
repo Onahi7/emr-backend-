@@ -25,151 +25,99 @@ import { VisitStatusEnum } from '../database/schemas/visit.schema';
 export class VisitsController {
   constructor(private readonly visitsService: VisitsService) {}
 
-  /**
-   * Create a new visit (Reception registers patient)
-   * POST /visits
-   */
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   create(@Body() createVisitDto: CreateVisitDto, @Request() req: any) {
-    return this.visitsService.create({
-      ...createVisitDto,
-      registeredBy: req.user?.userId,
-    });
+    return this.visitsService.create(
+      {
+        ...createVisitDto,
+        registeredBy: req.user?.userId,
+      },
+      req.user?.branchId,
+    );
   }
 
-  /**
-   * Get all visits with optional filters
-   * GET /visits
-   */
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   findAll(
     @Query('status') status?: VisitStatusEnum,
     @Query('patientId') patientId?: string,
     @Query('doctorId') doctorId?: string,
+    @Request() req?: any,
   ) {
     const query: any = {};
     if (status) query.status = status;
     if (patientId) query.patientId = patientId;
     if (doctorId) query.doctorId = doctorId;
-    return this.visitsService.findAll(query);
+    return this.visitsService.findAll(query, req?.user?.branchId);
   }
 
-  /**
-   * Get doctor queue - patients waiting for consultation
-   * GET /visits/doctor-queue
-   */
   @Get('doctor-queue')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  getDoctorQueue(@Query('doctorId') doctorId?: string) {
-    return this.visitsService.getDoctorQueue(doctorId);
+  getDoctorQueue(@Query('doctorId') doctorId?: string, @Request() req?: any) {
+    return this.visitsService.getDoctorQueue(doctorId, req?.user?.branchId);
   }
 
-  /**
-   * Get visits awaiting lab payment
-   * GET /visits/awaiting-lab-payment
-   */
   @Get('awaiting-lab-payment')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  getAwaitingLabPayment() {
-    return this.visitsService.getAwaitingLabPayment();
+  getAwaitingLabPayment(@Request() req?: any) {
+    return this.visitsService.getAwaitingLabPayment(req?.user?.branchId);
   }
 
-  /**
-   * Get visits awaiting pharmacy payment
-   * GET /visits/awaiting-pharmacy-payment
-   */
   @Get('awaiting-pharmacy-payment')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  getAwaitingPharmacyPayment() {
-    return this.visitsService.getAwaitingPharmacyPayment();
+  getAwaitingPharmacyPayment(@Request() req?: any) {
+    return this.visitsService.getAwaitingPharmacyPayment(req?.user?.branchId);
   }
 
-  /**
-   * Get visits awaiting dispensing (pharmacy paid)
-   * GET /visits/awaiting-dispensing
-   */
   @Get('awaiting-dispensing')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST)
-  getAwaitingDispensing() {
-    return this.visitsService.getAwaitingDispensing();
+  getAwaitingDispensing(@Request() req?: any) {
+    return this.visitsService.getAwaitingDispensing(req?.user?.branchId);
   }
 
-  /**
-   * Get visits awaiting triage (nurse takes vitals + priority)
-   * GET /visits/awaiting-triage
-   */
   @Get('awaiting-triage')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
-  getAwaitingTriage() {
-    return this.visitsService.getAwaitingTriage();
+  getAwaitingTriage(@Request() req?: any) {
+    return this.visitsService.getAwaitingTriage(req?.user?.branchId);
   }
 
-  /**
-   * Reception dashboard — aggregated pending actions + today stats
-   * GET /visits/reception-dashboard
-   */
   @Get('reception-dashboard')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  getReceptionDashboard() {
-    return this.visitsService.getReceptionDashboard();
+  getReceptionDashboard(@Request() req?: any) {
+    return this.visitsService.getReceptionDashboard(req?.user?.branchId);
   }
 
-  /**
-   * Doctor dashboard — queue, active patients, results ready
-   * GET /visits/doctor-dashboard
-   */
   @Get('doctor-dashboard')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   getDoctorDashboard(@Request() req: any) {
-    return this.visitsService.getDoctorDashboard(req.user?.userId);
+    return this.visitsService.getDoctorDashboard(req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Get visit statistics
-   * GET /visits/stats
-   */
   @Get('stats')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  getStats(@Query('date') date?: string) {
-    return this.visitsService.getStats(date);
+  getStats(@Query('date') date?: string, @Request() req?: any) {
+    return this.visitsService.getStats(date, req?.user?.branchId);
   }
 
-  /**
-   * Get visits by patient ID
-   * GET /visits/patient/:patientId
-   */
   @Get('patient/:patientId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findByPatient(@Param('patientId') patientId: string) {
-    return this.visitsService.findByPatient(patientId);
+  findByPatient(@Param('patientId') patientId: string, @Request() req?: any) {
+    return this.visitsService.findByPatient(patientId, req?.user?.branchId);
   }
 
-  /**
-   * Get visit by ID
-   * GET /visits/:id
-   */
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string) {
-    return this.visitsService.findById(id);
+  findOne(@Param('id') id: string, @Request() req?: any) {
+    return this.visitsService.findById(id, req?.user?.branchId);
   }
 
-  /**
-   * Update visit
-   * PATCH /visits/:id
-   */
   @Patch(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  update(@Param('id') id: string, @Body() updateVisitDto: UpdateVisitDto) {
-    return this.visitsService.update(id, updateVisitDto);
+  update(@Param('id') id: string, @Body() updateVisitDto: UpdateVisitDto, @Request() req?: any) {
+    return this.visitsService.update(id, updateVisitDto, req?.user?.branchId);
   }
 
-  /**
-   * Mark consultation as paid (Reception confirms payment)
-   * PATCH /visits/:id/mark-paid
-   */
   @Patch(':id/mark-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markConsultationPaid(
@@ -177,23 +125,15 @@ export class VisitsController {
     @Body() body: { paymentMethod?: string },
     @Request() req: any,
   ) {
-    return this.visitsService.markConsultationPaid(id, body.paymentMethod || 'cash', req.user?.userId);
+    return this.visitsService.markConsultationPaid(id, body.paymentMethod || 'cash', req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Doctor accepts patient from queue
-   * PATCH /visits/:id/accept
-   */
   @Patch(':id/accept')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   acceptPatient(@Param('id') id: string, @Request() req: any) {
-    return this.visitsService.acceptPatient(id, req.user?.userId);
+    return this.visitsService.acceptPatient(id, req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Deprecated: use POST /orders with orderType=lab and visitId instead.
-   * PATCH /visits/:id/order-lab
-   */
   @Patch(':id/order-lab')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   orderLab(@Param('id') _id: string) {
@@ -202,10 +142,6 @@ export class VisitsController {
     );
   }
 
-  /**
-   * Deprecated: use POST /orders with orderType=pharmacy and visitId instead.
-   * PATCH /visits/:id/prescribe
-   */
   @Patch(':id/prescribe')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   prescribeMedication(@Param('id') _id: string) {
@@ -214,10 +150,6 @@ export class VisitsController {
     );
   }
 
-  /**
-   * Deprecated: use PATCH /orders/:id/mark-paid for the specific lab order.
-   * PATCH /visits/:id/mark-lab-paid
-   */
   @Patch(':id/mark-lab-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markLabPaid(@Param('id') _id: string) {
@@ -226,10 +158,6 @@ export class VisitsController {
     );
   }
 
-  /**
-   * Deprecated: use PATCH /orders/:id/mark-paid for the specific pharmacy order.
-   * PATCH /visits/:id/mark-pharmacy-paid
-   */
   @Patch(':id/mark-pharmacy-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markPharmacyPaid(
@@ -240,41 +168,24 @@ export class VisitsController {
     );
   }
 
-  /**
-   * Mark drugs as dispensed — pharmacist confirms dispensing
-   * PATCH /visits/:id/mark-dispensed
-   */
   @Patch(':id/mark-dispensed')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST)
-  markDispensed(@Param('id') id: string) {
-    return this.visitsService.markDispensed(id);
+  markDispensed(@Param('id') id: string, @Request() req?: any) {
+    return this.visitsService.markDispensed(id, req?.user?.branchId);
   }
 
-  /**
-   * Mark results as released
-   * PATCH /visits/:id/results-released
-   */
   @Patch(':id/results-released')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  resultsReleased(@Param('id') id: string) {
-    return this.visitsService.resultsReleased(id);
+  resultsReleased(@Param('id') id: string, @Request() req?: any) {
+    return this.visitsService.resultsReleased(id, req?.user?.branchId);
   }
 
-  /**
-   * Complete visit
-   * PATCH /visits/:id/complete
-   */
   @Patch(':id/complete')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  complete(@Param('id') id: string) {
-    return this.visitsService.complete(id);
+  complete(@Param('id') id: string, @Request() req?: any) {
+    return this.visitsService.complete(id, req?.user?.branchId);
   }
 
-  /**
-   * Nurse completes triage — moves from AWAITING_TRIAGE to IN_QUEUE
-   * Optionally assigns a doctor during triage
-   * PATCH /visits/:id/triage
-   */
   @Patch(':id/triage')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   completeTriage(
@@ -290,17 +201,13 @@ export class VisitsController {
       triagePriority?: string;
       triageNotes?: string;
       chiefComplaint?: string;
-      doctorId?: string; // Optional: assign to a specific doctor
+      doctorId?: string;
     },
     @Request() req: any,
   ) {
-    return this.visitsService.completeTriage(id, body, req.user?.userId);
+    return this.visitsService.completeTriage(id, body, req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Nurse assigns or reassigns a queued patient to a specific doctor
-   * PATCH /visits/:id/assign-doctor
-   */
   @Patch(':id/assign-doctor')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   assignDoctorFromQueue(
@@ -308,13 +215,9 @@ export class VisitsController {
     @Body() body: { doctorId: string },
     @Request() req: any,
   ) {
-    return this.visitsService.assignDoctorFromQueue(id, body.doctorId, req.user?.userId);
+    return this.visitsService.assignDoctorFromQueue(id, body.doctorId, req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Doctor refers patient to a specialist
-   * PATCH /visits/:id/refer
-   */
   @Patch(':id/refer')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   referToSpecialist(
@@ -322,29 +225,22 @@ export class VisitsController {
     @Body() body: { specialistId: string; reason: string; notes?: string },
     @Request() req: any,
   ) {
-    return this.visitsService.referToSpecialist(id, body, req.user?.userId);
+    return this.visitsService.referToSpecialist(id, body, req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Specialist accepts referral (moves to IN_CONSULTATION)
-   * PATCH /visits/:id/accept-referral
-   */
   @Patch(':id/accept-referral')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.SPECIALIST, UserRoleEnum.DOCTOR)
   acceptReferral(@Param('id') id: string, @Request() req: any) {
-    return this.visitsService.acceptReferral(id, req.user?.userId);
+    return this.visitsService.acceptReferral(id, req.user?.userId, req.user?.branchId);
   }
 
-  /**
-   * Cancel visit
-   * PATCH /visits/:id/cancel
-   */
   @Patch(':id/cancel')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   cancel(
     @Param('id') id: string,
     @Body() body: { reason: string; cancelledBy: string },
+    @Request() req?: any,
   ) {
-    return this.visitsService.cancel(id, body.reason, body.cancelledBy);
+    return this.visitsService.cancel(id, body.reason, body.cancelledBy, req?.user?.branchId);
   }
 }

@@ -16,13 +16,13 @@ export class PrescriptionsController {
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   create(@Body() createPrescriptionDto: CreatePrescriptionDto, @Request() req: any) {
-    return this.prescriptionsService.create(createPrescriptionDto, req.user?.userId);
+    return this.prescriptionsService.create(createPrescriptionDto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
-  findAll() {
-    return this.prescriptionsService.findAll({});
+  findAll(@Request() req: any) {
+    return this.prescriptionsService.findAll({}, req.user?.branchId);
   }
 
   /**
@@ -31,8 +31,8 @@ export class PrescriptionsController {
    */
   @Get('pending-payment')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  findPendingPayment() {
-    return this.prescriptionsService.findPendingPayment();
+  findPendingPayment(@Request() req: any) {
+    return this.prescriptionsService.findPendingPayment(req.user?.branchId);
   }
 
   /**
@@ -41,14 +41,14 @@ export class PrescriptionsController {
    */
   @Get('pending-dispense')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.RECEPTIONIST)
-  findPendingDispense() {
-    return this.prescriptionsService.findPendingDispense();
+  findPendingDispense(@Request() req: any) {
+    return this.prescriptionsService.findPendingDispense(req.user?.branchId);
   }
 
   @Get('patient/:patientId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
-  findByPatient(@Param('patientId') patientId: string) {
-    return this.prescriptionsService.findAll({ patientId });
+  findByPatient(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.prescriptionsService.findAll({ patientId }, req.user?.branchId);
   }
 
   @Get(':id')

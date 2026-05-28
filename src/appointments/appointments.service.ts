@@ -21,7 +21,7 @@ export class AppointmentsService {
     return `APT-${dateStr}-${random}`;
   }
 
-  async create(dto: CreateAppointmentDto, userId?: string): Promise<Appointment> {
+  async create(dto: CreateAppointmentDto, userId?: string, branchId?: string): Promise<Appointment> {
     const patient = await this.patientModel.findById(dto.patientId);
     if (!patient) throw new NotFoundException('Patient not found');
 
@@ -33,18 +33,21 @@ export class AppointmentsService {
       throw new BadRequestException('Cannot schedule appointments in the past');
     }
 
-    const existing = await this.appointmentModel.findOne({
+    const existingQuery: any = {
       doctorId: new Types.ObjectId(dto.doctorId),
       date: appointmentDate,
       time: dto.time,
       status: { $in: [AppointmentStatusEnum.SCHEDULED, AppointmentStatusEnum.CHECKED_IN] },
-    });
+    };
+    if (branchId) existingQuery.branchId = branchId;
+
+    const existing = await this.appointmentModel.findOne(existingQuery);
 
     if (existing) {
       throw new BadRequestException('Doctor already has an appointment at this time');
     }
 
-    const appointment = new this.appointmentModel({
+    const appointmentData: any = {
       appointmentNumber: this.generateAppointmentNumber(),
       patientId: new Types.ObjectId(dto.patientId),
       doctorId: new Types.ObjectId(dto.doctorId),
@@ -53,7 +56,10 @@ export class AppointmentsService {
       reason: dto.reason,
       notes: dto.notes,
       createdBy: userId ? new Types.ObjectId(userId) : undefined,
-    });
+    };
+    if (branchId) appointmentData.branchId = branchId;
+
+    const appointment = new this.appointmentModel(appointmentData);
 
     return appointment.save();
   }
@@ -65,11 +71,13 @@ export class AppointmentsService {
     date?: string;
     startDate?: string;
     endDate?: string;
+    branchId?: string;
   }): Promise<Appointment[]> {
     const query: any = {};
     if (filters?.status) query.status = filters.status;
     if (filters?.doctorId) query.doctorId = new Types.ObjectId(filters.doctorId);
     if (filters?.patientId) query.patientId = new Types.ObjectId(filters.patientId);
+    if (filters?.branchId) query.branchId = filters.branchId;
     if (filters?.date) {
       const start = new Date(filters.date);
       const end = new Date(start);
@@ -90,9 +98,12 @@ export class AppointmentsService {
       .lean();
   }
 
-  async findById(id: string): Promise<Appointment> {
+  async findById(id: string, branchId?: string): Promise<Appointment> {
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
     const appointment = await this.appointmentModel
-      .findById(id)
+      .findOne(query)
       .populate('patientId', 'firstName lastName patientId phone gender age')
       .populate('doctorId', 'fullName department')
       .lean();
@@ -100,8 +111,11 @@ export class AppointmentsService {
     return appointment;
   }
 
-  async update(id: string, dto: UpdateAppointmentDto): Promise<Appointment> {
-    const appointment = await this.appointmentModel.findById(id);
+  async update(id: string, dto: UpdateAppointmentDto, branchId?: string): Promise<Appointment> {
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
+    const appointment = await this.appointmentModel.findOne(query);
     if (!appointment) throw new NotFoundException('Appointment not found');
 
     if (dto.status) {
@@ -120,8 +134,11 @@ export class AppointmentsService {
     return appointment.save();
   }
 
-  async checkIn(id: string): Promise<Appointment> {
-    const appointment = await this.appointmentModel.findById(id);
+  async checkIn(id: string, branchId?: string): Promise<Appointment> {
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+
+    const appointment = await this.appointmentModel.findOne(query);
     if (!appointment) throw new NotFoundException('Appointment not found');
     if (appointment.status !== AppointmentStatusEnum.SCHEDULED) {
       throw new BadRequestException('Can only check in scheduled appointments');
@@ -131,7 +148,7 @@ export class AppointmentsService {
     return appointment.save();
   }
 
-  async getTodaySchedule(doctorId?: string): Promise<Appointment[]> {
+  async getTodaySchedule(doctorId?: string, branchId?: string): Promise<Appointment[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -142,6 +159,7 @@ export class AppointmentsService {
       status: { $in: [AppointmentStatusEnum.SCHEDULED, AppointmentStatusEnum.CHECKED_IN] },
     };
     if (doctorId) query.doctorId = new Types.ObjectId(doctorId);
+    if (branchId) query.branchId = branchId;
 
     return this.appointmentModel
       .find(query)
@@ -151,14 +169,17 @@ export class AppointmentsService {
       .lean();
   }
 
-  async getUpcoming(patientId: string): Promise<Appointment[]> {
+  async getUpcoming(patientId: string, branchId?: string): Promise<Appointment[]> {
     const now = new Date();
+    const query: any = {
+      patientId: new Types.ObjectId(patientId),
+      date: { $gte: now },
+      status: { $in: [AppointmentStatusEnum.SCHEDULED, AppointmentStatusEnum.CHECKED_IN] },
+    };
+    if (branchId) query.branchId = branchId;
+
     return this.appointmentModel
-      .find({
-        patientId: new Types.ObjectId(patientId),
-        date: { $gte: now },
-        status: { $in: [AppointmentStatusEnum.SCHEDULED, AppointmentStatusEnum.CHECKED_IN] },
-      })
+      .find(query)
       .populate('doctorId', 'fullName department')
       .sort({ date: 1, time: 1 })
       .lean();
