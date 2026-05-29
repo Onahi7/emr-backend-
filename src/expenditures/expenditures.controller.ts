@@ -43,7 +43,7 @@ export class ExpendituresController {
   }
 
   @Get('summary')
-  @Roles(UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   async getSummary(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
