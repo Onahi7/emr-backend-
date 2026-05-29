@@ -48,6 +48,12 @@ export class MedicationsController {
           isActive: p.isActive,
           dosageForm: p.unit,
           strength: p.packSizes?.[0]?.name || '',
+          packSizes: p.packSizes?.map((ps) => ({
+            name: ps.name,
+            unit: ps.unit,
+            quantityPerPack: ps.quantityPerPack,
+            sellingPrice: ps.sellingPrice,
+          })) || [],
           __cafProduct: true,
           __cafBranchId: this.cafIntegrationService.getBranchId(),
         }));
@@ -77,6 +83,12 @@ export class MedicationsController {
           isActive: p.isActive,
           dosageForm: p.unit,
           strength: p.packSizes?.[0]?.name || '',
+          packSizes: p.packSizes?.map((ps) => ({
+            name: ps.name,
+            unit: ps.unit,
+            quantityPerPack: ps.quantityPerPack,
+            sellingPrice: ps.sellingPrice,
+          })) || [],
           __cafProduct: true,
           __cafBranchId: this.cafIntegrationService.getBranchId(),
         }));
