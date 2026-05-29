@@ -18,6 +18,13 @@ export class PaymentsController {
     return this.paymentsService.createPayment({ ...createPaymentDto, branchId });
   }
 
+  @Get()
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
+  findAll(@Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.findAll(branchId);
+  }
+
   @Get('visit/:visitId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR)
   findByVisit(@Param('visitId') visitId: string, @Request() req: any) {

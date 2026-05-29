@@ -85,6 +85,21 @@ export class PaymentsService {
     return payment.save();
   }
 
+  async findAll(branchId?: string): Promise<Payment[]> {
+    const filter: any = {};
+    if (branchId) filter.branchId = branchId;
+    return this.paymentModel
+      .find(filter)
+      .populate('receivedBy', 'fullName')
+      .populate('visitId', 'patientId')
+      .populate({ path: 'visitId', populate: { path: 'patientId', select: 'firstName lastName' } })
+      .populate('orderId', 'orderNumber total amountPaid paymentStatus orderType')
+      .populate('prescriptionId', 'medications')
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .exec();
+  }
+
   async findByVisit(visitId: string, branchId?: string): Promise<Payment[]> {
     const filter: any = { visitId: new Types.ObjectId(visitId) };
     if (branchId) filter.branchId = branchId;
