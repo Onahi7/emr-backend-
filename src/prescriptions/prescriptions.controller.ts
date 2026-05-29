@@ -90,8 +90,8 @@ export class PrescriptionsController {
    */
   @Patch(':id/mark-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  markAsPaid(@Param('id') id: string) {
-    return this.prescriptionsService.markAsPaid(id);
+  markAsPaid(@Param('id') id: string, @Body() body: { paymentMethod?: string }, @Request() req: any) {
+    return this.prescriptionsService.markAsPaid(id, body.paymentMethod, req.user?.userId);
   }
 
   @Patch(':id/cancel')

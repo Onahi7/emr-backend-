@@ -8,6 +8,7 @@ import { StockMovement, StockMovementSchema } from '../database/schemas/stock-mo
 import { Consultation, ConsultationSchema } from '../database/schemas/consultation.schema';
 import { Patient, PatientSchema } from '../database/schemas/patient.schema';
 import { Visit, VisitSchema } from '../database/schemas/visit.schema';
+import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CafIntegrationModule } from '../caf-integration/caf-integration.module';
 
@@ -22,6 +23,7 @@ import { CafIntegrationModule } from '../caf-integration/caf-integration.module'
       { name: Consultation.name, schema: ConsultationSchema },
       { name: Patient.name, schema: PatientSchema },
       { name: Visit.name, schema: VisitSchema },
+      { name: Payment.name, schema: PaymentSchema },
     ]),
   ],
   controllers: [PrescriptionsController],

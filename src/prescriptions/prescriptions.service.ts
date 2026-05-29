@@ -7,6 +7,7 @@ import { StockMovement, StockMovementTypeEnum } from '../database/schemas/stock-
 import { Consultation } from '../database/schemas/consultation.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
+import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -21,6 +22,7 @@ export class PrescriptionsService {
     @InjectModel(Consultation.name) private consultationModel: Model<Consultation>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
+    @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     private realtimeGateway: RealtimeGateway,
     private cafIntegrationService: CafIntegrationService,
   ) {}
@@ -345,13 +347,27 @@ export class PrescriptionsService {
     return populatedPrescription;
   }
 
-  async markAsPaid(id: string): Promise<Prescription> {
+  async markAsPaid(id: string, paymentMethod: string = 'cash', userId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionModel.findById(id);
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
     prescription.isPaid = true;
     const savedPrescription = await prescription.save();
+
+    // Create payment record for the payments collection
+    const payment = new this.paymentModel({
+      paymentType: PaymentTypeEnum.PRESCRIPTION,
+      amount: prescription.totalAmount || 0,
+      paymentMethod,
+      visitId: prescription.visitId,
+      prescriptionId: prescription._id,
+      receivedBy: userId ? new Types.ObjectId(userId) : undefined,
+      notes: `Prescription ${prescription.prescriptionNumber} paid`,
+      isRefunded: false,
+    });
+    await payment.save();
+
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DISPENSING);
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:paid', populatedPrescription);
