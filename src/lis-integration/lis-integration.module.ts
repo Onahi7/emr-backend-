@@ -4,6 +4,7 @@ import { LisIntegrationService } from './lis-integration.service';
 import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { Result, ResultSchema } from '../database/schemas/result.schema';
 import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog.schema';
+import { Branch, BranchSchema } from '../branches/branch.schema';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog
       { name: Order.name, schema: OrderSchema },
       { name: Result.name, schema: ResultSchema },
       { name: TestCatalog.name, schema: TestCatalogSchema },
+      { name: Branch.name, schema: BranchSchema },
     ]),
   ],
   providers: [LisIntegrationService],
