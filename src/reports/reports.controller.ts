@@ -102,7 +102,7 @@ export class ReportsController {
    * @roles Admin, Lab Technician, Doctor
    */
   @Get('lab-results/:orderId')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.RECEPTIONIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST)
   async getLabResultReport(
     @Param('orderId') orderId: string,
     @Req() req: any,

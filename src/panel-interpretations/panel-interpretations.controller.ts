@@ -38,7 +38,7 @@ export class PanelInterpretationsController {
    * GET /panel-interpretations/ai-status
    */
   @Get('ai-status')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.RECEPTIONIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST)
   async getAiStatus() {
     return {
       configured: this.aiInterpretationService.isConfigured(),
