@@ -35,7 +35,7 @@ export class MedicationsController {
     // Merge CAF products when configured
     if (this.cafIntegrationService.isConfigured()) {
       try {
-        const cafProducts = await this.cafIntegrationService.getProducts({ category });
+        const cafProducts = await this.cafIntegrationService.getProducts({ category, limit: 500 });
         const cafMeds = cafProducts.map((p) => ({
           _id: p._id,
           medicationCode: p.sku,
