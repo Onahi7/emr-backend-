@@ -58,8 +58,8 @@ export class MedicationsController {
           __cafBranchId: this.cafIntegrationService.getBranchId(),
         }));
         return [...cafMeds, ...localMeds];
-      } catch {
-        // CAF unavailable — return local meds only
+      } catch (error: any) {
+        this.logger.warn(`CAF products unavailable for medication list: ${error.message}`);
       }
     }
     return localMeds;
