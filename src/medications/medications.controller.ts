@@ -25,12 +25,38 @@ export class MedicationsController {
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findAll(@Query('category') category?: MedicationCategoryEnum, @Query('lowStock') lowStock?: boolean) {
+  async findAll(@Query('category') category?: MedicationCategoryEnum, @Query('lowStock') lowStock?: boolean) {
     if (lowStock) {
       return this.medicationsService.findLowStock();
     }
     const query = category ? { category } : {};
-    return this.medicationsService.findAll(query);
+    const localMeds = await this.medicationsService.findAll(query);
+
+    // Merge CAF products when configured
+    if (this.cafIntegrationService.isConfigured()) {
+      try {
+        const cafProducts = await this.cafIntegrationService.getProducts({ category });
+        const cafMeds = cafProducts.map((p) => ({
+          _id: p._id,
+          medicationCode: p.sku,
+          name: p.name,
+          genericName: p.brand,
+          category: p.category,
+          stockQuantity: p.quantityAvailable,
+          unitPrice: p.suggestedRetailPrice || p.basePrice,
+          unit: p.unit,
+          isActive: p.isActive,
+          dosageForm: p.unit,
+          strength: p.packSizes?.[0]?.name || '',
+          __cafProduct: true,
+          __cafBranchId: this.cafIntegrationService.getBranchId(),
+        }));
+        return [...cafMeds, ...localMeds];
+      } catch {
+        // CAF unavailable — return local meds only
+      }
+    }
+    return localMeds;
   }
 
   @Get('search')
