@@ -45,6 +45,16 @@ export class CafIntegrationService implements OnModuleInit {
     return !!(this.baseUrl && this.username && this.password && this.branchId);
   }
 
+  getConfigStatus(): { configured: boolean; baseUrl: string; username: string; branchId: string; authenticated: boolean } {
+    return {
+      configured: this.isConfigured(),
+      baseUrl: this.baseUrl ? `${this.baseUrl.substring(0, 30)}...` : 'NOT SET',
+      username: this.username || 'NOT SET',
+      branchId: this.branchId || 'NOT SET',
+      authenticated: !!(this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt),
+    };
+  }
+
   getBranchId(): string {
     return this.branchId;
   }
@@ -68,21 +78,27 @@ export class CafIntegrationService implements OnModuleInit {
       return { accessToken: this.accessToken, cafUserId: this.cafUserId };
     }
 
-    const { data } = await firstValueFrom(
-      this.httpService.post<CafAuthResponse>(`${this.baseUrl}/auth/login`, {
-        username: this.username,
-        password: this.password,
-      }),
-    );
+    try {
+      this.logger.log(`Authenticating with CAF at ${this.baseUrl}/auth/login as ${this.username}`);
+      const { data } = await firstValueFrom(
+        this.httpService.post<CafAuthResponse>(`${this.baseUrl}/auth/login`, {
+          username: this.username,
+          password: this.password,
+        }),
+      );
 
-    this.accessToken = data.accessToken;
-    this.refreshToken = data.refreshToken;
-    this.tokenExpiresAt = new Date(Date.now() + data.expiresIn * 1000);
+      this.accessToken = data.accessToken;
+      this.refreshToken = data.refreshToken;
+      this.tokenExpiresAt = new Date(Date.now() + data.expiresIn * 1000);
 
-    const payload = this.decodeJwt(data.accessToken);
-    this.cafUserId = payload?.sub || null;
-    this.logger.log(`Authenticated with CAF as user ${this.cafUserId}`);
-    return { accessToken: this.accessToken, cafUserId: this.cafUserId };
+      const payload = this.decodeJwt(data.accessToken);
+      this.cafUserId = payload?.sub || null;
+      this.logger.log(`Authenticated with CAF as user ${this.cafUserId}`);
+      return { accessToken: this.accessToken, cafUserId: this.cafUserId };
+    } catch (error: any) {
+      this.logger.error(`CAF authentication failed: ${error.message}`);
+      throw error;
+    }
   }
 
   private get headers() {
@@ -122,18 +138,30 @@ export class CafIntegrationService implements OnModuleInit {
     limit?: number;
     branchId?: string;
   } = {}): Promise<CafProduct[]> {
-    if (!this.isConfigured()) return [];
+    if (!this.isConfigured()) {
+      this.logger.warn('CAF not configured — skipping product fetch');
+      return [];
+    }
     await this.ensureAuthenticated();
 
     try {
       const { branchId, ...rest } = params;
+      const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
+      for (const [key, val] of Object.entries(rest)) {
+        if (val !== undefined && val !== null && val !== '') {
+          cleanParams[key] = val;
+        }
+      }
+      this.logger.log(`CAF getProducts params: ${JSON.stringify(cleanParams)}`);
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products`, {
           headers: this.headers,
-          params: { ...rest, branchId: branchId || this.branchId },
+          params: cleanParams,
         }),
       );
-      return data.data || data;
+      this.logger.log(`CAF getProducts response keys: ${Object.keys(data)}, isArray: ${Array.isArray(data.data || data)}, count: ${(data.data || data).length}`);
+      const result = data.data || data;
+      return Array.isArray(result) ? result : [];
     } catch (error: any) {
       this.logger.error(`CAF product list failed: ${error.message}`);
       return [];

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Logger } from '@nestjs/common';
 import { MedicationsService } from './medications.service';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
@@ -12,6 +12,7 @@ import { CafIntegrationService } from '../caf-integration/caf-integration.servic
 @Controller('medications')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class MedicationsController {
+  private readonly logger = new Logger(MedicationsController.name);
   constructor(
     private readonly medicationsService: MedicationsService,
     private readonly cafIntegrationService: CafIntegrationService,
@@ -35,7 +36,11 @@ export class MedicationsController {
     // Merge CAF products when configured
     if (this.cafIntegrationService.isConfigured()) {
       try {
-        const cafProducts = await this.cafIntegrationService.getProducts({ category, limit: 500 });
+        let cafProducts = await this.cafIntegrationService.getProducts({ category, page: 1, limit: 500 });
+        if (!cafProducts || cafProducts.length === 0) {
+          this.logger.warn('CAF getProducts returned 0 results, trying search fallback');
+          cafProducts = await this.cafIntegrationService.searchProducts('a');
+        }
         const cafMeds = cafProducts.map((p) => ({
           _id: p._id,
           medicationCode: p.sku,
@@ -57,6 +62,7 @@ export class MedicationsController {
           __cafProduct: true,
           __cafBranchId: this.cafIntegrationService.getBranchId(),
         }));
+        this.logger.log(`Loaded ${cafMeds.length} CAF products`);
         return [...cafMeds, ...localMeds];
       } catch (error: any) {
         this.logger.warn(`CAF products unavailable for medication list: ${error.message}`);
@@ -104,6 +110,22 @@ export class MedicationsController {
     @Query('category') category?: string,
   ) {
     return this.cafIntegrationService.getProducts({ search, category });
+  }
+
+  @Get('caf-status')
+  @Roles(UserRoleEnum.ADMIN)
+  async cafStatus() {
+    const config = this.cafIntegrationService.getConfigStatus();
+    let testResult: string | null = null;
+    if (config.configured) {
+      try {
+        const products = await this.cafIntegrationService.getProducts({ page: 1, limit: 5 });
+        testResult = `Fetched ${products.length} products successfully`;
+      } catch (error: any) {
+        testResult = `Error: ${error.message}`;
+      }
+    }
+    return { ...config, testResult };
   }
 
   @Get('report')
