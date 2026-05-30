@@ -5,6 +5,7 @@ import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { Result, ResultSchema } from '../database/schemas/result.schema';
 import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog.schema';
 import { Branch, BranchSchema } from '../branches/branch.schema';
+import { Visit, VisitSchema } from '../database/schemas/visit.schema';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { Branch, BranchSchema } from '../branches/branch.schema';
       { name: Result.name, schema: ResultSchema },
       { name: TestCatalog.name, schema: TestCatalogSchema },
       { name: Branch.name, schema: BranchSchema },
+      { name: Visit.name, schema: VisitSchema },
     ]),
   ],
   providers: [LisIntegrationService],

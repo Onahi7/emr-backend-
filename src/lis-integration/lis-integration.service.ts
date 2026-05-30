@@ -13,6 +13,7 @@ import {
 import { Result, ResultFlagEnum, ResultStatusEnum } from '../database/schemas/result.schema';
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
 import { Branch, BranchDocument } from '../branches/branch.schema';
+import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 
 @Injectable()
 export class LisIntegrationService {
@@ -25,6 +26,7 @@ export class LisIntegrationService {
     @InjectModel(Result.name) private resultModel: Model<Result>,
     @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
     @InjectModel(Branch.name) private branchModel: Model<BranchDocument>,
+    @InjectModel(Visit.name) private visitModel: Model<Visit>,
   ) {
     const baseURL = this.configService.get<string>('lis.baseUrl');
     const apiKey = this.configService.get<string>('lis.apiKey');
@@ -360,6 +362,20 @@ export class LisIntegrationService {
       lisSyncStatus: 'synced',
       lisSyncError: undefined,
     });
+
+    // Sync visit status so doctor sees results_ready
+    if (order.visitId) {
+      const visit = await this.visitModel.findById(order.visitId);
+      if (visit && ![VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) {
+        const allOrders = await this.orderModel.find({ visitId: order.visitId }).lean();
+        const allCompleted = allOrders.every((o: any) => o.status === OrderStatusEnum.COMPLETED || o.status === OrderStatusEnum.CANCELLED);
+        if (allCompleted || response.data?.isComplete) {
+          visit.status = VisitStatusEnum.RESULTS_READY;
+          await visit.save();
+          this.logger.log(`Visit ${visit.visitNumber} status updated to RESULTS_READY after LIS results fetch`);
+        }
+      }
+    }
 
     return {
       imported: results.length,
