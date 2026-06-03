@@ -74,33 +74,41 @@ export class MedicationsController {
   @Get('search')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   async search(@Query('q') searchTerm: string) {
+    const localResults = await this.medicationsService.search(searchTerm);
+
     if (this.cafIntegrationService.isConfigured()) {
-      const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm);
-      if (cafProducts.length > 0) {
-        return cafProducts.map((p) => ({
-          _id: p._id,
-          medicationCode: p.sku,
-          name: p.name,
-          genericName: p.brand,
-          category: p.category,
-          stockQuantity: p.quantityAvailable,
-          unitPrice: p.suggestedRetailPrice || p.basePrice,
-          unit: p.unit,
-          isActive: p.isActive,
-          dosageForm: p.unit,
-          strength: p.packSizes?.[0]?.name || '',
-          packSizes: p.packSizes?.map((ps) => ({
-            name: ps.name,
-            unit: ps.unit,
-            quantityPerPack: ps.quantityPerPack,
-            sellingPrice: ps.sellingPrice,
-          })) || [],
-          __cafProduct: true,
-          __cafBranchId: this.cafIntegrationService.getBranchId(),
-        }));
+      try {
+        const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm);
+        if (cafProducts.length > 0) {
+          const cafMeds = cafProducts.map((p) => ({
+            _id: p._id,
+            medicationCode: p.sku,
+            name: p.name,
+            genericName: p.brand,
+            category: p.category,
+            stockQuantity: p.quantityAvailable,
+            unitPrice: p.suggestedRetailPrice || p.basePrice,
+            unit: p.unit,
+            isActive: p.isActive,
+            dosageForm: p.unit,
+            strength: p.packSizes?.[0]?.name || '',
+            packSizes: p.packSizes?.map((ps) => ({
+              name: ps.name,
+              unit: ps.unit,
+              quantityPerPack: ps.quantityPerPack,
+              sellingPrice: ps.sellingPrice,
+            })) || [],
+            __cafProduct: true,
+            __cafBranchId: this.cafIntegrationService.getBranchId(),
+          }));
+          this.logger.log(`Search merged ${cafMeds.length} CAF + ${localResults.length} local results for "${searchTerm}"`);
+          return [...cafMeds, ...localResults];
+        }
+      } catch (error: any) {
+        this.logger.warn(`CAF search unavailable, returning local only: ${error.message}`);
       }
     }
-    return this.medicationsService.search(searchTerm);
+    return localResults;
   }
 
   @Get('caf-products')
