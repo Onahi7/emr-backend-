@@ -14,7 +14,7 @@ export class PrescriptionsController {
   constructor(private readonly prescriptionsService: PrescriptionsService) {}
 
   @Post()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   create(@Body() createPrescriptionDto: CreatePrescriptionDto, @Request() req: any) {
     return this.prescriptionsService.create(createPrescriptionDto, req.user?.userId, req.user?.branchId);
   }
@@ -62,7 +62,7 @@ export class PrescriptionsController {
    * PATCH /prescriptions/:id
    */
   @Patch(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   update(
     @Param('id') id: string,
     @Body() updatePrescriptionDto: UpdatePrescriptionDto,
@@ -91,11 +91,11 @@ export class PrescriptionsController {
   @Patch(':id/mark-paid')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markAsPaid(@Param('id') id: string, @Body() body: { paymentMethod?: string }, @Request() req: any) {
-    return this.prescriptionsService.markAsPaid(id, body.paymentMethod, req.user?.userId);
+    return this.prescriptionsService.markAsPaid(id, body.paymentMethod, req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/cancel')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   cancel(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
     return this.prescriptionsService.cancel(id, body.reason, req.user?.userId);
   }

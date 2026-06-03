@@ -347,8 +347,8 @@ export class PrescriptionsService {
     return populatedPrescription;
   }
 
-  async markAsPaid(id: string, paymentMethod: string = 'cash', userId?: string): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findById(id);
+  async markAsPaid(id: string, paymentMethod: string = 'cash', userId?: string, branchId?: string): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
@@ -357,6 +357,7 @@ export class PrescriptionsService {
 
     // Create payment record for the payments collection
     const payment = new this.paymentModel({
+      branchId: prescription.branchId || branchId,
       paymentType: PaymentTypeEnum.PRESCRIPTION,
       amount: prescription.totalAmount || 0,
       paymentMethod,
