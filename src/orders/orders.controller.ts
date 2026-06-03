@@ -99,8 +99,8 @@ export class OrdersController {
    */
   @Get('lis-catalog')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  async getLisCatalog() {
-    return this.ordersService.getLisCatalog();
+  async getLisCatalog(@Request() req: any) {
+    return this.ordersService.getLisCatalog(req.user?.branchId);
   }
 
   @Get('stats/payment')
@@ -143,8 +143,8 @@ export class OrdersController {
 
   @Post(':id/sync-lis')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  async syncToLis(@Param('id') id: string) {
-    return this.ordersService.syncToLis(id);
+  async syncToLis(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.syncToLis(id, req.user?.branchId);
   }
 
   /**
@@ -153,14 +153,14 @@ export class OrdersController {
    */
   @Post(':id/sync-lis-payment')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async syncLisPayment(@Param('id') id: string) {
-    return this.ordersService.syncLisPayment(id);
+  async syncLisPayment(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.syncLisPayment(id, req.user?.branchId);
   }
 
   @Post(':id/fetch-lis-results')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  async fetchLisResults(@Param('id') id: string) {
-    return this.ordersService.fetchLisResults(id);
+  async fetchLisResults(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.fetchLisResults(id, req.user?.branchId);
   }
 
   @Patch(':id')

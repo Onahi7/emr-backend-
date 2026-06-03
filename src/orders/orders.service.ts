@@ -342,6 +342,7 @@ export class OrdersService {
       for (const p of createOrderDto.initialPayments) {
         if (p.amount > 0) {
           await this.paymentModel.create({
+            branchId,
             orderId: savedOrder._id,
             paymentType: this.getPaymentTypeForOrder(orderType),
             amount: Math.round(p.amount * 100) / 100,
@@ -353,6 +354,7 @@ export class OrdersService {
       }
     } else if (createOrderDto.paymentMethod && amountPaid > 0) {
       await this.paymentModel.create({
+        branchId,
         orderId: savedOrder._id,
         paymentType: this.getPaymentTypeForOrder(orderType),
         amount: amountPaid,
@@ -375,7 +377,7 @@ export class OrdersService {
     this.realtimeGateway.notifyOrderCreated(populatedOrder);
 
     if (savedOrder.orderType === OrderTypeEnum.LAB) {
-      void this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString());
+      void this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString(), branchId);
     }
 
     return populatedOrder;
@@ -653,7 +655,7 @@ export class OrdersService {
 
     // Re-sync to LIS if tests changed on an already-synced order
     if (testsChanged && order.orderType === OrderTypeEnum.LAB && order.lisExternalRequestId) {
-      void this.lisIntegrationService.syncOrderToLis(id);
+      void this.lisIntegrationService.syncOrderToLis(id, branchId);
     }
 
     return populatedOrder;
@@ -1074,6 +1076,7 @@ export class OrdersService {
 
     // Create payment record
     const payment = await this.paymentModel.create({
+      branchId,
       orderId: order._id,
       paymentType: this.getPaymentTypeForOrder(order.orderType),
       amount: addPaymentDto.amount,
@@ -1113,6 +1116,7 @@ export class OrdersService {
         order._id.toString(),
         addPaymentDto.amount,
         addPaymentDto.paymentMethod,
+        branchId,
       );
     }
 
@@ -1333,6 +1337,7 @@ export class OrdersService {
 
     // Create payment record
     await this.paymentModel.create({
+      branchId,
       orderId: order._id,
       paymentType: this.getPaymentTypeForOrder(order.orderType),
       amount: order.total,
@@ -1356,22 +1361,23 @@ export class OrdersService {
         order._id.toString(),
         order.total,
         paymentMethod,
+        branchId,
       );
     }
 
     return populatedOrder;
   }
 
-  async syncToLis(id: string): Promise<Order> {
+  async syncToLis(id: string, branchId?: string): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    await this.lisIntegrationService.syncOrderToLis(id);
-    return this.findOne(id);
+    await this.lisIntegrationService.syncOrderToLis(id, branchId);
+    return this.findOne(id, branchId);
   }
 
-  async syncLisPayment(id: string): Promise<Order> {
+  async syncLisPayment(id: string, branchId?: string): Promise<Order> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -1394,20 +1400,21 @@ export class OrdersService {
       order._id.toString(),
       order.amountPaid || order.total,
       paymentMethod,
+      branchId,
     );
 
-    return this.findOne(id);
+    return this.findOne(id, branchId);
   }
 
-  async fetchLisResults(id: string): Promise<any> {
+  async fetchLisResults(id: string, branchId?: string): Promise<any> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    return this.lisIntegrationService.fetchAndStoreResults(id);
+    return this.lisIntegrationService.fetchAndStoreResults(id, branchId);
   }
 
-  async getLisCatalog(): Promise<Array<{
+  async getLisCatalog(branchId?: string): Promise<Array<{
     _id: string;
     code: string;
     name: string;
@@ -1416,7 +1423,7 @@ export class OrdersService {
     category: string;
     panelComponents?: Array<{ testCode: string; testName: string }>;
   }>> {
-    const items = await this.lisIntegrationService.fetchLisOrderables();
+    const items = await this.lisIntegrationService.fetchLisOrderables(branchId);
     return items.map((item) => ({
       _id: item.code,
       code: item.code,

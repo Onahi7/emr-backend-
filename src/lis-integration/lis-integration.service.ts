@@ -53,6 +53,8 @@ export class LisIntegrationService {
     facilityName: string;
     facilityLocation: string;
     sourceSystem: string;
+    branchCode?: string;
+    branchId?: string;
   }> {
     const defaultConfig = {
       apiKey: this.configService.get<string>('lis.apiKey') || '',
@@ -60,6 +62,8 @@ export class LisIntegrationService {
       facilityName: this.configService.get<string>('lis.sourceFacilityName') || 'Harbour EMR',
       facilityLocation: this.configService.get<string>('lis.sourceFacilityLocation') || 'EMR',
       sourceSystem: this.configService.get<string>('lis.sourceSystem') || 'Harbour EMR',
+      branchCode: undefined,
+      branchId,
     };
 
     if (!branchId) return defaultConfig;
@@ -73,6 +77,8 @@ export class LisIntegrationService {
           facilityName: branch.name || defaultConfig.facilityName,
           facilityLocation: branch.address || defaultConfig.facilityLocation,
           sourceSystem: `${branch.name} EMR`,
+          branchCode: branch.code,
+          branchId: branch._id?.toString(),
         };
       }
     } catch (err: any) {
@@ -96,7 +102,7 @@ export class LisIntegrationService {
     });
   }
 
-  async fetchLisOrderables(): Promise<Array<{
+  async fetchLisOrderables(branchId?: string): Promise<Array<{
     code: string;
     name: string;
     price?: number;
@@ -104,7 +110,8 @@ export class LisIntegrationService {
     category?: string;
     panelComponents?: Array<{ testCode: string; testName: string }>;
   }>> {
-    if (!this.client) return [];
+    const client = await this.createLisClient(branchId) || this.client;
+    if (!client) return [];
 
     // Try known partner endpoints in order. We normalize shape for EMR UI.
     const candidates = [
@@ -115,7 +122,7 @@ export class LisIntegrationService {
 
     for (const path of candidates) {
       try {
-        const response = await this.client.get(path);
+        const response = await client.get(path);
         const payload = response.data;
         const list = Array.isArray(payload)
           ? payload
@@ -167,14 +174,15 @@ export class LisIntegrationService {
   }
 
   async syncOrderToLis(orderId: string, branchId?: string): Promise<void> {
-    const client = await this.createLisClient(branchId) || this.client;
-    if (!client) return;
-
     const order = await this.loadOrder(orderId);
     if (!order || order.orderType !== OrderTypeEnum.LAB) return;
 
+    const effectiveBranchId = branchId || order.branchId?.toString();
+    const client = await this.createLisClient(effectiveBranchId) || this.client;
+    if (!client) return;
+
     const externalRequestId = order.lisExternalRequestId || `EMR-${order.orderNumber}`;
-    const branchConfig = await this.getBranchLisConfig(branchId);
+    const branchConfig = await this.getBranchLisConfig(effectiveBranchId);
 
     try {
       const testsToSend = this.buildLisTests(order.lisRequestedCodes || [], order.order_tests || []);
@@ -182,6 +190,11 @@ export class LisIntegrationService {
       const response = await client.post('/external-api/test-requests', {
         externalRequestId,
         sourceSystem: branchConfig.sourceSystem,
+        source: 'EMR',
+        sourceType: 'emr',
+        sourceOrderNumber: order.orderNumber,
+        sourceBranchId: branchConfig.branchId || effectiveBranchId,
+        sourceBranchCode: branchConfig.branchCode,
         sourceFacilityName: branchConfig.facilityName,
         sourceFacilityLocation: branchConfig.facilityLocation,
         patient: this.mapPatient(order.patientId),
@@ -254,14 +267,15 @@ export class LisIntegrationService {
   }
 
   async syncPaymentToLis(orderId: string, amount: number, paymentMethod: string, branchId?: string): Promise<void> {
-    const client = await this.createLisClient(branchId) || this.client;
-    if (!client) return;
-
     const order = await this.loadOrder(orderId);
     if (!order || order.orderType !== OrderTypeEnum.LAB) return;
 
+    const effectiveBranchId = branchId || order.branchId?.toString();
+    const client = await this.createLisClient(effectiveBranchId) || this.client;
+    if (!client) return;
+
     if (order.lisSyncStatus !== 'synced') {
-      await this.syncOrderToLis(orderId, branchId);
+      await this.syncOrderToLis(orderId, effectiveBranchId);
     }
 
     const refreshed = await this.orderModel.findById(orderId).lean();
@@ -285,15 +299,16 @@ export class LisIntegrationService {
   }
 
   async fetchAndStoreResults(orderId: string, branchId?: string): Promise<any> {
-    const client = await this.createLisClient(branchId) || this.client;
-    if (!client) {
-      throw new Error('LIS integration is not configured');
-    }
-
     const order = await this.orderModel.findById(orderId).lean();
     if (!order) throw new Error('Order not found');
     if (!order.lisExternalRequestId) {
       throw new Error('Order has not been synced to LIS');
+    }
+
+    const effectiveBranchId = branchId || order.branchId?.toString();
+    const client = await this.createLisClient(effectiveBranchId) || this.client;
+    if (!client) {
+      throw new Error('LIS integration is not configured');
     }
 
     const response = await client.get(
