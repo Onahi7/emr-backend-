@@ -112,7 +112,7 @@ export class MedicationsController {
   }
 
   @Get('caf-products')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   async listCafProducts(
     @Query('search') search?: string,
     @Query('category') category?: string,
