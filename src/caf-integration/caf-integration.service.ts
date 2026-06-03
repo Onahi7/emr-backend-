@@ -114,18 +114,34 @@ export class CafIntegrationService implements OnModuleInit {
 
   async searchProducts(query: string, branchId?: string): Promise<CafProduct[]> {
     if (!this.isConfigured()) return [];
-    await this.ensureAuthenticated();
 
     try {
+      await this.ensureAuthenticated();
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products/search`, {
           headers: this.headers,
           params: { query, branchId: branchId || this.branchId },
         }),
       );
-      return data.data || data;
+      const result = data.data || data;
+      if (Array.isArray(result) && result.length > 0) {
+        return result;
+      }
     } catch (error: any) {
       this.logger.error(`CAF product search failed: ${error.message}`);
+    }
+
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/products`, {
+          headers: this.headers,
+          params: { search: query, branchId: branchId || this.branchId },
+        }),
+      );
+      const result = data.data || data;
+      return Array.isArray(result) ? result : [];
+    } catch (error: any) {
+      this.logger.error(`CAF product search fallback failed: ${error.message}`);
       return [];
     }
   }
@@ -142,9 +158,8 @@ export class CafIntegrationService implements OnModuleInit {
       this.logger.warn('CAF not configured — skipping product fetch');
       return [];
     }
-    await this.ensureAuthenticated();
-
     try {
+      await this.ensureAuthenticated();
       const { branchId, ...rest } = params;
       const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
       for (const [key, val] of Object.entries(rest)) {
