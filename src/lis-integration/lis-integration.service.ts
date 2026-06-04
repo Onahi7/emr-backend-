@@ -190,9 +190,6 @@ export class LisIntegrationService {
       const response = await client.post('/external-api/test-requests', {
         externalRequestId,
         sourceSystem: branchConfig.sourceSystem,
-        source: 'EMR',
-        sourceType: 'emr',
-        sourceOrderNumber: order.orderNumber,
         sourceBranchId: branchConfig.branchId || effectiveBranchId,
         sourceBranchCode: branchConfig.branchCode,
         sourceFacilityName: branchConfig.facilityName,

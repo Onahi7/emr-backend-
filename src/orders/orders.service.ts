@@ -391,6 +391,7 @@ export class OrdersService {
     limit: number = 10,
     status?: string,
     patientId?: string,
+    visitId?: string,
     search?: string,
     orderType?: OrderTypeEnum,
     branchId?: string,
@@ -404,6 +405,10 @@ export class OrdersService {
 
     if (patientId && Types.ObjectId.isValid(patientId)) {
       query.patientId = new Types.ObjectId(patientId);
+    }
+
+    if (visitId && Types.ObjectId.isValid(visitId)) {
+      query.visitId = new Types.ObjectId(visitId);
     }
 
     if (orderType) {
@@ -1375,6 +1380,41 @@ export class OrdersService {
 
     await this.lisIntegrationService.syncOrderToLis(id, branchId);
     return this.findOne(id, branchId);
+  }
+
+  async retryFailedLisSync(branchId?: string): Promise<{ retried: number; results: any[] }> {
+    const query: any = {
+      orderType: OrderTypeEnum.LAB,
+      lisSyncStatus: 'failed',
+    };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
+    const failedOrders = await this.orderModel.find(query).lean().exec();
+    const results = [];
+
+    for (const order of failedOrders) {
+      try {
+        await this.lisIntegrationService.syncOrderToLis(order._id.toString(), branchId);
+        const refreshed = await this.orderModel.findById(order._id).lean().exec();
+        results.push({
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          status: refreshed?.lisSyncStatus || 'unknown',
+          error: refreshed?.lisSyncError,
+        });
+      } catch (err: any) {
+        results.push({
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          status: 'error',
+          error: err.message,
+        });
+      }
+    }
+
+    return { retried: failedOrders.length, results };
   }
 
   async syncLisPayment(id: string, branchId?: string): Promise<Order> {

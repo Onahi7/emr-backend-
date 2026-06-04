@@ -42,13 +42,14 @@ export class OrdersController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('patientId') patientId?: string,
+    @Query('visitId') visitId?: string,
     @Query('search') search?: string,
     @Query('orderType') orderType?: OrderTypeEnum,
     @Request() req?: any,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.ordersService.findAll(pageNum, limitNum, status, patientId, search, orderType, req.user?.branchId);
+    return this.ordersService.findAll(pageNum, limitNum, status, patientId, visitId, search, orderType, req.user?.branchId);
   }
 
   /**
@@ -145,6 +146,12 @@ export class OrdersController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   async syncToLis(@Param('id') id: string, @Request() req: any) {
     return this.ordersService.syncToLis(id, req.user?.branchId);
+  }
+
+  @Post('retry-failed-lis-sync')
+  @Roles(UserRoleEnum.ADMIN)
+  async retryFailedLisSync(@Request() req: any) {
+    return this.ordersService.retryFailedLisSync(req.user?.branchId);
   }
 
   /**
