@@ -9,6 +9,7 @@ import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { Queue, QueueStatusEnum, PriorityLevelEnum } from '../database/schemas/queue.schema';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
+import { RapidTestResultDto } from './dto/rapid-test-result.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OrdersService } from '../orders/orders.service';
 import { OrderTypeEnum, PriorityEnum, OrderStatusEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
@@ -47,7 +48,7 @@ export class VisitsService {
   }
 
   async create(createVisitDto: CreateVisitDto, branchId?: string): Promise<Visit> {
-    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature } = createVisitDto;
+    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature, serviceType, specialistId, procedureType } = createVisitDto;
 
     const patient = await this.patientModel.findById(patientId);
     if (!patient) {
@@ -63,10 +64,18 @@ export class VisitsService {
 
     const visitNumber = await this.generateVisitNumber();
 
+    // When reception books a specialist consultation, default the visit's doctor
+    // assignment to that specialist so they show up in their queue automatically.
+    // NOTE: visit.doctorId is set from the Doctor collection (specialists) by
+    // both this create() and the nurse triage flow.
+    const effectiveDoctorId = serviceType === 'specialist_consultation' && specialistId
+      ? specialistId
+      : doctorId;
+
     const visitData: any = {
       visitNumber,
       patientId: new Types.ObjectId(patientId),
-      doctorId: doctorId ? new Types.ObjectId(doctorId) : undefined,
+      doctorId: effectiveDoctorId ? new Types.ObjectId(effectiveDoctorId) : undefined,
       visitType: visitType || VisitTypeEnum.NEW,
       consultationFee,
       chiefComplaint,
@@ -75,6 +84,10 @@ export class VisitsService {
       status: VisitStatusEnum.WAITING_PAYMENT,
       consultationPaid: false,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
+      serviceType,
+      specialistId: specialistId ? new Types.ObjectId(specialistId) : undefined,
+      procedureType,
+      rapidTestResults: [],
     };
     if (branchId) visitData.branchId = branchId;
 
@@ -548,6 +561,44 @@ export class VisitsService {
 
     this.realtimeGateway.emitToAll('visit:triage_completed', savedVisit);
     return savedVisit;
+  }
+
+  /**
+   * Add an in-house rapid test result (malaria/typhoid) to a visit.
+   * These tests are NOT routed to LIS — the nurse performs the bedside
+   * test and the result lives in the EMR for the doctor to review.
+   */
+  async addRapidTestResult(
+    id: string,
+    data: RapidTestResultDto,
+    nurseId?: string,
+    branchId?: string,
+  ): Promise<Visit> {
+    const visit = await this.visitModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
+    if (!visit) throw new NotFoundException('Visit not found');
+
+    if (data.testType === 'typhoid' && data.parasiteCount != null) {
+      throw new BadRequestException('Parasite count is only valid for malaria tests');
+    }
+
+    const entry = {
+      testType: data.testType,
+      result: data.result,
+      parasiteCount: data.parasiteCount,
+      antigen: data.antigen,
+      notes: data.notes,
+      performedBy: nurseId ? new Types.ObjectId(nurseId) : undefined,
+      performedAt: new Date(),
+    } as any;
+
+    visit.rapidTestResults = visit.rapidTestResults || [];
+    visit.rapidTestResults.push(entry);
+    const saved = await visit.save();
+    this.logger.log(
+      `Rapid ${data.testType} test (${data.result}) added to visit ${saved.visitNumber}`,
+    );
+    this.realtimeGateway.emitToAll('visit:rapid_test_result_added', saved);
+    return saved;
   }
 
   async assignDoctorFromQueue(

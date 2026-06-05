@@ -24,6 +24,42 @@ export enum VisitTypeEnum {
   EMERGENCY = 'emergency',
 }
 
+export enum VisitServiceTypeEnum {
+  NORMAL_CONSULTATION = 'normal_consultation',
+  SPECIALIST_CONSULTATION = 'specialist_consultation',
+  OBSERVATION_4H = 'observation_4h',
+  PROCEDURE = 'procedure',
+  RAPID_MALARIA = 'rapid_malaria',
+  RAPID_TYPHOID = 'rapid_typhoid',
+}
+
+@Schema({ _id: false, timestamps: false })
+export class RapidTestResult {
+  @Prop({ required: true, enum: ['malaria', 'typhoid'] })
+  testType: 'malaria' | 'typhoid';
+
+  @Prop({ required: true, enum: ['positive', 'negative'] })
+  result: 'positive' | 'negative';
+
+  /** Parasite count per microliter — only relevant for malaria */
+  @Prop()
+  parasiteCount?: number;
+
+  /** Antigen tested — p.f, pan, p.v for malaria; TOG/IgM/IgG for typhoid */
+  @Prop()
+  antigen?: string;
+
+  @Prop()
+  notes?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  performedBy?: Types.ObjectId;
+
+  @Prop({ default: () => new Date() })
+  performedAt: Date;
+}
+export const RapidTestResultSchema = SchemaFactory.createForClass(RapidTestResult);
+
 @Schema({ timestamps: true, collection: 'visits' })
 export class Visit extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
@@ -51,6 +87,23 @@ export class Visit extends Document {
 
   @Prop({ default: false })
   consultationPaid: boolean;
+
+  /** Billable service picked at reception — drives downstream workflow
+   *  (specialist routing, procedure prep, rapid test entry) */
+  @Prop({ enum: Object.values(VisitServiceTypeEnum) })
+  serviceType?: VisitServiceTypeEnum;
+
+  /** Specialist (Doctor._id) the visit was booked with at reception */
+  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
+  specialistId?: Types.ObjectId;
+
+  /** Procedure name/type the visit was booked for */
+  @Prop()
+  procedureType?: string;
+
+  /** In-house rapid test results (malaria/typhoid) entered by nurse — not LIS */
+  @Prop({ type: [RapidTestResultSchema], default: [] })
+  rapidTestResults: RapidTestResult[];
 
   @Prop({ type: Types.ObjectId, ref: 'Order' })
   consultationOrderId?: Types.ObjectId;

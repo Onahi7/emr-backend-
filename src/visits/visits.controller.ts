@@ -14,6 +14,7 @@ import {
 import { VisitsService } from './visits.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
+import { RapidTestResultDto } from './dto/rapid-test-result.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -216,6 +217,16 @@ export class VisitsController {
     @Request() req: any,
   ) {
     return this.visitsService.assignDoctorFromQueue(id, body.doctorId, req.user?.userId, req.user?.branchId);
+  }
+
+  @Patch(':id/rapid-test-result')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
+  addRapidTestResult(
+    @Param('id') id: string,
+    @Body() body: RapidTestResultDto,
+    @Request() req: any,
+  ) {
+    return this.visitsService.addRapidTestResult(id, body, req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/refer')
