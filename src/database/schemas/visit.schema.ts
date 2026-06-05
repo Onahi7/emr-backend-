@@ -122,6 +122,12 @@ export class Visit extends Document {
   @Prop()
   triageNotes?: string;
 
+  @Prop({ default: false })
+  triageAlert?: boolean;
+
+  @Prop({ type: [String], default: [] })
+  triageAlerts?: string[];
+
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   triagedBy?: Types.ObjectId;
 

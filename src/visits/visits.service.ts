@@ -490,6 +490,8 @@ export class VisitsService {
       triageNotes?: string;
       chiefComplaint?: string;
       doctorId?: string;
+      triageAlert?: boolean;
+      triageAlerts?: string[];
     },
     nurseId?: string,
     branchId?: string,
@@ -519,6 +521,8 @@ export class VisitsService {
       status: VisitStatusEnum.IN_QUEUE,
       triagedAt: new Date(),
       triagedBy: nurseId ? new Types.ObjectId(nurseId) : undefined,
+      triageAlert: data.triageAlerts && data.triageAlerts.length > 0 ? true : !!data.triageAlert,
+      triageAlerts: data.triageAlerts || [],
     });
 
     const savedVisit = await visit.save();
