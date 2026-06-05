@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -10,6 +10,25 @@ import { UserRoleEnum } from '../database/schemas/user-role.schema';
 @Roles(UserRoleEnum.ADMIN)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  /**
+   * Preview how many records clearing test data would delete.
+   * GET /admin/clear-test-data/preview
+   */
+  @Get('clear-test-data/preview')
+  getClearTestDataPreview() {
+    return this.adminService.getClearTestDataPreview();
+  }
+
+  /**
+   * Permanently delete all transactional/clinical data.
+   * Caller must pass `confirmation: "DELETE ALL TEST DATA"`.
+   * POST /admin/clear-test-data
+   */
+  @Post('clear-test-data')
+  clearTestData(@Body() body: { confirmation: string }, @Request() req: any) {
+    return this.adminService.clearTestData(req.user?.userId, body?.confirmation);
+  }
 
   /**
    * Full admin dashboard — hospital-wide summary for today or a given date

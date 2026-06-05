@@ -191,6 +191,16 @@ export class UsersService {
       if (updateUserDto.avatarUrl !== undefined) {
         profile.avatarUrl = updateUserDto.avatarUrl;
       }
+      if (updateUserDto.email !== undefined && updateUserDto.email !== profile.email) {
+        const conflict = await this.profileModel.findOne({ email: updateUserDto.email }).exec();
+        if (conflict && conflict._id.toString() !== profile._id.toString()) {
+          throw new ConflictException(`Email ${updateUserDto.email} is already in use`);
+        }
+        profile.email = updateUserDto.email;
+      }
+      if (updateUserDto.isActive !== undefined) {
+        profile.isActive = updateUserDto.isActive;
+      }
 
       await profile.save();
 

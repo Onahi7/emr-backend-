@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Order, OrderTypeEnum, OrderStatusEnum } from '../database/schemas/order.schema';
+import { OrderTest } from '../database/schemas/order-test.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { Prescription, PrescriptionStatusEnum } from '../database/schemas/prescription.schema';
 import { Medication } from '../database/schemas/medication.schema';
@@ -11,6 +12,22 @@ import { Profile } from '../database/schemas/profile.schema';
 import { UserRole } from '../database/schemas/user-role.schema';
 import { AuditLog } from '../database/schemas/audit-log.schema';
 import { Appointment, AppointmentStatusEnum } from '../database/schemas/appointment.schema';
+import { Result } from '../database/schemas/result.schema';
+import { Admission } from '../database/schemas/admission.schema';
+import { SoapNote } from '../database/schemas/soap-note.schema';
+import { PatientNote } from '../database/schemas/patient-note.schema';
+import { WalletTransaction } from '../database/schemas/wallet-transaction.schema';
+import { Sample } from '../database/schemas/sample.schema';
+import { Queue } from '../database/schemas/queue.schema';
+import { CashReconciliation } from '../database/schemas/cash-reconciliation.schema';
+import { Expenditure } from '../database/schemas/expenditure.schema';
+import { StockMovement } from '../database/schemas/stock-movement.schema';
+import { Consultation } from '../database/schemas/consultation.schema';
+import { CommunicationLog } from '../database/schemas/communication-log.schema';
+import { CriticalResultNotification } from '../database/schemas/critical-result-notification.schema';
+import { QcSample } from '../database/schemas/qc-sample.schema';
+import { QcResult } from '../database/schemas/qc-result.schema';
+import { Doctor } from '../database/schemas/doctor.schema';
 
 @Injectable()
 export class AdminService {
@@ -18,6 +35,7 @@ export class AdminService {
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(OrderTest.name) private orderTestModel: Model<OrderTest>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Prescription.name) private prescriptionModel: Model<Prescription>,
     @InjectModel(Medication.name) private medicationModel: Model<Medication>,
@@ -25,6 +43,22 @@ export class AdminService {
     @InjectModel(UserRole.name) private userRoleModel: Model<UserRole>,
     @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLog>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
+    @InjectModel(Result.name) private resultModel: Model<Result>,
+    @InjectModel(Admission.name) private admissionModel: Model<Admission>,
+    @InjectModel(SoapNote.name) private soapNoteModel: Model<SoapNote>,
+    @InjectModel(PatientNote.name) private patientNoteModel: Model<PatientNote>,
+    @InjectModel(WalletTransaction.name) private walletTxModel: Model<WalletTransaction>,
+    @InjectModel(Sample.name) private sampleModel: Model<Sample>,
+    @InjectModel(Queue.name) private queueModel: Model<Queue>,
+    @InjectModel(CashReconciliation.name) private cashReconModel: Model<CashReconciliation>,
+    @InjectModel(Expenditure.name) private expenditureModel: Model<Expenditure>,
+    @InjectModel(StockMovement.name) private stockMovementModel: Model<StockMovement>,
+    @InjectModel(Consultation.name) private consultationModel: Model<Consultation>,
+    @InjectModel(CommunicationLog.name) private communicationLogModel: Model<CommunicationLog>,
+    @InjectModel(CriticalResultNotification.name) private criticalResultModel: Model<CriticalResultNotification>,
+    @InjectModel(QcSample.name) private qcSampleModel: Model<QcSample>,
+    @InjectModel(QcResult.name) private qcResultModel: Model<QcResult>,
+    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
   ) {}
 
   private getDateRange(startDate?: string, endDate?: string) {
@@ -504,6 +538,141 @@ export class AdminService {
       patientsByCategory,
       patientsByGender,
       visitTrend,
+    };
+  }
+
+  /**
+   * Count records in each transactional collection (used by the UI to
+   * preview what clearing test data will remove).
+   */
+  async getClearTestDataPreview(): Promise<Record<string, number>> {
+    const [patients, visits, orders, orderTests, payments, prescriptions, results,
+      admissions, soapNotes, patientNotes, walletTx, samples, queue, cashRecon,
+      expenditures, stockMovements, consultations, communicationLogs,
+      criticalResults, qcSamples, qcResults, appointments] = await Promise.all([
+      this.patientModel.countDocuments(),
+      this.visitModel.countDocuments(),
+      this.orderModel.countDocuments(),
+      this.orderTestModel.countDocuments(),
+      this.paymentModel.countDocuments(),
+      this.prescriptionModel.countDocuments(),
+      this.resultModel.countDocuments(),
+      this.admissionModel.countDocuments(),
+      this.soapNoteModel.countDocuments(),
+      this.patientNoteModel.countDocuments(),
+      this.walletTxModel.countDocuments(),
+      this.sampleModel.countDocuments(),
+      this.queueModel.countDocuments(),
+      this.cashReconModel.countDocuments(),
+      this.expenditureModel.countDocuments(),
+      this.stockMovementModel.countDocuments(),
+      this.consultationModel.countDocuments(),
+      this.communicationLogModel.countDocuments(),
+      this.criticalResultModel.countDocuments(),
+      this.qcSampleModel.countDocuments(),
+      this.qcResultModel.countDocuments(),
+      this.appointmentModel.countDocuments(),
+    ]);
+    return {
+      patients, visits, orders, orderTests, payments, prescriptions, results,
+      admissions, soapNotes, patientNotes, walletTransactions: walletTx, samples,
+      queue, cashReconciliations: cashRecon, expenditures, stockMovements,
+      consultations, communicationLogs: communicationLogs, criticalResultNotifications: criticalResults,
+      qcSamples, qcResults, appointments,
+    };
+  }
+
+  /**
+   * Permanently delete all transactional/clinical data while keeping
+   * reference data (users, branches, medications, rooms, doctor profiles,
+   * LIS catalog, machines, suppliers) intact.
+   *
+   * Requires the caller to pass the literal phrase "DELETE ALL TEST DATA"
+   * as proof that the action is intentional.
+   */
+  async clearTestData(actorUserId: string, confirmation: string): Promise<{
+    deleted: Record<string, number>;
+    preserved: string[];
+    actor: string;
+    timestamp: string;
+  }> {
+    if (confirmation !== 'DELETE ALL TEST DATA') {
+      throw new Error('Invalid confirmation phrase');
+    }
+
+    const deleteMany = async <T>(model: Model<T>, query: any = {}): Promise<number> => {
+      const result = await model.deleteMany(query).exec();
+      return result.deletedCount || 0;
+    };
+
+    const [
+      patients, visits, orders, orderTests, payments, prescriptions, results,
+      admissions, soapNotes, patientNotes, walletTx, samples, queue, cashRecon,
+      expenditures, stockMovements, consultations, communicationLogs,
+      criticalResults, qcSamples, qcResults, appointments,
+    ] = await Promise.all([
+      deleteMany(this.patientModel),
+      deleteMany(this.visitModel),
+      deleteMany(this.orderModel),
+      deleteMany(this.orderTestModel),
+      deleteMany(this.paymentModel),
+      deleteMany(this.prescriptionModel),
+      deleteMany(this.resultModel),
+      deleteMany(this.admissionModel),
+      deleteMany(this.soapNoteModel),
+      deleteMany(this.patientNoteModel),
+      deleteMany(this.walletTxModel),
+      deleteMany(this.sampleModel),
+      deleteMany(this.queueModel),
+      deleteMany(this.cashReconModel),
+      deleteMany(this.expenditureModel),
+      deleteMany(this.stockMovementModel),
+      deleteMany(this.consultationModel),
+      deleteMany(this.communicationLogModel),
+      deleteMany(this.criticalResultModel),
+      deleteMany(this.qcSampleModel),
+      deleteMany(this.qcResultModel),
+      deleteMany(this.appointmentModel),
+      deleteMany(this.doctorModel, {}),
+    ]);
+
+    const deleted = {
+      patients, visits, orders, orderTests, payments, prescriptions, results,
+      admissions, soapNotes, patientNotes, walletTransactions: walletTx, samples,
+      queue, cashReconciliations: cashRecon, expenditures, stockMovements,
+      consultations, communicationLogs, criticalResultNotifications: criticalResults,
+      qcSamples, qcResults, appointments,
+    };
+
+    const preserved = [
+      'profiles (users)', 'user-roles', 'branches', 'medications', 'rooms',
+      'doctors/specialists (will be reseeded from profiles)', 'test-catalog',
+      'test-panels', 'test-reference-ranges', 'panel-interpretations',
+      'machines', 'machine-maintenance', 'suppliers', 'report-templates',
+      'id-sequences',
+    ];
+
+    const timestamp = new Date();
+    try {
+      const auditLogPayload: any = {
+        userId: actorUserId ? new Types.ObjectId(actorUserId) : undefined,
+        action: 'DELETE' as any,
+        tableName: 'all_transactional_collections',
+        recordId: 'clear_test_data',
+        newData: { deleted, preserved } as any,
+        ipAddress: undefined,
+        userAgent: undefined,
+      };
+      await this.auditLogModel.create(auditLogPayload);
+    } catch (e) {
+      // audit log is best-effort; do not fail the operation
+    }
+
+    return {
+      deleted,
+      preserved,
+      actor: actorUserId,
+      timestamp: timestamp.toISOString(),
     };
   }
 }

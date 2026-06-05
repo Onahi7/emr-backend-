@@ -16,6 +16,7 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -82,6 +83,20 @@ export class UsersController {
       throw new ForbiddenException('Access denied');
     }
     return this.usersService.update(id, updateUserDto);
+  }
+
+  /**
+   * Reset another user's password (admin only)
+   * PATCH /users/:id/password
+   */
+  @Patch(':id/password')
+  @Roles(UserRoleEnum.ADMIN)
+  async resetPassword(
+    @Param('id') id: string,
+    @Body() dto: ResetPasswordDto,
+  ) {
+    await this.usersService.updatePassword(id, dto.newPassword);
+    return { ok: true };
   }
 
   /**
