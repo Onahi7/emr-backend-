@@ -1022,4 +1022,90 @@ export class VisitsService {
       cancelled,
     };
   }
+
+  async getDoctorPatients(
+    doctorId: string,
+    branchId?: string,
+    page = 1,
+    limit = 50,
+    search = '',
+  ): Promise<{ patients: any[]; total: number; page: number; limit: number }> {
+    const doctorObjectId = new Types.ObjectId(doctorId);
+    const branchFilter = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
+
+    const pipeline: any[] = [
+      { $match: { doctorId: doctorObjectId, ...branchFilter } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$patientId',
+          lastVisitId: { $first: '$_id' },
+          lastVisitNumber: { $first: '$visitNumber' },
+          lastVisitStatus: { $first: '$status' },
+          lastVisitDate: { $first: '$createdAt' },
+          lastChiefComplaint: { $first: '$chiefComplaint' },
+          totalVisits: { $sum: 1 },
+        },
+      },
+      { $sort: { lastVisitDate: -1 } },
+      {
+        $lookup: {
+          from: 'patients',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'patient',
+        },
+      },
+      { $unwind: '$patient' },
+    ];
+
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { 'patient.firstName': regex },
+            { 'patient.lastName': regex },
+            { 'patient.patientId': regex },
+            { 'patient.phone': regex },
+            { 'patient.email': regex },
+          ],
+        },
+      });
+    }
+
+    const totalPipeline = [...pipeline, { $count: 'total' }];
+    const totalResult = await this.visitModel.aggregate(totalPipeline);
+    const total = totalResult[0]?.total || 0;
+
+    pipeline.push({ $skip: (page - 1) * limit });
+    pipeline.push({ $limit: limit });
+    pipeline.push({
+      $project: {
+        _id: '$patient._id',
+        patientId: '$patient.patientId',
+        firstName: '$patient.firstName',
+        lastName: '$patient.lastName',
+        age: '$patient.age',
+        ageUnit: '$patient.ageUnit',
+        gender: '$patient.gender',
+        phone: '$patient.phone',
+        email: '$patient.email',
+        address: '$patient.address',
+        allergies: '$patient.allergies',
+        chronicConditions: '$patient.chronicConditions',
+        lastVisitId: 1,
+        lastVisitNumber: 1,
+        lastVisitStatus: 1,
+        lastVisitDate: 1,
+        lastChiefComplaint: 1,
+        totalVisits: 1,
+      },
+    });
+
+    const patients = await this.visitModel.aggregate(pipeline);
+
+    return { patients, total, page, limit };
+  }
 }

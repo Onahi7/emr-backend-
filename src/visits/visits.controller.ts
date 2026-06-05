@@ -95,6 +95,25 @@ export class VisitsController {
     return this.visitsService.getDoctorDashboard(req.user?.userId, req.user?.branchId);
   }
 
+  @Get('doctor-patients')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  getDoctorPatients(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Request() req?: any,
+  ) {
+    const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit || '50', 10) || 50));
+    return this.visitsService.getDoctorPatients(
+      req.user?.userId,
+      req.user?.branchId,
+      pageNum,
+      limitNum,
+      (search || '').trim(),
+    );
+  }
+
   @Get('stats')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   getStats(@Query('date') date?: string, @Request() req?: any) {
