@@ -94,7 +94,11 @@ export class PaymentsService {
       .populate('visitId', 'patientId')
       .populate({ path: 'visitId', populate: { path: 'patientId', select: 'firstName lastName' } })
       .populate('orderId', 'orderNumber total amountPaid paymentStatus orderType')
-      .populate('prescriptionId', 'medications')
+      .populate({
+        path: 'prescriptionId',
+        select: 'prescriptionNumber patientId items totalAmount isPaid createdAt',
+        populate: { path: 'patientId', select: 'patientId firstName lastName' },
+      })
       .sort({ createdAt: -1 })
       .limit(200)
       .exec();

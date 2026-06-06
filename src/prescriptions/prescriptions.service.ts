@@ -352,6 +352,9 @@ export class PrescriptionsService {
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
+    if (prescription.isPaid) {
+      throw new BadRequestException('Prescription is already paid');
+    }
     prescription.isPaid = true;
     const savedPrescription = await prescription.save();
 
