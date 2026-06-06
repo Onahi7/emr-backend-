@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -33,6 +34,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { MedicationsModule } from './medications/medications.module';
 import { SoapNotesModule } from './soap-notes/soap-notes.module';
 import { AdminModule } from './admin/admin.module';
+import { BackupModule } from './backup/backup.module';
 import { AdmissionsModule } from './admissions/admissions.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -58,6 +60,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
         limit: 100, // 100 requests per minute
       },
     ]),
+    ScheduleModule.forRoot(),
     ConfigurationModule,
     DatabaseModule,
     AuthModule,
@@ -87,6 +90,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
     MedicationsModule,
     SoapNotesModule,
     AdminModule,
+    BackupModule,
     AdmissionsModule,
     InventoryModule,
     AppointmentsModule,
