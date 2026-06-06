@@ -250,27 +250,23 @@ export class BackupService implements OnModuleInit {
       nameBuf.copy(nameBufPadded, 0, 0, Math.min(nameBuf.length, 100));
       const sizeOct = file.data.length.toString(8).padStart(11, '0') + ' ';
       const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(12, '0');
-      const header = Buffer.concat([
-        nameBufPadded,
-        Buffer.from('0000644 '),
-        Buffer.from('0001750 '),
-        Buffer.from('0001750 '),
-        Buffer.from(sizeOct),
-        Buffer.from(mtime),
-        Buffer.alloc(8),
-        Buffer.from('0'),
-        Buffer.alloc(100),
-      ]);
+      const header = Buffer.alloc(512);
+      nameBufPadded.copy(header, 0);
+      Buffer.from('0000644 ').copy(header, 100);
+      Buffer.from('0001750 ').copy(header, 108);
+      Buffer.from('0001750 ').copy(header, 116);
+      Buffer.from(sizeOct).copy(header, 124);
+      Buffer.from(mtime).copy(header, 136);
+      for (let i = 148; i < 156; i++) header[i] = 0x20;
+      header[156] = '0'.charCodeAt(0);
+      Buffer.from('ustar').copy(header, 257);
+      header[262] = 0;
+      header[263] = '0'.charCodeAt(0);
+      header[264] = '0'.charCodeAt(0);
+      Buffer.from('emrbackup').copy(header, 265, 0, Math.min(9, 'emrbackup'.length));
       const checksum = header.reduce((sum, b) => sum + b, 0);
       const checksumOct = checksum.toString(8).padStart(6, '0') + '\0 ';
-      header[148] = checksumOct.charCodeAt(0);
-      header[149] = checksumOct.charCodeAt(1);
-      header[150] = checksumOct.charCodeAt(2);
-      header[151] = checksumOct.charCodeAt(3);
-      header[152] = checksumOct.charCodeAt(4);
-      header[153] = checksumOct.charCodeAt(5);
-      header[154] = checksumOct.charCodeAt(6);
-      header[155] = checksumOct.charCodeAt(7);
+      Buffer.from(checksumOct).copy(header, 148);
       blocks.push(header);
       blocks.push(file.data);
       const remainder = file.data.length % 512;
