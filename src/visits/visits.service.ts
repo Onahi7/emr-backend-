@@ -527,6 +527,9 @@ export class VisitsService {
     if (!doctor) throw new NotFoundException('Doctor not found');
 
     const { doctorId, ...vitalsAndTriage } = data;
+    if (visit.consultationFee === undefined || visit.consultationFee === null) {
+      visit.consultationFee = 0;
+    }
 
     Object.assign(visit, {
       ...vitalsAndTriage,
