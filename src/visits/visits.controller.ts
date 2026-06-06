@@ -101,16 +101,19 @@ export class VisitsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
+    @Query('daysBack') daysBack?: string,
     @Request() req?: any,
   ) {
     const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit || '50', 10) || 50));
+    const daysBackNum = daysBack ? Math.max(0, parseInt(daysBack, 10) || 0) : undefined;
     return this.visitsService.getDoctorPatients(
       req.user?.userId,
       req.user?.branchId,
       pageNum,
       limitNum,
       (search || '').trim(),
+      daysBackNum,
     );
   }
 

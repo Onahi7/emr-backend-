@@ -1032,12 +1032,21 @@ export class VisitsService {
     page = 1,
     limit = 50,
     search = '',
+    daysBack?: number,
   ): Promise<{ patients: any[]; total: number; page: number; limit: number }> {
     const doctorObjectId = new Types.ObjectId(doctorId);
     const branchFilter = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
 
+    const matchStage: any = { doctorId: doctorObjectId, ...branchFilter };
+    if (daysBack && daysBack > 0) {
+      const since = new Date();
+      since.setDate(since.getDate() - daysBack);
+      since.setHours(0, 0, 0, 0);
+      matchStage.createdAt = { $gte: since };
+    }
+
     const pipeline: any[] = [
-      { $match: { doctorId: doctorObjectId, ...branchFilter } },
+      { $match: matchStage },
       { $sort: { createdAt: -1 } },
       {
         $group: {
