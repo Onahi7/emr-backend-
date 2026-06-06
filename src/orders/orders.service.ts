@@ -377,7 +377,16 @@ export class OrdersService {
     this.realtimeGateway.notifyOrderCreated(populatedOrder);
 
     if (savedOrder.orderType === OrderTypeEnum.LAB) {
-      void this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString(), branchId);
+      if (savedOrder.paymentStatus === PaymentStatusEnum.PAID) {
+        void this.lisIntegrationService.syncPaymentToLis(
+          savedOrder._id.toString(),
+          savedOrder.amountPaid || savedOrder.total,
+          savedOrder.paymentMethod || PaymentMethodEnum.CASH,
+          branchId,
+        );
+      } else {
+        void this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString(), branchId);
+      }
     }
 
     return populatedOrder;
@@ -1116,10 +1125,10 @@ export class OrdersService {
       await this.syncVisitStatus(order.visitId as Types.ObjectId);
     }
 
-    if (order.orderType === OrderTypeEnum.LAB) {
+    if (order.orderType === OrderTypeEnum.LAB && order.paymentStatus === PaymentStatusEnum.PAID) {
       void this.lisIntegrationService.syncPaymentToLis(
         order._id.toString(),
-        addPaymentDto.amount,
+        order.amountPaid,
         addPaymentDto.paymentMethod,
         branchId,
       );

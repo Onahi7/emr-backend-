@@ -76,6 +76,7 @@ export default () => ({
     baseUrl: process.env.LIS_API_BASE_URL || process.env.LIS_BASE_URL || process.env.LIS_API_URL || process.env.LIS_URL,
     apiKey: process.env.LIS_API_KEY || process.env.LIS_API_TOKEN || process.env.LIS_EXTERNAL_API_KEY || process.env.LIS_KEY,
     timeoutMs: parseInt(process.env.LIS_API_TIMEOUT_MS || '15000', 10),
+    syncPaymentAmounts: ['true', '1', 'yes'].includes((process.env.LIS_SYNC_PAYMENT_AMOUNTS || '').toLowerCase()),
   },
 
   // CAF Pharmacy integration

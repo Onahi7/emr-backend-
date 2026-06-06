@@ -280,10 +280,14 @@ export class LisIntegrationService {
     if (refreshed?.lisSyncStatus !== 'synced') return;
 
     try {
+      const syncPaymentAmounts = this.configService.get<boolean>('lis.syncPaymentAmounts') === true;
+      const lisAmount = syncPaymentAmounts ? amount : 0;
       await client.post(`/external-api/test-requests/${encodeURIComponent(externalRequestId)}/payment`, {
-        amount,
+        amount: lisAmount,
         paymentMethod: this.mapPaymentMethod(paymentMethod),
-        notes: `Paid in EMR for ${order.orderNumber}${paymentMethod === PaymentMethodEnum.WALLET ? ' via wallet' : ''}`,
+        notes: syncPaymentAmounts
+          ? `Paid in EMR for ${order.orderNumber}${paymentMethod === PaymentMethodEnum.WALLET ? ' via wallet' : ''}`
+          : `Payment collected in EMR for ${order.orderNumber}; financial amount retained in EMR`,
       });
     } catch (error: any) {
       const message = this.getErrorMessage(error);

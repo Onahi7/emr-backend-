@@ -157,6 +157,10 @@ export class EnvironmentVariables {
   @IsOptional()
   LIS_API_TIMEOUT_MS?: number;
 
+  @IsString()
+  @IsOptional()
+  LIS_SYNC_PAYMENT_AMOUNTS?: string;
+
   // SMS (Optional)
   @IsString()
   @IsOptional()
