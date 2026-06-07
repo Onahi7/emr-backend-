@@ -179,32 +179,33 @@ export class LisIntegrationService {
 
     const effectiveBranchId = branchId || order.branchId?.toString();
     const client = await this.createLisClient(effectiveBranchId) || this.client;
-    if (!client) return;
+    if (!client) {
+      this.logger.warn(`LIS client not configured — skipping sync for order ${order.orderNumber}`);
+      return;
+    }
 
     const externalRequestId = order.lisExternalRequestId || `EMR-${order.orderNumber}`;
     const branchConfig = await this.getBranchLisConfig(effectiveBranchId);
 
-    try {
-      const testsToSend = this.buildLisTests(order.lisRequestedCodes || [], order.order_tests || []);
+    const buildPayload = (patient: any) => ({
+      externalRequestId,
+      sourceSystem: branchConfig.sourceSystem,
+      sourceBranchId: branchConfig.branchId || effectiveBranchId,
+      sourceBranchCode: branchConfig.branchCode,
+      sourceFacilityName: branchConfig.facilityName,
+      sourceFacilityLocation: branchConfig.facilityLocation,
+      patient,
+      tests: this.buildLisTests(order.lisRequestedCodes || [], order.order_tests || []),
+      priority: order.priority,
+      referredByDoctor: order.doctorId?.fullName,
+      notes: [
+        order.notes,
+        `EMR order ${order.orderNumber}`,
+        order.visitId ? `Visit ${order.visitId}` : undefined,
+      ].filter(Boolean).join(' | '),
+    });
 
-      const response = await client.post('/external-api/test-requests', {
-        externalRequestId,
-        sourceSystem: branchConfig.sourceSystem,
-        sourceBranchId: branchConfig.branchId || effectiveBranchId,
-        sourceBranchCode: branchConfig.branchCode,
-        sourceFacilityName: branchConfig.facilityName,
-        sourceFacilityLocation: branchConfig.facilityLocation,
-        patient: this.mapPatient(order.patientId),
-        tests: testsToSend,
-        priority: order.priority,
-        referredByDoctor: order.doctorId?.fullName,
-        notes: [
-          order.notes,
-          `EMR order ${order.orderNumber}`,
-          order.visitId ? `Visit ${order.visitId}` : undefined,
-        ].filter(Boolean).join(' | '),
-      });
-
+    const saveSynced = async (response: any) => {
       await this.orderModel.findByIdAndUpdate(order._id, {
         lisExternalRequestId: externalRequestId,
         lisOrderId: response.data?.orderId,
@@ -213,8 +214,34 @@ export class LisIntegrationService {
         lisSyncError: undefined,
         lisSyncedAt: new Date(),
       });
+    };
+
+    try {
+      const response = await client.post('/external-api/test-requests', buildPayload(this.mapPatient(order.patientId)));
+      await saveSynced(response);
     } catch (error: any) {
+      const status = error?.response?.status;
       const message = this.getErrorMessage(error);
+
+      if (status === 409) {
+        this.logger.log(`LIS 409 for ${order.orderNumber} (patient MRN exists) — retrying without MRN`);
+        try {
+          const patientWithoutMrn = { ...this.mapPatient(order.patientId), mrn: undefined };
+          const retryResponse = await client.post('/external-api/test-requests', buildPayload(patientWithoutMrn));
+          await saveSynced(retryResponse);
+          return;
+        } catch (retryError: any) {
+          const retryMsg = this.getErrorMessage(retryError);
+          await this.orderModel.findByIdAndUpdate(order._id, {
+            lisExternalRequestId: externalRequestId,
+            lisSyncStatus: 'failed',
+            lisSyncError: `Initial: ${message}; Retry: ${retryMsg}`,
+          });
+          this.logger.warn(`LIS order sync retry failed for ${order.orderNumber}: ${retryMsg}`);
+          return;
+        }
+      }
+
       await this.orderModel.findByIdAndUpdate(order._id, {
         lisExternalRequestId: externalRequestId,
         lisSyncStatus: 'failed',
@@ -269,7 +296,10 @@ export class LisIntegrationService {
 
     const effectiveBranchId = branchId || order.branchId?.toString();
     const client = await this.createLisClient(effectiveBranchId) || this.client;
-    if (!client) return;
+    if (!client) {
+      this.logger.warn(`LIS client not configured — skipping payment sync for order ${order.orderNumber}`);
+      return;
+    }
 
     if (order.lisSyncStatus !== 'synced') {
       await this.syncOrderToLis(orderId, effectiveBranchId);
