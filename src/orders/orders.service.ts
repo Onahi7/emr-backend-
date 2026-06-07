@@ -1394,7 +1394,7 @@ export class OrdersService {
   async retryFailedLisSync(branchId?: string): Promise<{ retried: number; results: any[] }> {
     const query: any = {
       orderType: OrderTypeEnum.LAB,
-      lisSyncStatus: 'failed',
+      lisSyncStatus: { $in: ['failed', 'not_synced'] },
     };
     if (branchId) {
       query.branchId = branchId;
