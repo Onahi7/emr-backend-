@@ -23,6 +23,22 @@ export class Branch {
   @Prop({ default: '' })
   logoUrl!: string;
 
+  /** Optional short motto / tagline shown under the branch name on receipts */
+  @Prop({ default: '' })
+  tagline!: string;
+
+  /** Branch website URL — shown on receipts */
+  @Prop({ default: '' })
+  website!: string;
+
+  /** Custom receipt footer text. Falls back to a generic "Thank you" if empty. */
+  @Prop({ default: '' })
+  footerText!: string;
+
+  /** Operating hours shown on receipts. e.g. "Mon-Sat 8am-8pm" */
+  @Prop({ default: '' })
+  operatingHours!: string;
+
   // CAF integration
   @Prop()
   cafBranchId?: string;

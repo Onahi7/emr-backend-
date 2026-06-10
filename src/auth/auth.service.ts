@@ -59,17 +59,17 @@ export class AuthService {
   /**
    * Validate user credentials
    */
-  async validateUser(email: string, password: string): Promise<{ id: string; email: string; fullName: string; roles: string[] } | null> {
+  async validateUser(email: string, password: string): Promise<{ id: string; email: string; fullName: string; roles: string[]; branchId?: string } | null> {
     try {
       const user = await this.profileModel.findOne({ email, isActive: true }).exec();
-      
+
       if (!user) {
         this.logger.warn(`Login attempt failed: User not found - ${email}`);
         return null;
       }
 
       const isPasswordValid = await this.comparePasswords(password, user.passwordHash);
-      
+
       if (!isPasswordValid) {
         this.logger.warn(`Login attempt failed: Invalid password - ${email}`);
         return null;
@@ -80,12 +80,13 @@ export class AuthService {
       const roles = userRoles.map((ur) => ur.role);
 
       this.logger.log(`User validated successfully: ${email}`);
-      
+
       return {
         id: user._id.toString(),
         email: user.email,
         fullName: user.fullName,
         roles,
+        branchId: user.branchId ? user.branchId.toString() : undefined,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -137,8 +138,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const accessToken = await this.generateAccessToken(user);
-    const refreshToken = await this.generateRefreshToken(user);
+    const accessToken = await this.generateAccessToken(user, user.branchId);
+    const refreshToken = await this.generateRefreshToken(user, user.branchId);
 
     this.logger.log(`User logged in successfully: ${email}`);
 

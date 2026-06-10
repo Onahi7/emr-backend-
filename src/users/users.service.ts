@@ -21,6 +21,7 @@ export interface UserResponse {
   fullName: string;
   department?: string;
   avatarUrl?: string;
+  branchId?: string;
   roles: string[];
   isActive: boolean;
   createdAt: Date;
@@ -57,6 +58,7 @@ export class UsersService {
       fullName: profile.fullName,
       department: profile.department,
       avatarUrl: profile.avatarUrl,
+      branchId: profile.branchId ? profile.branchId.toString() : undefined,
       roles,
       isActive: profile.isActive,
       createdAt: profile.createdAt,
@@ -409,5 +411,70 @@ export class UsersService {
       this.logger.error(`Error getting user roles: ${errorMessage}`, errorStack);
       throw error;
     }
+  }
+
+  /**
+   * Assign a user to a branch. Pass null to unassign.
+   * The branch is embedded in the user's JWT on next login.
+   */
+  async assignBranch(userId: string, branchId: string | null): Promise<UserResponse> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+
+    const update: any = {};
+    if (branchId) {
+      if (!Types.ObjectId.isValid(branchId)) {
+        throw new BadRequestException('Invalid branch ID format');
+      }
+      update.branchId = new Types.ObjectId(branchId);
+    } else {
+      update.branchId = null;
+    }
+
+    const user = await this.profileModel
+      .findByIdAndUpdate(userId, update, { new: true })
+      .exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    this.logger.log(`Assigned branch ${branchId || '(none)'} to user ${userId}`);
+    return this.formatUserResponse(user);
+  }
+
+  /**
+   * Get the branch assigned to the current user, with full branch details
+   * (name, address, phone, email, logo, footer text, etc.) for the receipt
+   * letterhead. Returns null if the user has no branch assigned.
+   */
+  async getMyBranch(userId: string): Promise<any | null> {
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      return null;
+    }
+    const user = await this.profileModel.findById(userId).lean();
+    if (!user || !user.branchId) {
+      return null;
+    }
+    const branch: any = await this.profileModel.db
+      .model('Branch')
+      .findById(user.branchId)
+      .lean();
+    if (!branch) {
+      return null;
+    }
+    return {
+      _id: branch._id?.toString(),
+      name: branch.name,
+      code: branch.code,
+      address: branch.address,
+      phone: branch.phone,
+      email: branch.email,
+      logoUrl: branch.logoUrl,
+      tagline: branch.tagline,
+      website: branch.website,
+      footerText: branch.footerText,
+      operatingHours: branch.operatingHours,
+      isActive: branch.isActive,
+    };
   }
 }

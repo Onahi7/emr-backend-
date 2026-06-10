@@ -128,6 +128,29 @@ export class UsersController {
   }
 
   /**
+   * Assign a branch to a user (admin only)
+   * PATCH /users/:id/branch
+   * Body: { branchId: string } or { branchId: null } to unassign
+   */
+  @Patch(':id/branch')
+  @Roles(UserRoleEnum.ADMIN)
+  async assignBranch(
+    @Param('id') userId: string,
+    @Body('branchId') branchId: string | null,
+  ) {
+    return this.usersService.assignBranch(userId, branchId);
+  }
+
+  /**
+   * Get the branch assigned to the current user
+   * GET /users/me/branch
+   */
+  @Get('me/branch')
+  async getMyBranch(@Request() req: any) {
+    return this.usersService.getMyBranch(req.user?.userId);
+  }
+
+  /**
    * Remove role from user (admin only)
    * DELETE /users/:id/roles/:role
    * Requirements: 17.3, 17.4

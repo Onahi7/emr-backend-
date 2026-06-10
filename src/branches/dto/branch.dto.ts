@@ -21,6 +21,26 @@ export class CreateBranchDto {
 
   @IsString()
   @IsOptional()
+  logoUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  tagline?: string;
+
+  @IsString()
+  @IsOptional()
+  website?: string;
+
+  @IsString()
+  @IsOptional()
+  footerText?: string;
+
+  @IsString()
+  @IsOptional()
+  operatingHours?: string;
+
+  @IsString()
+  @IsOptional()
   cafBranchId?: string;
 
   @IsString()
@@ -55,6 +75,26 @@ export class UpdateBranchDto {
 
   @IsString()
   @IsOptional()
+  logoUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  tagline?: string;
+
+  @IsString()
+  @IsOptional()
+  website?: string;
+
+  @IsString()
+  @IsOptional()
+  footerText?: string;
+
+  @IsString()
+  @IsOptional()
+  operatingHours?: string;
+
+  @IsString()
+  @IsOptional()
   cafBranchId?: string;
 
   @IsString()
@@ -73,3 +113,4 @@ export class UpdateBranchDto {
   @IsOptional()
   isActive?: boolean;
 }
+

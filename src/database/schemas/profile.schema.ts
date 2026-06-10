@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true, collection: 'profiles' })
 export class Profile extends Document {
@@ -18,6 +18,11 @@ export class Profile extends Document {
   @Prop()
   avatarUrl?: string;
 
+  /** The single branch this user belongs to. Embedded in JWT at login.
+   *  Receipts use this to pull the branch letterhead. */
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ default: true })
   isActive: boolean;
 
@@ -29,3 +34,4 @@ export const ProfileSchema = SchemaFactory.createForClass(Profile);
 
 // Indexes
 ProfileSchema.index({ email: 1 }, { unique: true });
+ProfileSchema.index({ branchId: 1 });
