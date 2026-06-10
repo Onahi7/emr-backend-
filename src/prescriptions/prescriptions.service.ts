@@ -29,13 +29,12 @@ export class PrescriptionsService {
 
   private async moveVisitToStatus(visitId: Types.ObjectId | string | undefined, status: VisitStatusEnum): Promise<void> {
     if (!visitId) return;
-    const visit = await this.visitModel.findById(visitId);
+    const visit = await this.visitModel.findById(visitId).lean();
     if (!visit) return;
     if ([VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) return;
     if (visit.status === status) return;
-    visit.status = status;
-    await visit.save();
-    this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status });
+    await this.visitModel.findByIdAndUpdate(visitId, { $set: { status } });
+    this.realtimeGateway.emitToAll('visit:status_updated', { visitId, status });
   }
 
   /**

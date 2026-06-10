@@ -80,7 +80,7 @@ export class Visit extends Document {
   @Prop({ required: true, enum: Object.values(VisitStatusEnum), default: VisitStatusEnum.WAITING_PAYMENT })
   status: VisitStatusEnum;
 
-  @Prop({ required: true })
+  @Prop({ default: 0 })
   consultationFee: number;
 
   @Prop({ default: false })
