@@ -351,7 +351,6 @@ export class PrescriptionsService {
     dispensedBy: string,
     dto?: DispensePrescriptionDto,
   ): Promise<Prescription> {
-    try {
     const prescription = await this.prescriptionModel.findById(id);
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
@@ -555,15 +554,6 @@ export class PrescriptionsService {
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:dispensed', populatedPrescription);
     return populatedPrescription;
-    } catch (error: any) {
-      this.logger.error(`Dispense failed for prescription ${id}: ${error?.message}`, error?.stack);
-      // Re-throw as BadRequestException so we get a real status code + message in the response
-      const msg = error?.message || 'Unknown dispense error';
-      if (error?.name === 'ValidationError' || error?.name === 'CastError') {
-        throw new BadRequestException(`Validation: ${msg}`);
-      }
-      throw new BadRequestException(`Dispense error: ${msg}`);
-    }
   }
 
 
