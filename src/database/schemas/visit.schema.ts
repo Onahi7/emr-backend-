@@ -29,8 +29,6 @@ export enum VisitServiceTypeEnum {
   SPECIALIST_CONSULTATION = 'specialist_consultation',
   OBSERVATION_4H = 'observation_4h',
   PROCEDURE = 'procedure',
-  RAPID_MALARIA = 'rapid_malaria',
-  RAPID_TYPHOID = 'rapid_typhoid',
 }
 
 @Schema({ _id: false, timestamps: false })
@@ -104,6 +102,10 @@ export class Visit extends Document {
   /** In-house rapid test results (malaria/typhoid) entered by nurse — not LIS */
   @Prop({ type: [RapidTestResultSchema], default: [] })
   rapidTestResults: RapidTestResult[];
+
+  /** Rapid tests requested upfront alongside consultation */
+  @Prop({ type: [String], enum: ['malaria', 'typhoid'], default: [] })
+  rapidTestsRequested?: ('malaria' | 'typhoid')[];
 
   @Prop({ type: Types.ObjectId, ref: 'Order' })
   consultationOrderId?: Types.ObjectId;
