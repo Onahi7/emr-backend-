@@ -73,8 +73,8 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async ensureAuthenticated(): Promise<{ accessToken: string; cafUserId: string }> {
-    if (this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt && this.cafUserId) {
+  async ensureAuthenticated(forceRefresh = false): Promise<{ accessToken: string; cafUserId: string }> {
+    if (!forceRefresh && this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt && this.cafUserId) {
       return { accessToken: this.accessToken, cafUserId: this.cafUserId };
     }
 
@@ -101,6 +101,14 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
+  private invalidateAuth(): void {
+    this.accessToken = null;
+    this.refreshToken = null;
+    this.tokenExpiresAt = null;
+    this.cafUserId = null;
+    this.logger.log('CAF auth invalidated — will re-authenticate on next request');
+  }
+
   private get headers() {
     return {
       Authorization: `Bearer ${this.accessToken}`,
@@ -114,40 +122,46 @@ export class CafIntegrationService implements OnModuleInit {
 
   async searchProducts(query: string, branchId?: string): Promise<CafProduct[]> {
     if (!this.isConfigured()) return [];
+    const searchBranchId = branchId || this.branchId;
 
-    try {
-      await this.ensureAuthenticated();
-      const searchBranchId = branchId || this.branchId;
-      this.logger.log(`CAF searchProducts query="${query}" branchId="${searchBranchId}"`);
-      const { data } = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/products/search`, {
-          headers: this.headers,
-          params: { query, branchId: searchBranchId },
-        }),
-      );
-      this.logger.log(`CAF searchProducts response keys: ${Object.keys(data)}, data type: ${typeof (data.data || data)}, isArray: ${Array.isArray(data.data || data)}`);
-      const result = data.data || data;
-      if (Array.isArray(result) && result.length > 0) {
-        this.logger.log(`CAF searchProducts found ${result.length} results`);
-        return result;
-      }
-      this.logger.warn(`CAF searchProducts returned non-array or empty: ${JSON.stringify(data).substring(0, 200)}`);
-    } catch (error: any) {
-      this.logger.error(`CAF product search failed: ${error.message}`);
-      if (error.response) {
-        this.logger.error(`CAF search response: status=${error.response.status}, data=${JSON.stringify(error.response.data).substring(0, 200)}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.ensureAuthenticated(attempt > 0);
+        this.logger.log(`CAF searchProducts query="${query}" branchId="${searchBranchId}"${attempt > 0 ? ' (retry)' : ''}`);
+        const { data } = await firstValueFrom(
+          this.httpService.get(`${this.baseUrl}/products/search`, {
+            headers: this.headers,
+            params: { query, branchId: searchBranchId },
+          }),
+        );
+        const result = data.data || data;
+        if (Array.isArray(result) && result.length > 0) {
+          this.logger.log(`CAF searchProducts found ${result.length} results`);
+          return result;
+        }
+        this.logger.warn(`CAF searchProducts returned non-array or empty: ${JSON.stringify(data).substring(0, 200)}`);
+      } catch (error: any) {
+        if (error.response?.status === 401 && attempt === 0) {
+          this.logger.warn('CAF searchProducts 401 — invalidating and retrying...');
+          this.invalidateAuth();
+          continue;
+        }
+        this.logger.error(`CAF product search failed: ${error.message}`);
+        if (error.response) {
+          this.logger.error(`CAF search response: status=${error.response.status}, data=${JSON.stringify(error.response.data).substring(0, 200)}`);
+        }
       }
     }
 
     try {
       this.logger.log(`CAF searchProducts fallback to /products?search="${query}"`);
+      await this.ensureAuthenticated();
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products`, {
           headers: this.headers,
-          params: { search: query, branchId: branchId || this.branchId },
+          params: { search: query, branchId: searchBranchId },
         }),
       );
-      this.logger.log(`CAF searchProducts fallback response keys: ${Object.keys(data)}, isArray: ${Array.isArray(data.data || data)}`);
       const result = data.data || data;
       return Array.isArray(result) ? result : [];
     } catch (error: any) {
@@ -168,8 +182,8 @@ export class CafIntegrationService implements OnModuleInit {
       this.logger.warn('CAF not configured — skipping product fetch');
       return { products: [], raw: { error: 'not configured' } };
     }
-    try {
-      await this.ensureAuthenticated();
+    const doFetch = async (isRetry: boolean) => {
+      await this.ensureAuthenticated(isRetry);
       const { branchId, ...rest } = params;
       const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
       for (const [key, val] of Object.entries(rest)) {
@@ -177,34 +191,43 @@ export class CafIntegrationService implements OnModuleInit {
           cleanParams[key] = val;
         }
       }
-      this.logger.log(`CAF getProductsDebug params: ${JSON.stringify(cleanParams)}`);
+      this.logger.log(`CAF getProductsDebug params: ${JSON.stringify(cleanParams)}${isRetry ? ' (retry after 401)' : ''}`);
       const axiosResponse = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products`, {
           headers: this.headers,
           params: cleanParams,
         }),
       );
+      return axiosResponse;
+    };
+
+    try {
+      const axiosResponse = await doFetch(false);
       const raw = {
         status: axiosResponse.status,
-        statusText: axiosResponse.statusText,
-        dataType: typeof axiosResponse.data,
-        dataKeys: axiosResponse.data && typeof axiosResponse.data === 'object' ? Object.keys(axiosResponse.data) : null,
-        dataIsArray: Array.isArray(axiosResponse.data),
         dataPreview: JSON.stringify(axiosResponse.data).substring(0, 500),
-        headers: axiosResponse.headers ? Object.keys(axiosResponse.headers) : null,
       };
-      this.logger.log(`CAF getProductsDebug raw: ${JSON.stringify(raw)}`);
       const result = axiosResponse.data.data || axiosResponse.data;
-      return {
-        products: Array.isArray(result) ? result : [],
-        raw,
-      };
+      return { products: Array.isArray(result) ? result : [], raw };
     } catch (error: any) {
-      this.logger.error(`CAF getProductsDebug failed: ${error.message}`);
-      if (error.response) {
-        this.logger.error(`CAF debug response: status=${error.response.status}, data=${JSON.stringify(error.response.data).substring(0, 200)}`);
+      if (error.response?.status === 401) {
+        this.logger.warn('CAF returned 401 — invalidating token and retrying...');
+        this.invalidateAuth();
+        try {
+          const axiosResponse = await doFetch(true);
+          const raw = {
+            status: axiosResponse.status,
+            dataPreview: JSON.stringify(axiosResponse.data).substring(0, 500),
+          };
+          const result = axiosResponse.data.data || axiosResponse.data;
+          return { products: Array.isArray(result) ? result : [], raw };
+        } catch (retryError: any) {
+          this.logger.error(`CAF retry after 401 also failed: ${retryError.message}`);
+          return { products: [], raw: { error: retryError.message, responseStatus: retryError.response?.status } };
+        }
       }
-      return { products: [], raw: { error: error.message, responseStatus: error.response?.status, responseData: JSON.stringify(error.response?.data).substring(0, 300) } };
+      this.logger.error(`CAF getProductsDebug failed: ${error.message}`);
+      return { products: [], raw: { error: error.message, responseStatus: error.response?.status } };
     }
   }
 
@@ -220,8 +243,7 @@ export class CafIntegrationService implements OnModuleInit {
       this.logger.warn('CAF not configured — skipping product fetch');
       return [];
     }
-    try {
-      await this.ensureAuthenticated();
+    const buildParams = () => {
       const { branchId, ...rest } = params;
       const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
       for (const [key, val] of Object.entries(rest)) {
@@ -229,27 +251,41 @@ export class CafIntegrationService implements OnModuleInit {
           cleanParams[key] = val;
         }
       }
-      this.logger.log(`CAF getProducts params: ${JSON.stringify(cleanParams)}`);
-      const { data } = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/products`, {
-          headers: this.headers,
-          params: cleanParams,
-        }),
-      );
-      this.logger.log(`CAF getProducts response keys: ${Object.keys(data)}, isArray: ${Array.isArray(data.data || data)}, count: ${(data.data || data).length}`);
-      const result = data.data || data;
-      if (!Array.isArray(result)) {
-        this.logger.warn(`CAF getProducts unexpected response shape: ${JSON.stringify(data).substring(0, 200)}`);
+      return cleanParams;
+    };
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.ensureAuthenticated(attempt > 0);
+        const cleanParams = buildParams();
+        this.logger.log(`CAF getProducts params: ${JSON.stringify(cleanParams)}`);
+        const { data } = await firstValueFrom(
+          this.httpService.get(`${this.baseUrl}/products`, {
+            headers: this.headers,
+            params: cleanParams,
+          }),
+        );
+        this.logger.log(`CAF getProducts response keys: ${Object.keys(data)}, isArray: ${Array.isArray(data.data || data)}, count: ${(data.data || data).length}`);
+        const result = data.data || data;
+        if (!Array.isArray(result)) {
+          this.logger.warn(`CAF getProducts unexpected response shape: ${JSON.stringify(data).substring(0, 200)}`);
+          return [];
+        }
+        return result;
+      } catch (error: any) {
+        if (error.response?.status === 401 && attempt === 0) {
+          this.logger.warn('CAF getProducts 401 — invalidating token and retrying...');
+          this.invalidateAuth();
+          continue;
+        }
+        this.logger.error(`CAF product list failed: ${error.message}`);
+        if (error.response) {
+          this.logger.error(`CAF response status: ${error.response.status}, data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+        }
         return [];
       }
-      return result;
-    } catch (error: any) {
-      this.logger.error(`CAF product list failed: ${error.message}`);
-      if (error.response) {
-        this.logger.error(`CAF response status: ${error.response.status}, data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
-      }
-      return [];
     }
+    return [];
   }
 
   async getProductByBarcode(barcode: string, branchId?: string): Promise<CafProduct | null> {
