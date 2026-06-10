@@ -143,13 +143,11 @@ export class PatientsService {
    * Find patient by ID
    */
   async findOne(id: string, branchId?: string): Promise<Patient> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new NotFoundException(`Patient with ID ${id} not found`);
-    }
-
-    const query: any = { _id: id };
+    // Accept either a Mongo _id (ObjectId) or a patientId string like PAT-YYYYMMDD-XXXX
+    const query: any = Types.ObjectId.isValid(id) ? { _id: id } : { patientId: id };
     if (branchId) {
-      query.branchId = branchId;
+      const branchObjId = new Types.ObjectId(branchId);
+      query.$or = [{ branchId: branchObjId }, { branchId: branchId }];
     }
 
     const patient = await this.patientModel
