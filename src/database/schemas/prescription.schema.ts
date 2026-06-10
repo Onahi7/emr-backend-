@@ -53,15 +53,43 @@ export class Prescription extends Document {
       {
         medicationId: { type: Types.ObjectId, ref: 'Medication', required: true },
         medicationName: { type: String, required: true },
-        dosage: { type: String, required: true },       // e.g. "500mg", "1 tablet"
-        frequency: { type: String, required: true },    // e.g. "3 times daily", "every 8 hours"
-        duration: { type: String, required: true },     // e.g. "7 days", "2 weeks"
-        quantity: { type: Number, required: true },     // total units to dispense
+        // === Structured regimen (NEW — replaces free-text dosage/frequency/duration) ===
+        /** Strength per dose — e.g. "500mg", "1 tablet", "2 ampules" */
+        strengthPerDose: { type: String, required: true },
+        /** How many doses per day. e.g. 3 for "3x daily", 4 for "every 6 hours" */
+        dosesPerDay: { type: Number, required: true, min: 1 },
+        /** Duration in days. e.g. 7 for "1 week", 3 for "3 days" */
+        durationDays: { type: Number, required: true, min: 1 },
+        /** Total quantity in BASE UNITS (e.g. 6 ampules, 21 tablets). Backend computes from above. */
+        quantity: { type: Number, required: true, min: 1 },
+        // === Free-text overrides (kept for unusual regimens) ===
+        dosage: { type: String },        // legacy / free-text override
+        frequency: { type: String },     // legacy / free-text override
+        duration: { type: String },      // legacy / free-text override
         route: {
           type: String,
           enum: Object.values(RouteOfAdministrationEnum),
           default: RouteOfAdministrationEnum.ORAL,
         },
+        // === Reception dispense data (filled at dispense time) ===
+        /** How the receptionist dispensed this — "individual" (1 ampule) or "pack" (1 box) */
+        dispenseMode: { type: String, enum: ['individual', 'pack'] },
+        /** Which pack variant the receptionist chose (by index into medication.packSizes) */
+        packSizeIndex: { type: Number },
+        /** Human-readable pack label at dispense time, e.g. "Box of 30 tablets" */
+        dispensedPackName: { type: String },
+        /** How many base units were actually dispensed (may differ from quantity if partial) */
+        dispensedBaseUnits: { type: Number },
+        /** Number of sell units dispensed (e.g. 1 box, 6 ampules) */
+        dispensedSellUnits: { type: Number },
+        /** Price per sell unit at the time of dispensing (in Leones) */
+        priceAtDispense: { type: Number },
+        /** Per-item line total at dispense time (sell units × price per sell unit) */
+        lineTotalAtDispense: { type: Number },
+        /** Was this a substitute? If so, the original medicationId the doctor ordered */
+        substituteForId: { type: Types.ObjectId, ref: 'Medication' },
+        substituteForName: { type: String },
+        // === Doctor's notes (kept) ===
         // Doctor's patient-facing directions — printed on the dispensing label
         // e.g. "Take 1 tablet by mouth 3 times daily with food for 7 days"
         // e.g. "Apply a thin layer to affected area twice daily"
@@ -76,11 +104,23 @@ export class Prescription extends Document {
   items: Array<{
     medicationId: Types.ObjectId;
     medicationName: string;
-    dosage: string;
-    frequency: string;
-    duration: string;
+    strengthPerDose: string;
+    dosesPerDay: number;
+    durationDays: number;
     quantity: number;
+    dosage?: string;
+    frequency?: string;
+    duration?: string;
     route: RouteOfAdministrationEnum;
+    dispenseMode?: 'individual' | 'pack';
+    packSizeIndex?: number;
+    dispensedPackName?: string;
+    dispensedBaseUnits?: number;
+    dispensedSellUnits?: number;
+    priceAtDispense?: number;
+    lineTotalAtDispense?: number;
+    substituteForId?: Types.ObjectId;
+    substituteForName?: string;
     instructions?: string;
     pharmacistNote?: string;
   }>;
@@ -115,7 +155,11 @@ export class Prescription extends Document {
   isPaid: boolean;
 
   @Prop()
-  totalAmount?: number;
+  totalAmount?: number; // Prescribed amount (from when doctor wrote it)
+
+  /** Computed at dispense time from reception's actual sell units × price */
+  @Prop()
+  actualTotalAmount?: number;
 
   // CAF integration — set when dispensed through CAF
   @Prop()

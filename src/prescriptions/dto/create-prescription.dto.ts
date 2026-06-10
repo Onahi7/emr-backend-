@@ -22,33 +22,52 @@ export class PrescriptionItemDto {
   @IsNotEmpty()
   medicationName: string;
 
+  // === Structured regimen (REQUIRED) ===
   /**
-   * Amount per dose — e.g. "500mg", "1 tablet", "5ml"
+   * Strength per dose — e.g. "500mg", "1 tablet", "2 ampules"
    */
   @IsString()
   @IsNotEmpty()
-  dosage: string;
+  strengthPerDose: string;
 
   /**
-   * How often — e.g. "3 times daily", "every 8 hours", "once at bedtime"
+   * How many doses per day. e.g. 3 for "3x daily", 4 for "every 6 hours"
    */
-  @IsString()
-  @IsNotEmpty()
-  frequency: string;
+  @IsNumber()
+  @Min(1)
+  dosesPerDay: number;
 
   /**
-   * How long — e.g. "7 days", "2 weeks", "until finished"
+   * Duration in days. e.g. 7 for "1 week", 3 for "3 days"
    */
-  @IsString()
-  @IsNotEmpty()
-  duration: string;
+  @IsNumber()
+  @Min(1)
+  durationDays: number;
 
   /**
-   * Total units to dispense (calculated from dosage × frequency × duration)
+   * Total quantity in BASE UNITS. Backend computes this from the above three
+   * fields, but the doctor can override for unusual regimens.
+   * For "Augmentin 625mg 2x daily for 7 days" this would be 14 tablets.
    */
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  // === Free-text overrides (OPTIONAL) ===
+  /** Legacy dosage string. Usually auto-generated from strengthPerDose. */
+  @IsOptional()
+  @IsString()
+  dosage?: string;
+
+  /** Legacy frequency string. Usually auto-generated from dosesPerDay. */
+  @IsOptional()
+  @IsString()
+  frequency?: string;
+
+  /** Legacy duration string. Usually auto-generated from durationDays. */
+  @IsOptional()
+  @IsString()
+  duration?: string;
 
   /**
    * Route of administration — defaults to oral if not specified

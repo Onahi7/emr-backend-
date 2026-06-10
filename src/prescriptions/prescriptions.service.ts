@@ -38,6 +38,90 @@ export class PrescriptionsService {
   }
 
   /**
+   * Parse the numeric count from a strength string like "500mg", "1 tablet", "2 ampules".
+   * Returns 1 if no count can be parsed (e.g. "500mg" alone).
+   * Examples:
+   *   "500mg"           → 1   (one tablet, just labelled by strength)
+   *   "1 tablet"        → 1
+   *   "2 tablets"       → 2
+   *   "2 ampules"       → 2
+   *   "1 ampule"        → 1
+   *   "5 ml"            → 5
+   *   "0.5 tablet"      → 0.5 (halved tablet)
+   */
+  private parseUnitsPerDose(strength: string): number {
+    if (!strength) return 1;
+    const s = strength.trim().toLowerCase();
+    // Match leading number (with optional decimal)
+    const m = s.match(/^(\d+(?:\.\d+)?)/);
+    if (m) {
+      const n = parseFloat(m[1]);
+      // If the next word is one of these explicit unit words, treat as count
+      const rest = s.slice(m[0].length).trim();
+      const countUnits = ['tablet', 'tablets', 'capsule', 'capsules', 'ampule', 'ampules', 'vial', 'vials', 'patch', 'patches', 'drop', 'drops', 'puff', 'puffs', 'sachet', 'sachets', 'ml'];
+      if (countUnits.some((u) => rest.startsWith(u))) {
+        return n;
+      }
+      // Otherwise (e.g. "500mg") it's a strength label — default to 1
+      return 1;
+    }
+    return 1;
+  }
+
+  /**
+   * Compute the prescription total at creation time using local medication prices.
+   * Each item's total = quantity × unitPrice. Falls back to packSizes if unitPrice is 0.
+   */
+  private async computePrescriptionTotal(items: any[]): Promise<number> {
+    let total = 0;
+    for (const item of items) {
+      const med = await this.medicationModel.findById(item.medicationId).lean();
+      if (!med) continue;
+      let price = med.unitPrice;
+      if ((!price || price === 0) && med.packSizes && med.packSizes.length > 0) {
+        const def = med.packSizes.find((p) => p.isDefault) || med.packSizes[0];
+        price = def.unitsPerPack > 0 ? def.sellingPrice / def.unitsPerPack : 0;
+      }
+      total += item.quantity * (price || 0);
+    }
+    return total;
+  }
+
+  /**
+   * Convert dosesPerDay to a human-readable frequency string.
+   * 1 → "once daily", 2 → "twice daily", 3 → "3 times daily",
+   * 4 → "4 times daily", 6 → "every 4 hours", 8 → "every 3 hours",
+   * 12 → "every 2 hours", 24 → "every hour", else "{n} times daily"
+   */
+  private frequencyFromDosesPerDay(dosesPerDay: number): string {
+    if (dosesPerDay === 1) return 'once daily';
+    if (dosesPerDay === 2) return 'twice daily';
+    if (dosesPerDay === 3) return '3 times daily';
+    if (dosesPerDay === 4) return '4 times daily';
+    if (dosesPerDay === 6) return 'every 4 hours';
+    if (dosesPerDay === 8) return 'every 3 hours';
+    if (dosesPerDay === 12) return 'every 2 hours';
+    if (dosesPerDay === 24) return 'every hour';
+    return `${dosesPerDay} times daily`;
+  }
+
+  /**
+   * Convert durationDays to a human-readable string.
+   * 1 → "1 day", 7 → "1 week", 14 → "2 weeks", 30 → "1 month", else "{n} days"
+   */
+  private durationFromDays(days: number): string {
+    if (days === 1) return '1 day';
+    if (days === 7) return '1 week';
+    if (days === 14) return '2 weeks';
+    if (days === 21) return '3 weeks';
+    if (days === 28) return '4 weeks';
+    if (days === 30) return '1 month';
+    if (days === 60) return '2 months';
+    if (days === 90) return '3 months';
+    return `${days} days`;
+  }
+
+  /**
    * Auto-generate patient-facing label instructions from structured fields
    * when the doctor hasn't written them explicitly.
    *
@@ -91,6 +175,23 @@ export class PrescriptionsService {
   async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string): Promise<Prescription> {
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
 
+    // === Auto-compute quantity from structured regimen if not provided ===
+    // For each item: quantity = dosesPerDay × durationDays × unitsPerDose
+    // unitsPerDose is parsed from strengthPerDose (e.g. "2 ampules" → 2, "1 tablet" → 1, "500mg" → 1)
+    const normalizedItems = items.map((item) => {
+      const unitsPerDose = this.parseUnitsPerDose(item.strengthPerDose);
+      const computedQuantity = unitsPerDose * item.dosesPerDay * item.durationDays;
+      return {
+        ...item,
+        // If the DTO provided quantity, trust it (handles "1 tablet twice daily" where parse fails).
+        // Otherwise use the computed value.
+        quantity: item.quantity > 0 ? item.quantity : computedQuantity,
+      };
+    });
+
+    // Auto-compute total from local prices if not provided
+    const computedTotal = totalAmount ?? (await this.computePrescriptionTotal(normalizedItems));
+
     // Verify patient exists
     const patient = await this.patientModel.findById(patientId);
     if (!patient) {
@@ -109,7 +210,7 @@ export class PrescriptionsService {
     }
 
     // Check medication stock — local meds or CAF products
-    for (const item of items) {
+    for (const item of normalizedItems) {
       const medication = await this.medicationModel.findById(item.medicationId).lean();
       if (!medication) {
         if (this.cafIntegrationService.isConfigured()) {
@@ -123,7 +224,9 @@ export class PrescriptionsService {
         continue;
       }
       if (medication.stockQuantity < item.quantity) {
-        throw new BadRequestException(`Insufficient stock for ${medication.name}`);
+        throw new BadRequestException(
+          `Insufficient stock for ${medication.name}. Available: ${medication.stockQuantity} ${medication.baseUnit}, Required: ${item.quantity}`,
+        );
       }
     }
 
@@ -147,17 +250,33 @@ export class PrescriptionsService {
       visitId: visitId ? new Types.ObjectId(visitId) : undefined,
       doctorId: doctorId ? new Types.ObjectId(doctorId) : undefined,
       prescribedBy: prescribedBy ? new Types.ObjectId(prescribedBy) : undefined,
-      items: items.map((item) => ({
-        ...item,
-        medicationId: new Types.ObjectId(item.medicationId),
-        // Always store resolved label instructions so the pharmacist
-        // and the dispensing label always have clear patient directions
-        instructions: this.generateLabelInstructions(item),
-      })),
+      items: normalizedItems.map((item) => {
+        // Auto-fill legacy free-text fields from the structured regimen
+        // so the existing label-printing code (generateLabelInstructions) keeps working
+        const dosage = item.dosage || item.strengthPerDose;
+        const frequency = item.frequency || this.frequencyFromDosesPerDay(item.dosesPerDay);
+        const duration = item.duration || this.durationFromDays(item.durationDays);
+        return {
+          ...item,
+          medicationId: new Types.ObjectId(item.medicationId),
+          dosage,
+          frequency,
+          duration,
+          // Always store resolved label instructions so the pharmacist
+          // and the dispensing label always have clear patient directions
+          instructions: this.generateLabelInstructions({
+            dosage,
+            frequency,
+            duration,
+            route: item.route,
+            instructions: item.instructions,
+          }),
+        };
+      }),
       status: PrescriptionStatusEnum.PENDING,
       notes,
       isPaid: false,
-      totalAmount,
+      totalAmount: computedTotal,
       branchId,
     });
 
@@ -243,62 +362,150 @@ export class PrescriptionsService {
       throw new BadRequestException('Prescription must be paid before dispensing');
     }
 
-    // Separate CAF-sourced items from local items
-    const cafItems: Array<{ medicationId: Types.ObjectId; quantity: number; medicationName: string }> = [];
-    const localItems: Array<{ medicationId: Types.ObjectId; quantity: number; medicationName: string }> = [];
+    // Build the per-item dispense plan: merge prescription items with receptionist
+    // selections (dispense mode, pack, sell units, substitute).
+    type DispenseLine = {
+      prescriptionItem: typeof prescription.items[0];
+      // What to actually dispense
+      dispenseMode: 'individual' | 'pack';
+      packSizeIndex?: number;
+      sellUnits: number; // number of sell units to dispense
+      baseUnits: number; // derived = sellUnits × unitsPerPack (or sellUnits in individual mode)
+      // Medication being dispensed (could be a substitute)
+      medicationId: Types.ObjectId;
+      medicationName: string;
+      // Pricing
+      pricePerSellUnit: number;
+      lineTotal: number;
+      // Substitute tracking
+      isSubstitute: boolean;
+    };
 
-    if (this.cafIntegrationService.isConfigured()) {
-      for (const item of prescription.items) {
-        const localMed = await this.medicationModel.findById(item.medicationId).lean();
-        if (!localMed) {
-          cafItems.push(item);
-        } else {
-          localItems.push(item);
+    const lines: DispenseLine[] = [];
+    let actualTotal = 0;
+
+    for (const item of prescription.items) {
+      // Find the receptionist's dispense record for this item
+      const override = dto?.items?.find((d) => d.medicationId === item.medicationId.toString());
+
+      const dispenseMode = override?.dispenseMode || 'individual';
+      const packSizeIndex = override?.packSizeIndex;
+
+      // Resolve the actual medication (substitute-aware)
+      const actualMedicationId = override?.substituteMedicationId
+        ? new Types.ObjectId(override.substituteMedicationId)
+        : item.medicationId;
+      const medication = await this.medicationModel.findById(actualMedicationId).lean();
+      const medicationName = medication?.name || item.medicationName;
+      const isSubstitute = !!override?.substituteMedicationId;
+
+      let sellUnits: number;
+      let baseUnits: number;
+      let pricePerSellUnit: number;
+      let packName: string | undefined;
+
+      if (dispenseMode === 'pack') {
+        if (
+          packSizeIndex == null ||
+          !medication?.packSizes ||
+          !medication.packSizes[packSizeIndex]
+        ) {
+          throw new BadRequestException(
+            `No pack selected for ${medicationName}. Pick a pack size or switch to individual mode.`,
+          );
         }
-      }
-    } else {
-      localItems.push(...prescription.items);
-    }
-
-    // Deduct local items from EMR stock
-    for (const item of localItems) {
-      const updated = await this.medicationModel.findOneAndUpdate(
-        {
-          _id: item.medicationId,
-          stockQuantity: { $gte: item.quantity },
-        },
-        { $inc: { stockQuantity: -item.quantity } },
-        { new: true },
-      );
-
-      if (!updated) {
-        const med = await this.medicationModel.findById(item.medicationId).lean();
-        if (!med) {
-          throw new NotFoundException(`Medication not found: ${item.medicationName}`);
-        }
-        throw new BadRequestException(
-          `Insufficient stock for ${med.name}. Available: ${med.stockQuantity}, Required: ${item.quantity}`,
-        );
+        const pack = medication.packSizes[packSizeIndex];
+        sellUnits = override?.sellUnits ?? 0;
+        baseUnits = sellUnits * pack.unitsPerPack;
+        pricePerSellUnit = pack.sellingPrice;
+        packName = pack.name;
+      } else {
+        // Individual mode: sell units = base units, price per base unit
+        sellUnits = override?.sellUnits ?? item.quantity;
+        baseUnits = sellUnits;
+        pricePerSellUnit = medication?.unitPrice ?? 0;
       }
 
-      const stockBefore = updated.stockQuantity + item.quantity;
-      await this.stockMovementModel.create({
-        medicationId: item.medicationId,
-        movementType: StockMovementTypeEnum.DISPENSE,
-        quantity: -item.quantity,
-        prescriptionId: prescription._id,
-        stockBefore,
-        stockAfter: updated.stockQuantity,
-        notes: `Dispensed for prescription ${prescription.prescriptionNumber}`,
-        performedBy: new Types.ObjectId(dispensedBy),
+      const lineTotal = sellUnits * pricePerSellUnit;
+      actualTotal += lineTotal;
+
+      // Persist dispense data back onto the prescription item
+      item.dispenseMode = dispenseMode;
+      item.packSizeIndex = packSizeIndex;
+      item.dispensedPackName = packName;
+      item.dispensedBaseUnits = baseUnits;
+      item.dispensedSellUnits = sellUnits;
+      item.priceAtDispense = pricePerSellUnit;
+      item.lineTotalAtDispense = lineTotal;
+      if (isSubstitute) {
+        item.substituteForId = item.medicationId;
+        item.substituteForName = item.medicationName;
+        item.medicationId = actualMedicationId;
+        item.medicationName = medicationName;
+      }
+
+      lines.push({
+        prescriptionItem: item,
+        dispenseMode,
+        packSizeIndex,
+        sellUnits,
+        baseUnits,
+        medicationId: actualMedicationId,
+        medicationName,
+        pricePerSellUnit,
+        lineTotal,
+        isSubstitute,
       });
     }
 
-    // Deduct CAF items via CAF checkout
+    // === Stock deduction (local + CAF) ===
+    for (const line of lines) {
+      if (line.baseUnits <= 0) continue; // 0 qty means nothing to deduct
+
+      // Try local first
+      const localMed = await this.medicationModel.findById(line.medicationId).lean();
+      if (localMed && !localMed.isCafSourced) {
+        const updated = await this.medicationModel.findOneAndUpdate(
+          { _id: line.medicationId, stockQuantity: { $gte: line.baseUnits } },
+          { $inc: { stockQuantity: -line.baseUnits } },
+          { new: true },
+        );
+        if (!updated) {
+          throw new BadRequestException(
+            `Insufficient stock for ${line.medicationName}. Available: ${localMed.stockQuantity} ${localMed.baseUnit}, Required: ${line.baseUnits}`,
+          );
+        }
+        await this.stockMovementModel.create({
+          medicationId: line.medicationId,
+          movementType: StockMovementTypeEnum.DISPENSE,
+          quantity: -line.baseUnits,
+          prescriptionId: prescription._id,
+          stockBefore: updated.stockQuantity + line.baseUnits,
+          stockAfter: updated.stockQuantity,
+          notes: `Dispensed for ${prescription.prescriptionNumber}${line.isSubstitute ? ' (substitute)' : ''}`,
+          performedBy: new Types.ObjectId(dispensedBy),
+        });
+      } else {
+        // CAF-sourced or local-not-found — deduct via CAF checkout
+        if (!this.cafIntegrationService.isConfigured()) {
+          throw new BadRequestException(
+            `Cannot dispense ${line.medicationName} — no local stock and CAF is not configured.`,
+          );
+        }
+      }
+    }
+
+    // === Single CAF checkout call for all CAF-sourced lines ===
+    const cafOnlyLines = lines.filter((l) => {
+      // The deduction above handled local stock. CAF checkout runs for everything
+      // that has sellUnits > 0 and is sourced from CAF (or substitute for a CAF med).
+      return l.sellUnits > 0;
+    });
+
     let cafSaleId: string | undefined;
     let cafReceiptNumber: string | undefined;
 
-    if (cafItems.length > 0 && this.cafIntegrationService.isConfigured()) {
+    if (cafOnlyLines.length > 0 && this.cafIntegrationService.isConfigured()) {
       const shiftId = await this.cafIntegrationService.ensureOpenShift();
       const patient = prescription.patientId
         ? await this.patientModel.findById(prescription.patientId).lean()
@@ -309,9 +516,9 @@ export class PrescriptionsService {
 
       const result = await this.cafIntegrationService.dispensePrescription({
         shiftId,
-        items: cafItems.map((item) => ({
-          productId: item.medicationId.toString(),
-          quantity: item.quantity,
+        items: cafOnlyLines.map((l) => ({
+          productId: l.medicationId.toString(),
+          quantity: l.sellUnits,
         })),
         patientName,
         prescriptionRef: prescription.prescriptionNumber,
@@ -323,21 +530,17 @@ export class PrescriptionsService {
       cafReceiptNumber = result.receiptNumber;
     }
 
+    // === Mark prescription dispensed ===
     prescription.status = PrescriptionStatusEnum.DISPENSED;
     prescription.dispensedBy = new Types.ObjectId(dispensedBy);
     prescription.dispensedAt = new Date();
+    prescription.actualTotalAmount = actualTotal;
     if (dto?.dispensingNotes) {
       prescription.dispensingNotes = dto.dispensingNotes;
     }
-    if (cafSaleId) {
-      prescription.cafSaleId = cafSaleId;
-    }
-    if (cafReceiptNumber) {
-      prescription.cafReceiptNumber = cafReceiptNumber;
-    }
-    if (cafItems.length > 0) {
-      prescription.hasCafItems = true;
-    }
+    if (cafSaleId) prescription.cafSaleId = cafSaleId;
+    if (cafReceiptNumber) prescription.cafReceiptNumber = cafReceiptNumber;
+    if (cafOnlyLines.length > 0) prescription.hasCafItems = true;
 
     const savedPrescription = await prescription.save();
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DOCTOR_REVIEW);

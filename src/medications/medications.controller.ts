@@ -41,27 +41,44 @@ export class MedicationsController {
           this.logger.warn('CAF getProducts returned 0 results, trying search fallback');
           cafProducts = await this.cafIntegrationService.searchProducts('a');
         }
-        const cafMeds = cafProducts.map((p) => ({
-          _id: p._id,
-          medicationCode: p.sku,
-          name: p.name,
-          genericName: p.brand,
-          category: p.category,
-          stockQuantity: p.quantityAvailable,
-          unitPrice: p.suggestedRetailPrice || p.basePrice,
-          unit: p.unit,
-          isActive: p.isActive,
-          dosageForm: p.unit,
-          strength: p.packSizes?.[0]?.name || '',
-          packSizes: p.packSizes?.map((ps) => ({
-            name: ps.name,
-            unit: ps.unit,
-            quantityPerPack: ps.quantityPerPack,
-            sellingPrice: ps.sellingPrice,
-          })) || [],
-          __cafProduct: true,
-          __cafBranchId: this.cafIntegrationService.getBranchId(),
-        }));
+        const cafMeds = cafProducts.map((p) => {
+          // Derive per-base-unit price from the default pack (or first pack).
+          // If no packs, fall back to the product's suggested/base price as-is.
+          const defaultPack = p.packSizes?.[0];
+          const perBaseUnitPrice =
+            defaultPack && defaultPack.quantityPerPack > 0
+              ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
+              : (p.suggestedRetailPrice || p.basePrice || 0);
+          return {
+            _id: p._id,
+            medicationCode: p.sku,
+            name: p.name,
+            genericName: p.brand,
+            category: p.category,
+            stockQuantity: p.quantityAvailable,
+            unit: p.unit,
+            // per-base-unit price (for individual-mode dispensing)
+            unitPrice: perBaseUnitPrice,
+            // small base unit like "tablet", "ampule"
+            baseUnit: p.unit || 'tablet',
+            // CAF products are always pack-first (selling packs is the norm in pharmacy)
+            sellMode: p.packSizes && p.packSizes.length > 0 ? 'both' : 'individual',
+            isActive: p.isActive,
+            dosageForm: p.unit,
+            strength: p.packSizes?.[0]?.name || '',
+            packSizes: p.packSizes?.map((ps) => ({
+              name: ps.name,
+              unit: ps.unit,
+              unitsPerPack: ps.quantityPerPack, // renamed for consistency with EMR schema
+              sellingPrice: ps.sellingPrice,
+              barcode: ps.barcode,
+            })) || [],
+            isCafSourced: true,
+            cafProductId: p._id,
+            __cafProduct: true,
+            __cafBranchId: this.cafIntegrationService.getBranchId(),
+          };
+        });
         this.logger.log(`Loaded ${cafMeds.length} CAF products`);
         return [...cafMeds, ...localMeds];
       } catch (error: any) {
@@ -80,27 +97,39 @@ export class MedicationsController {
       try {
         const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm);
         if (cafProducts.length > 0) {
-          const cafMeds = cafProducts.map((p) => ({
-            _id: p._id,
-            medicationCode: p.sku,
-            name: p.name,
-            genericName: p.brand,
-            category: p.category,
-            stockQuantity: p.quantityAvailable,
-            unitPrice: p.suggestedRetailPrice || p.basePrice,
-            unit: p.unit,
-            isActive: p.isActive,
-            dosageForm: p.unit,
-            strength: p.packSizes?.[0]?.name || '',
-            packSizes: p.packSizes?.map((ps) => ({
-              name: ps.name,
-              unit: ps.unit,
-              quantityPerPack: ps.quantityPerPack,
-              sellingPrice: ps.sellingPrice,
-            })) || [],
-            __cafProduct: true,
-            __cafBranchId: this.cafIntegrationService.getBranchId(),
-          }));
+          const cafMeds = cafProducts.map((p) => {
+            const defaultPack = p.packSizes?.[0];
+            const perBaseUnitPrice =
+              defaultPack && defaultPack.quantityPerPack > 0
+                ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
+                : (p.suggestedRetailPrice || p.basePrice || 0);
+            return {
+              _id: p._id,
+              medicationCode: p.sku,
+              name: p.name,
+              genericName: p.brand,
+              category: p.category,
+              stockQuantity: p.quantityAvailable,
+              unit: p.unit,
+              unitPrice: perBaseUnitPrice,
+              baseUnit: p.unit || 'tablet',
+              sellMode: p.packSizes && p.packSizes.length > 0 ? 'both' : 'individual',
+              isActive: p.isActive,
+              dosageForm: p.unit,
+              strength: p.packSizes?.[0]?.name || '',
+              packSizes: p.packSizes?.map((ps) => ({
+                name: ps.name,
+                unit: ps.unit,
+                unitsPerPack: ps.quantityPerPack,
+                sellingPrice: ps.sellingPrice,
+                barcode: ps.barcode,
+              })) || [],
+              isCafSourced: true,
+              cafProductId: p._id,
+              __cafProduct: true,
+              __cafBranchId: this.cafIntegrationService.getBranchId(),
+            };
+          });
           this.logger.log(`Search merged ${cafMeds.length} CAF + ${localResults.length} local results for "${searchTerm}"`);
           return [...cafMeds, ...localResults];
         }
