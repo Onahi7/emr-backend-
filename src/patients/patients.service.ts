@@ -200,7 +200,14 @@ export class PatientsService {
     };
 
     if (branchId) {
-      filter.branchId = branchId;
+      // Match both ObjectId (proper) and string (legacy data) forms
+      const branchObjId = new Types.ObjectId(branchId);
+      const original = filter.$or;
+      filter.$and = [
+        { $or: original },
+        { $or: [{ branchId: branchObjId }, { branchId: branchId }] },
+      ];
+      delete filter.$or;
     }
 
     const patients = await this.patientModel
