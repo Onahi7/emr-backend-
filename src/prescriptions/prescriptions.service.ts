@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Prescription, PrescriptionStatusEnum } from '../database/schemas/prescription.schema';
@@ -15,6 +15,8 @@ import { CafIntegrationService } from '../caf-integration/caf-integration.servic
 
 @Injectable()
 export class PrescriptionsService {
+  private readonly logger = new Logger(PrescriptionsService.name);
+
   constructor(
     @InjectModel(Prescription.name) private prescriptionModel: Model<Prescription>,
     @InjectModel(Medication.name) private medicationModel: Model<Medication>,
@@ -349,6 +351,7 @@ export class PrescriptionsService {
     dispensedBy: string,
     dto?: DispensePrescriptionDto,
   ): Promise<Prescription> {
+    try {
     const prescription = await this.prescriptionModel.findById(id);
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
@@ -547,7 +550,12 @@ export class PrescriptionsService {
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:dispensed', populatedPrescription);
     return populatedPrescription;
+    } catch (error: any) {
+      this.logger.error(`Dispense failed for prescription ${id}: ${error?.message}`, error?.stack);
+      throw error;
+    }
   }
+
 
   async markAsPaid(id: string, paymentMethod: string = 'cash', userId?: string, branchId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) });
