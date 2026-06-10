@@ -117,32 +117,94 @@ export class CafIntegrationService implements OnModuleInit {
 
     try {
       await this.ensureAuthenticated();
+      const searchBranchId = branchId || this.branchId;
+      this.logger.log(`CAF searchProducts query="${query}" branchId="${searchBranchId}"`);
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products/search`, {
           headers: this.headers,
-          params: { query, branchId: branchId || this.branchId },
+          params: { query, branchId: searchBranchId },
         }),
       );
+      this.logger.log(`CAF searchProducts response keys: ${Object.keys(data)}, data type: ${typeof (data.data || data)}, isArray: ${Array.isArray(data.data || data)}`);
       const result = data.data || data;
       if (Array.isArray(result) && result.length > 0) {
+        this.logger.log(`CAF searchProducts found ${result.length} results`);
         return result;
       }
+      this.logger.warn(`CAF searchProducts returned non-array or empty: ${JSON.stringify(data).substring(0, 200)}`);
     } catch (error: any) {
       this.logger.error(`CAF product search failed: ${error.message}`);
+      if (error.response) {
+        this.logger.error(`CAF search response: status=${error.response.status}, data=${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
     }
 
     try {
+      this.logger.log(`CAF searchProducts fallback to /products?search="${query}"`);
       const { data } = await firstValueFrom(
         this.httpService.get(`${this.baseUrl}/products`, {
           headers: this.headers,
           params: { search: query, branchId: branchId || this.branchId },
         }),
       );
+      this.logger.log(`CAF searchProducts fallback response keys: ${Object.keys(data)}, isArray: ${Array.isArray(data.data || data)}`);
       const result = data.data || data;
       return Array.isArray(result) ? result : [];
     } catch (error: any) {
       this.logger.error(`CAF product search fallback failed: ${error.message}`);
       return [];
+    }
+  }
+
+  async getProductsDebug(params: {
+    search?: string;
+    category?: string;
+    barcode?: string;
+    page?: number;
+    limit?: number;
+    branchId?: string;
+  } = {}): Promise<{ products: CafProduct[]; raw: any }> {
+    if (!this.isConfigured()) {
+      this.logger.warn('CAF not configured — skipping product fetch');
+      return { products: [], raw: { error: 'not configured' } };
+    }
+    try {
+      await this.ensureAuthenticated();
+      const { branchId, ...rest } = params;
+      const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
+      for (const [key, val] of Object.entries(rest)) {
+        if (val !== undefined && val !== null && val !== '') {
+          cleanParams[key] = val;
+        }
+      }
+      this.logger.log(`CAF getProductsDebug params: ${JSON.stringify(cleanParams)}`);
+      const axiosResponse = await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/products`, {
+          headers: this.headers,
+          params: cleanParams,
+        }),
+      );
+      const raw = {
+        status: axiosResponse.status,
+        statusText: axiosResponse.statusText,
+        dataType: typeof axiosResponse.data,
+        dataKeys: axiosResponse.data && typeof axiosResponse.data === 'object' ? Object.keys(axiosResponse.data) : null,
+        dataIsArray: Array.isArray(axiosResponse.data),
+        dataPreview: JSON.stringify(axiosResponse.data).substring(0, 500),
+        headers: axiosResponse.headers ? Object.keys(axiosResponse.headers) : null,
+      };
+      this.logger.log(`CAF getProductsDebug raw: ${JSON.stringify(raw)}`);
+      const result = axiosResponse.data.data || axiosResponse.data;
+      return {
+        products: Array.isArray(result) ? result : [],
+        raw,
+      };
+    } catch (error: any) {
+      this.logger.error(`CAF getProductsDebug failed: ${error.message}`);
+      if (error.response) {
+        this.logger.error(`CAF debug response: status=${error.response.status}, data=${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
+      return { products: [], raw: { error: error.message, responseStatus: error.response?.status, responseData: JSON.stringify(error.response?.data).substring(0, 300) } };
     }
   }
 
@@ -176,9 +238,16 @@ export class CafIntegrationService implements OnModuleInit {
       );
       this.logger.log(`CAF getProducts response keys: ${Object.keys(data)}, isArray: ${Array.isArray(data.data || data)}, count: ${(data.data || data).length}`);
       const result = data.data || data;
-      return Array.isArray(result) ? result : [];
+      if (!Array.isArray(result)) {
+        this.logger.warn(`CAF getProducts unexpected response shape: ${JSON.stringify(data).substring(0, 200)}`);
+        return [];
+      }
+      return result;
     } catch (error: any) {
       this.logger.error(`CAF product list failed: ${error.message}`);
+      if (error.response) {
+        this.logger.error(`CAF response status: ${error.response.status}, data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
       return [];
     }
   }

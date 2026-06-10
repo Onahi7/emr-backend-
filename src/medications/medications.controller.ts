@@ -36,7 +36,9 @@ export class MedicationsController {
     // Merge CAF products when configured
     if (this.cafIntegrationService.isConfigured()) {
       try {
-        let cafProducts = await this.cafIntegrationService.getProducts({ category, page: 1, limit: 500 });
+        const cafParams: any = { page: 1, limit: 500 };
+        if (category) cafParams.category = category;
+        let cafProducts = await this.cafIntegrationService.getProducts(cafParams);
         if (!cafProducts || cafProducts.length === 0) {
           this.logger.warn('CAF getProducts returned 0 results, trying search fallback');
           cafProducts = await this.cafIntegrationService.searchProducts('a');
@@ -154,15 +156,17 @@ export class MedicationsController {
   async cafStatus() {
     const config = this.cafIntegrationService.getConfigStatus();
     let testResult: string | null = null;
+    let rawResponse: any = null;
     if (config.configured) {
       try {
-        const products = await this.cafIntegrationService.getProducts({ page: 1, limit: 5 });
-        testResult = `Fetched ${products.length} products successfully`;
+        const result = await this.cafIntegrationService.getProductsDebug({ page: 1, limit: 5 });
+        testResult = `Fetched ${result.products.length} products successfully`;
+        rawResponse = result.raw;
       } catch (error: any) {
         testResult = `Error: ${error.message}`;
       }
     }
-    return { ...config, testResult };
+    return { ...config, testResult, rawResponse };
   }
 
   @Get('report')
