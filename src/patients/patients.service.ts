@@ -65,7 +65,7 @@ export class PatientsService {
       const patient = new this.patientModel({
         ...createPatientDto,
         patientId,
-        branchId,
+        branchId: branchId ? new Types.ObjectId(branchId) : undefined,
         registeredBy: userId ? new Types.ObjectId(userId) : undefined,
       });
 
@@ -112,7 +112,16 @@ export class PatientsService {
     }
 
     if (branchId) {
-      query.branchId = branchId;
+      // Cast string to ObjectId so the query matches documents that have
+      // branchId stored as either ObjectId (legacy) or string (newly created
+      // without explicit cast). Mongoose's auto-cast can be unreliable for
+      // optional fields, so we wrap with $or to cover both forms.
+      const branchObjId = new Types.ObjectId(branchId);
+      query.$or = [
+        { branchId: branchObjId },
+        { branchId: branchId },
+      ];
+      delete query.branchId;
     }
 
     const [data, total] = await Promise.all([
