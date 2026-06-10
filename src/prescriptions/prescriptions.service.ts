@@ -372,6 +372,7 @@ export class PrescriptionsService {
     dispensedBy: string,
     dto?: DispensePrescriptionDto,
   ): Promise<Prescription> {
+    try {
     const prescription = await this.prescriptionModel.findById(id);
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
@@ -575,6 +576,10 @@ export class PrescriptionsService {
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
     this.realtimeGateway.emitToAll('prescription:dispensed', populatedPrescription);
     return populatedPrescription;
+    } catch (error: any) {
+      this.logger.error(`Dispense failed: ${error?.message}`, error?.stack);
+      throw new BadRequestException(`Dispense: ${error?.message || 'unknown'}`);
+    }
   }
 
 
