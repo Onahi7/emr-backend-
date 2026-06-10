@@ -77,13 +77,34 @@ export class PrescriptionsService {
   private async computePrescriptionTotal(items: any[]): Promise<number> {
     let total = 0;
     for (const item of items) {
-      const med = await this.medicationModel.findById(item.medicationId).lean();
-      if (!med) continue;
-      let price = med.unitPrice;
-      if ((!price || price === 0) && med.packSizes && med.packSizes.length > 0) {
-        const def = med.packSizes.find((p) => p.isDefault) || med.packSizes[0];
-        price = def.unitsPerPack > 0 ? def.sellingPrice / def.unitsPerPack : 0;
+      let price = 0;
+
+      // Try local DB first
+      const localMed = await this.medicationModel.findById(item.medicationId).lean();
+      if (localMed) {
+        price = localMed.unitPrice || 0;
+        if ((!price || price === 0) && localMed.packSizes && localMed.packSizes.length > 0) {
+          const def = localMed.packSizes.find((p) => p.isDefault) || localMed.packSizes[0];
+          price = def.unitsPerPack > 0 ? def.sellingPrice / def.unitsPerPack : 0;
+        }
+      } else if (this.cafIntegrationService.isConfigured()) {
+        // Fall back to CAF — fetch all CAF products and find a matching one
+        try {
+          const cafProducts = await this.cafIntegrationService.getProducts({ page: 1, limit: 500 });
+          const cafMed = cafProducts.find((p) => p._id === item.medicationId.toString());
+          if (cafMed) {
+            // Per-base-unit price (same logic as the medications controller uses)
+            const defaultPack = cafMed.packSizes?.[0];
+            price =
+              defaultPack && defaultPack.quantityPerPack > 0
+                ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
+                : cafMed.suggestedRetailPrice || cafMed.basePrice || 0;
+          }
+        } catch {
+          // ignore — fall through with price=0
+        }
       }
+
       total += item.quantity * (price || 0);
     }
     return total;
