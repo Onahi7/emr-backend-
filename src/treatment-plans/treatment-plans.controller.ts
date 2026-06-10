@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Request } from '@nestjs/common';
 import { TreatmentPlansService } from './treatment-plans.service';
 import { CreateTreatmentPlanDto } from './dto/create-treatment-plan.dto';
+import { PayTreatmentPlanDto } from './dto/pay-treatment-plan.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -15,7 +16,7 @@ export class TreatmentPlansController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   create(@Body() dto: CreateTreatmentPlanDto, @Request() req: any) {
     const user = req.user;
-    return this.treatmentPlansService.create(dto, user.userId, user.branchId);
+    return this.treatmentPlansService.create(dto, user.userId, user.branchId, user.role);
   }
 
   @Get()
@@ -58,6 +59,12 @@ export class TreatmentPlansController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markPrinted(@Param('id') id: string, @Request() req: any) {
     return this.treatmentPlansService.markPrinted(id, req.user?.userId);
+  }
+
+  @Post(':id/pay')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
+  pay(@Param('id') id: string, @Body() dto: PayTreatmentPlanDto, @Request() req: any) {
+    return this.treatmentPlansService.pay(id, dto, req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/status')

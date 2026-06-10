@@ -26,6 +26,9 @@ export class Payment extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Prescription', index: true })
   prescriptionId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'TreatmentPlan', index: true })
+  treatmentPlanId?: Types.ObjectId;
+
   @Prop({ required: true, enum: Object.values(PaymentTypeEnum) })
   paymentType: PaymentTypeEnum;
 

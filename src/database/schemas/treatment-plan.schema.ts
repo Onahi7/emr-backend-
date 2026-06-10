@@ -9,6 +9,12 @@ export enum TreatmentPlanStatusEnum {
   CANCELLED = 'cancelled',
 }
 
+export enum TreatmentPlanPaymentStatusEnum {
+  UNPAID = 'unpaid',
+  PARTIAL = 'partial',
+  PAID = 'paid',
+}
+
 export enum TreatmentPlanItemTypeEnum {
   DRUG = 'drug',
   IV = 'iv',
@@ -69,6 +75,15 @@ export class TreatmentPlan extends Document {
 
   @Prop({ default: 0 })
   totalAmount: number;
+
+  @Prop({ default: 0 })
+  amountPaid: number;
+
+  @Prop({ default: 0 })
+  balance: number;
+
+  @Prop({ required: true, enum: Object.values(TreatmentPlanPaymentStatusEnum), default: TreatmentPlanPaymentStatusEnum.UNPAID })
+  paymentStatus: TreatmentPlanPaymentStatusEnum;
 
   @Prop()
   notes?: string;

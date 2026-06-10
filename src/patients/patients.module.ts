@@ -15,6 +15,7 @@ import {
   WalletTransaction,
   WalletTransactionSchema,
 } from '../database/schemas/wallet-transaction.schema';
+import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: PatientNote.name, schema: PatientNoteSchema },
       { name: IdSequence.name, schema: IdSequenceSchema },
       { name: WalletTransaction.name, schema: WalletTransactionSchema },
+      { name: Payment.name, schema: PaymentSchema },
     ]),
     RealtimeModule,
   ],

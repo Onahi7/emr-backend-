@@ -11,6 +11,7 @@ import { Patient } from '../database/schemas/patient.schema';
 import { PatientNote } from '../database/schemas/patient-note.schema';
 import { IdSequence } from '../database/schemas/id-sequence.schema';
 import { WalletTransaction, WalletTransactionTypeEnum } from '../database/schemas/wallet-transaction.schema';
+import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { CreatePatientNoteDto } from './dto/create-patient-note.dto';
@@ -25,6 +26,7 @@ export class PatientsService {
     @InjectModel(PatientNote.name) private patientNoteModel: Model<PatientNote>,
     @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
     @InjectModel(WalletTransaction.name) private walletTransactionModel: Model<WalletTransaction>,
+    @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     private realtimeGateway: RealtimeGateway,
   ) {}
 
@@ -726,6 +728,15 @@ export class PatientsService {
       branchId,
       { notes, performedBy: userId, paymentMethod },
     );
+    // Create a Payment record so wallet deposits appear in daily income aggregation
+    await this.paymentModel.create({
+      branchId,
+      paymentType: PaymentTypeEnum.OTHER,
+      amount,
+      paymentMethod,
+      receivedBy: userId ? new Types.ObjectId(userId) : undefined,
+      notes: notes || `Wallet deposit for patient ${patient.patientId || patient._id}`,
+    });
     this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod });
     return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: new Date() };
   }

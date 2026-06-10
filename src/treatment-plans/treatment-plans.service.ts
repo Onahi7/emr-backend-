@@ -1,12 +1,18 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { TreatmentPlan, TreatmentPlanStatusEnum, TreatmentPlanItemTypeEnum } from '../database/schemas/treatment-plan.schema';
+import { TreatmentPlan, TreatmentPlanStatusEnum, TreatmentPlanItemTypeEnum, TreatmentPlanPaymentStatusEnum } from '../database/schemas/treatment-plan.schema';
 import { Patient } from '../database/schemas/patient.schema';
-import { Visit } from '../database/schemas/visit.schema';
+import { Profile } from '../database/schemas/profile.schema';
+import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
+import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
+import { WalletTransaction, WalletTransactionTypeEnum } from '../database/schemas/wallet-transaction.schema';
+import { Prescription } from '../database/schemas/prescription.schema';
+import { Order, OrderStatusEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
 import { PrescriptionsService } from '../prescriptions/prescriptions.service';
 import { OrdersService } from '../orders/orders.service';
 import { CreateTreatmentPlanDto } from './dto/create-treatment-plan.dto';
+import { PayTreatmentPlanDto } from './dto/pay-treatment-plan.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { PriorityEnum } from '../database/schemas/order.schema';
 
@@ -17,7 +23,12 @@ export class TreatmentPlansService {
   constructor(
     @InjectModel(TreatmentPlan.name) private treatmentPlanModel: Model<TreatmentPlan>,
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
+    @InjectModel(Profile.name) private profileModel: Model<Profile>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
+    @InjectModel(Payment.name) private paymentModel: Model<Payment>,
+    @InjectModel(WalletTransaction.name) private walletTransactionModel: Model<WalletTransaction>,
+    @InjectModel(Prescription.name) private prescriptionModel: Model<Prescription>,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
     private prescriptionsService: PrescriptionsService,
     private ordersService: OrdersService,
     private realtimeGateway: RealtimeGateway,
@@ -34,7 +45,7 @@ export class TreatmentPlansService {
     return `TP-${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async create(dto: CreateTreatmentPlanDto, userId: string, branchId?: string): Promise<TreatmentPlan> {
+  async create(dto: CreateTreatmentPlanDto, userId: string, branchId?: string, reqUserRole?: string): Promise<TreatmentPlan> {
     // Validate patient
     const patient = await this.patientModel.findById(dto.patientId);
     if (!patient) throw new NotFoundException('Patient not found');
@@ -131,19 +142,24 @@ export class TreatmentPlansService {
     const planNumber = await this.generatePlanNumber(branchId);
     const userObjId = new Types.ObjectId(userId);
 
+    // Resolve user's name from Profile
+    const userProfile = await this.profileModel.findById(userId).select('fullName').lean();
+    const creatorName = userProfile?.fullName || 'Unknown';
+
     const plan = new this.treatmentPlanModel({
       branchId,
       planNumber,
       patientId: new Types.ObjectId(dto.patientId),
       visitId: dto.visitId ? new Types.ObjectId(dto.visitId) : undefined,
       createdBy: userObjId,
-      createdByName: (patient as any).firstName + ' ' + (patient as any).lastName, // Will be overwritten below
-      createdByRole: 'doctor', // Will be set by controller
+      createdByName: creatorName,
+      createdByRole: reqUserRole || 'doctor',
       status: TreatmentPlanStatusEnum.DRAFT,
       prescriptionIds,
       orderIds,
       items: planItems,
       totalAmount,
+      balance: totalAmount,
       notes: dto.notes,
     });
 
@@ -240,6 +256,93 @@ export class TreatmentPlansService {
     }
     plan.status = TreatmentPlanStatusEnum.CANCELLED;
     await plan.save();
+    return this.findById(id);
+  }
+
+  async pay(id: string, dto: PayTreatmentPlanDto, userId: string, branchId?: string): Promise<TreatmentPlan> {
+    const plan = await this.treatmentPlanModel.findById(id);
+    if (!plan) throw new NotFoundException('Treatment plan not found');
+    if (plan.status === TreatmentPlanStatusEnum.CANCELLED) {
+      throw new BadRequestException('Cannot pay for a cancelled plan');
+    }
+
+    const remaining = plan.totalAmount - (plan.amountPaid || 0);
+    if (dto.amount > remaining + 0.01) {
+      throw new BadRequestException(`Payment amount (Le ${dto.amount}) exceeds remaining balance (Le ${remaining})`);
+    }
+
+    // Handle wallet payment — deduct from patient wallet
+    if (dto.paymentMethod === 'wallet') {
+      const patient = await this.patientModel.findById(plan.patientId);
+      if (!patient) throw new NotFoundException('Patient not found');
+      const balanceBefore = patient.walletBalance || 0;
+      if (dto.amount > balanceBefore) {
+        throw new BadRequestException(`Insufficient wallet balance. Available: Le ${balanceBefore.toLocaleString()}`);
+      }
+      patient.walletBalance = balanceBefore - dto.amount;
+      patient.walletLastUpdated = new Date();
+      await patient.save();
+      await this.walletTransactionModel.create({
+        patientId: plan.patientId,
+        type: WalletTransactionTypeEnum.PAYMENT,
+        amount: dto.amount,
+        balanceBefore,
+        balanceAfter: patient.walletBalance,
+        reference: `Payment for treatment plan ${plan.planNumber}`,
+        paymentMethod: 'wallet',
+        performedBy: new Types.ObjectId(userId),
+      });
+      this.realtimeGateway.emitToAll('wallet:updated', {
+        patientId: plan.patientId.toString(),
+        balance: patient.walletBalance,
+        type: 'payment',
+        amount: dto.amount,
+      });
+    }
+
+    // Create payment record
+    await this.paymentModel.create({
+      branchId,
+      treatmentPlanId: plan._id,
+      visitId: plan.visitId,
+      paymentType: PaymentTypeEnum.OTHER,
+      amount: dto.amount,
+      paymentMethod: dto.paymentMethod,
+      receivedBy: new Types.ObjectId(userId),
+      notes: dto.notes || `Treatment plan ${plan.planNumber} payment`,
+    });
+
+    // Update plan payment tracking
+    plan.amountPaid = Math.round(((plan.amountPaid || 0) + dto.amount) * 100) / 100;
+    plan.balance = Math.round((plan.totalAmount - plan.amountPaid) * 100) / 100;
+
+    if (plan.balance <= 0) {
+      plan.paymentStatus = TreatmentPlanPaymentStatusEnum.PAID;
+      plan.balance = 0;
+      // Mark all child prescriptions as paid
+      for (const rxId of plan.prescriptionIds) {
+        await this.prescriptionModel.findByIdAndUpdate(rxId, { $set: { isPaid: true } });
+      }
+      // Mark all child orders as paid
+      for (const orderId of plan.orderIds) {
+        const order = await this.orderModel.findById(orderId);
+        if (order && order.paymentStatus !== PaymentStatusEnum.PAID) {
+          order.amountPaid = order.total;
+          order.balance = 0;
+          order.paymentStatus = PaymentStatusEnum.PAID;
+          if (order.status === OrderStatusEnum.AWAITING_PAYMENT) {
+            order.status = order.orderType === 'lab' ? OrderStatusEnum.PENDING_COLLECTION : OrderStatusEnum.PAID;
+          }
+          await order.save();
+        }
+      }
+      this.realtimeGateway.emitToAll('treatment-plan:paid', { planId: plan._id, planNumber: plan.planNumber });
+    } else {
+      plan.paymentStatus = TreatmentPlanPaymentStatusEnum.PARTIAL;
+    }
+
+    await plan.save();
+    this.logger.log(`Treatment plan ${plan.planNumber} payment: Le ${dto.amount} (${dto.paymentMethod}), remaining: Le ${plan.balance}`);
     return this.findById(id);
   }
 }
