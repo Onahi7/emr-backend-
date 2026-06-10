@@ -48,7 +48,7 @@ export class VisitsService {
   }
 
   async create(createVisitDto: CreateVisitDto, branchId?: string): Promise<Visit> {
-    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature, serviceType, specialistId, procedureType } = createVisitDto;
+    const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature, serviceType, specialistId, procedureType, rapidTestsRequested } = createVisitDto;
 
     const patient = await this.patientModel.findById(patientId);
     if (!patient) {
@@ -87,6 +87,7 @@ export class VisitsService {
       serviceType,
       specialistId: specialistId ? new Types.ObjectId(specialistId) : undefined,
       procedureType,
+      rapidTestsRequested: rapidTestsRequested || [],
       rapidTestResults: [],
     };
     if (branchId) visitData.branchId = branchId;

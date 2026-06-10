@@ -1,4 +1,4 @@
-import { IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min, IsArray } from 'class-validator';
 import { VisitTypeEnum, VisitServiceTypeEnum } from '../../database/schemas/visit.schema';
 
 export class CreateVisitDto {
@@ -48,4 +48,10 @@ export class CreateVisitDto {
   @IsOptional()
   @IsString()
   procedureType?: string;
+
+  /** Rapid tests requested upfront */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  rapidTestsRequested?: ('malaria' | 'typhoid')[];
 }
