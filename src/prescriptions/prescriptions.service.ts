@@ -498,12 +498,17 @@ export class PrescriptionsService {
       }
     }
 
-    // === Single CAF checkout call for all CAF-sourced lines ===
-    const cafOnlyLines = lines.filter((l) => {
-      // The deduction above handled local stock. CAF checkout runs for everything
-      // that has sellUnits > 0 and is sourced from CAF (or substitute for a CAF med).
-      return l.sellUnits > 0;
-    });
+    // === Single CAF checkout call for CAF-sourced lines only ===
+    // The local deduction loop above handled locally-stocked items. Only items
+    // that don't exist in the local DB (or are isCafSourced) need to go to CAF.
+    const cafOnlyLines: typeof lines = [];
+    for (const line of lines) {
+      if (line.sellUnits <= 0) continue;
+      const localMed = await this.medicationModel.findById(line.medicationId).lean();
+      if (!localMed || localMed.isCafSourced) {
+        cafOnlyLines.push(line);
+      }
+    }
 
     let cafSaleId: string | undefined;
     let cafReceiptNumber: string | undefined;
