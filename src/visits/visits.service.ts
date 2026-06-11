@@ -458,6 +458,7 @@ export class VisitsService {
       paymentMethod,
       receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
       notes: `Consultation payment for visit ${visit.visitNumber}`,
+      branchId: branchId ? new Types.ObjectId(branchId) : undefined,
     });
     this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (awaiting triage)`);
 
