@@ -17,6 +17,7 @@ import {
 } from '../database/schemas/wallet-transaction.schema';
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { LisIntegrationModule } from '../lis-integration/lis-integration.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: Payment.name, schema: PaymentSchema },
     ]),
     RealtimeModule,
+    LisIntegrationModule,
   ],
   controllers: [PatientsController],
   providers: [PatientsService],

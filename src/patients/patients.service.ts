@@ -16,6 +16,7 @@ import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { CreatePatientNoteDto } from './dto/create-patient-note.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { LisIntegrationService } from '../lis-integration/lis-integration.service';
 
 @Injectable()
 export class PatientsService {
@@ -28,6 +29,7 @@ export class PatientsService {
     @InjectModel(WalletTransaction.name) private walletTransactionModel: Model<WalletTransaction>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     private realtimeGateway: RealtimeGateway,
+    private lisIntegrationService: LisIntegrationService,
   ) {}
 
   /**
@@ -518,6 +520,17 @@ export class PatientsService {
       .populate('orderedBy', 'fullName')
       .sort({ createdAt: -1 })
       .exec();
+
+    // Auto-fetch LIS results for synced orders (fire-and-forget, non-blocking)
+    for (const order of orders) {
+      if (order.orderType === 'lab' && (order as any).lisSyncStatus === 'synced' && !(order as any).lisExternalRequestId) {
+        // skip — no external request ID
+        continue;
+      }
+      if (order.orderType === 'lab' && (order as any).lisSyncStatus === 'synced' && (order as any).lisExternalRequestId) {
+        this.lisIntegrationService.fetchAndStoreResults(order._id.toString()).catch(() => {});
+      }
+    }
 
     // For each order, get order tests and results
     const ordersWithDetails = await Promise.all(
