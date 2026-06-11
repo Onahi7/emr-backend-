@@ -378,14 +378,15 @@ export class OrdersService {
 
     if (savedOrder.orderType === OrderTypeEnum.LAB) {
       if (savedOrder.paymentStatus === PaymentStatusEnum.PAID) {
-        void this.lisIntegrationService.syncPaymentToLis(
+        this.lisIntegrationService.syncPaymentToLis(
           savedOrder._id.toString(),
           savedOrder.amountPaid || savedOrder.total,
           savedOrder.paymentMethod || PaymentMethodEnum.CASH,
           branchId,
-        );
+        ).catch(err => this.logger.error(`LIS payment sync failed for ${savedOrder.orderNumber}: ${err?.message}`));
       } else {
-        void this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString(), branchId);
+        this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString(), branchId)
+          .catch(err => this.logger.error(`LIS order sync failed for ${savedOrder.orderNumber}: ${err?.message}`));
       }
     }
 
@@ -669,7 +670,8 @@ export class OrdersService {
 
     // Re-sync to LIS if tests changed on an already-synced order
     if (testsChanged && order.orderType === OrderTypeEnum.LAB && order.lisExternalRequestId) {
-      void this.lisIntegrationService.syncOrderToLis(id, branchId);
+      this.lisIntegrationService.syncOrderToLis(id, branchId)
+        .catch(err => this.logger.error(`LIS re-sync failed for ${order.orderNumber}: ${err?.message}`));
     }
 
     return populatedOrder;
@@ -1126,12 +1128,12 @@ export class OrdersService {
     }
 
     if (order.orderType === OrderTypeEnum.LAB && order.paymentStatus === PaymentStatusEnum.PAID) {
-      void this.lisIntegrationService.syncPaymentToLis(
+      this.lisIntegrationService.syncPaymentToLis(
         order._id.toString(),
         order.amountPaid,
         addPaymentDto.paymentMethod,
         branchId,
-      );
+      ).catch(err => this.logger.error(`LIS payment sync failed for ${order.orderNumber}: ${err?.message}`));
     }
 
     return { order: populatedOrder, payment };
@@ -1371,12 +1373,12 @@ export class OrdersService {
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
 
     if (order.orderType === OrderTypeEnum.LAB) {
-      void this.lisIntegrationService.syncPaymentToLis(
+      this.lisIntegrationService.syncPaymentToLis(
         order._id.toString(),
         order.total,
         paymentMethod,
         branchId,
-      );
+      ).catch(err => this.logger.error(`LIS payment sync failed for ${order.orderNumber}: ${err?.message}`));
     }
 
     return populatedOrder;
