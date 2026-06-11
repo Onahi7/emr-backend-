@@ -190,7 +190,6 @@ export class LisIntegrationService {
     const buildPayload = (patient: any) => ({
       externalRequestId,
       sourceSystem: branchConfig.sourceSystem,
-      sourceBranchId: branchConfig.branchId || effectiveBranchId,
       sourceBranchCode: branchConfig.branchCode,
       sourceFacilityName: branchConfig.facilityName,
       sourceFacilityLocation: branchConfig.facilityLocation,
