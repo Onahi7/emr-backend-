@@ -175,7 +175,9 @@ export class AuthService {
         roles,
       };
 
-      const accessToken = await this.generateAccessToken(userData);
+      // Preserve branchId from the original refresh token, fall back to user's stored branchId
+      const branchId = (payload as any).branchId || (user as any).branchId?.toString() || undefined;
+      const accessToken = await this.generateAccessToken(userData, branchId);
 
       this.logger.log(`Access token refreshed for user: ${user.email}`);
 

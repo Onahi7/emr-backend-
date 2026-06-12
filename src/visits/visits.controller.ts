@@ -276,4 +276,12 @@ export class VisitsController {
   ) {
     return this.visitsService.cancel(id, body.reason, body.cancelledBy, req?.user?.branchId);
   }
+
+  @Post('backfill-branch')
+  @Roles(UserRoleEnum.ADMIN)
+  async backfillBranchId(@Body('branchId') branchId: string) {
+    if (!branchId) throw new BadRequestException('branchId required');
+    const result = await this.visitsService.backfillMissingBranchId(branchId);
+    return { updated: result.modifiedCount, branchId };
+  }
 }

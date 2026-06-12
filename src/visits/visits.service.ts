@@ -659,6 +659,13 @@ export class VisitsService {
       .exec();
   }
 
+  async backfillMissingBranchId(branchId: string) {
+    return this.visitModel.updateMany(
+      { $or: [{ branchId: { $exists: false } }, { branchId: null }] },
+      { $set: { branchId } },
+    ).exec();
+  }
+
   async referToSpecialist(
     id: string,
     data: { specialistId: string; reason: string; notes?: string },
