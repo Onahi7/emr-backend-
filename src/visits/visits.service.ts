@@ -652,8 +652,12 @@ export class VisitsService {
   }
 
   async getAwaitingTriage(branchId?: string): Promise<Visit[]> {
+    const query: any = { status: VisitStatusEnum.AWAITING_TRIAGE };
+    if (branchId) {
+      query.$or = [{ branchId }, { branchId: { $exists: false } }, { branchId: null }];
+    }
     return this.visitModel
-      .find({ status: VisitStatusEnum.AWAITING_TRIAGE, ...(branchId ? { branchId } : {}) })
+      .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
       .sort({ createdAt: 1 })
       .exec();
