@@ -679,4 +679,14 @@ export class PrescriptionsService {
     this.realtimeGateway.emitToAll('prescription:cancelled', populatedPrescription);
     return populatedPrescription;
   }
+
+  async remove(id: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException(`Prescription with ID ${id} not found`);
+    }
+    const result = await this.prescriptionModel.findByIdAndDelete(id).exec();
+    if (!result) {
+      throw new NotFoundException(`Prescription with ID ${id} not found`);
+    }
+  }
 }

@@ -10,6 +10,8 @@ import {
   Query,
   UseGuards,
   Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { VisitsService } from './visits.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
@@ -283,5 +285,12 @@ export class VisitsController {
     if (!branchId) throw new BadRequestException('branchId required');
     const result = await this.visitsService.backfillMissingBranchId(branchId);
     return { updated: result.modifiedCount, branchId };
+  }
+
+  @Delete(':id')
+  @Roles(UserRoleEnum.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('id') id: string) {
+    await this.visitsService.remove(id);
   }
 }

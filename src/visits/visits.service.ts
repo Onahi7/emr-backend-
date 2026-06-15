@@ -1133,4 +1133,14 @@ export class VisitsService {
 
     return { patients, total, page, limit };
   }
+
+  async remove(id: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException(`Visit with ID ${id} not found`);
+    }
+    const result = await this.visitModel.findByIdAndDelete(id).exec();
+    if (!result) {
+      throw new NotFoundException(`Visit with ID ${id} not found`);
+    }
+  }
 }
