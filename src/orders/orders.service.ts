@@ -204,9 +204,11 @@ export class OrdersService {
     }
 
     const orderType = createOrderDto.orderType || OrderTypeEnum.LAB;
-    if ((orderType === OrderTypeEnum.LAB || orderType === OrderTypeEnum.PHARMACY) && !createOrderDto.visitId) {
-      throw new BadRequestException('Clinical lab and pharmacy orders must be attached to a patient visit');
-    }
+    // Clinical orders may be created without a visit when a doctor searches a patient
+    // who has not yet been triaged. The order is still tied to the patient.
+    // if ((orderType === OrderTypeEnum.LAB || orderType === OrderTypeEnum.PHARMACY) && !createOrderDto.visitId) {
+    //   throw new BadRequestException('Clinical lab and pharmacy orders must be attached to a patient visit');
+    // }
 
     // Validate visitId belongs to the same patient
     if (createOrderDto.visitId) {
