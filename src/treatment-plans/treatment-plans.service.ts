@@ -15,6 +15,7 @@ import { CreateTreatmentPlanDto } from './dto/create-treatment-plan.dto';
 import { PayTreatmentPlanDto } from './dto/pay-treatment-plan.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { PriorityEnum } from '../database/schemas/order.schema';
+import { UserRoleEnum } from '../database/schemas/user-role.schema';
 
 @Injectable()
 export class TreatmentPlansService {
@@ -57,6 +58,14 @@ export class TreatmentPlansService {
       if (visit.patientId.toString() !== dto.patientId) {
         throw new BadRequestException('Visit does not belong to the specified patient');
       }
+      // Closed visits cannot receive new plans
+      if (['completed', 'cancelled'].includes(visit.status)) {
+        throw new BadRequestException(`Cannot create treatment plan for a visit with status "${visit.status}"`);
+      }
+      // Only the treating doctor may add plans while a consultation is in progress
+      if (visit.status === 'in_consultation' && reqUserRole !== UserRoleEnum.DOCTOR && reqUserRole !== UserRoleEnum.SPECIALIST && reqUserRole !== UserRoleEnum.ADMIN) {
+        throw new BadRequestException('Cannot create treatment plan while the patient is in consultation');
+      }
     }
 
     const prescriptionIds: Types.ObjectId[] = [];
@@ -87,6 +96,7 @@ export class TreatmentPlansService {
           },
           userId,
           branchId,
+          reqUserRole,
         );
         prescriptionIds.push(new Types.ObjectId(rx._id.toString()));
         const itemAmount = rx.totalAmount || 0;
@@ -117,6 +127,7 @@ export class TreatmentPlansService {
           },
           userId,
           branchId,
+          reqUserRole,
         );
         orderIds.push(new Types.ObjectId(order._id.toString()));
         totalAmount += item.testPrice;

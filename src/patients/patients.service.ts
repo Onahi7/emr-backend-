@@ -522,12 +522,12 @@ export class PatientsService {
       .exec();
 
     // Auto-fetch LIS results for synced orders (fire-and-forget, non-blocking)
-    for (const order of orders) {
-      if (order.orderType === 'lab' && (order as any).lisSyncStatus === 'synced' && !(order as any).lisExternalRequestId) {
+    for (const order of orders as any[]) {
+      if (order.orderType === 'lab' && order.lisSyncStatus === 'synced' && !order.lisExternalRequestId) {
         // skip — no external request ID
         continue;
       }
-      if (order.orderType === 'lab' && (order as any).lisSyncStatus === 'synced' && (order as any).lisExternalRequestId) {
+      if (order.orderType === 'lab' && order.lisSyncStatus === 'synced' && order.lisExternalRequestId) {
         this.lisIntegrationService.fetchAndStoreResults(order._id.toString()).catch(() => {});
       }
     }

@@ -8,6 +8,7 @@ import { Consultation } from '../database/schemas/consultation.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
+import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -195,7 +196,7 @@ export class PrescriptionsService {
     }
   }
 
-  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string): Promise<Prescription> {
+  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string, reqUserRole?: string): Promise<Prescription> {
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
 
     // === Auto-compute quantity from structured regimen if not provided ===
@@ -229,6 +230,21 @@ export class PrescriptionsService {
       // Ensure the consultation belongs to the same patient
       if (consultation.patientId.toString() !== patientId) {
         throw new BadRequestException('Consultation does not belong to the specified patient');
+      }
+    }
+
+    if (visitId) {
+      const visit = await this.visitModel.findById(visitId);
+      if (!visit) {
+        throw new NotFoundException('Visit not found');
+      }
+      // Closed visits cannot receive new prescriptions
+      if (['completed', 'cancelled'].includes(visit.status)) {
+        throw new BadRequestException(`Cannot create prescription for a visit with status "${visit.status}"`);
+      }
+      // Only the treating doctor may prescribe while a consultation is in progress
+      if (visit.status === 'in_consultation' && reqUserRole !== UserRoleEnum.DOCTOR && reqUserRole !== UserRoleEnum.SPECIALIST && reqUserRole !== UserRoleEnum.ADMIN) {
+        throw new BadRequestException('Cannot create prescription while the patient is in consultation');
       }
     }
 
@@ -654,9 +670,7 @@ export class PrescriptionsService {
       prescription.totalAmount = updateDto.totalAmount;
     } else if (updateDto.items) {
       // Recalculate from items if items changed but total not explicitly provided
-      prescription.totalAmount = prescription.items.reduce(
-        (sum, item) => sum + item.quantity * 0, 0,
-      );
+      prescription.totalAmount = await this.computePrescriptionTotal(prescription.items);
     }
 
     const savedPrescription = await prescription.save();

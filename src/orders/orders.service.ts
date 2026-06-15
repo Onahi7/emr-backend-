@@ -15,6 +15,7 @@ import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
+import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
@@ -197,7 +198,7 @@ export class OrdersService {
     return OrderStatusEnum.PAID;
   }
 
-  async create(createOrderDto: CreateOrderDto, userId?: string, branchId?: string): Promise<Order> {
+  async create(createOrderDto: CreateOrderDto, userId?: string, branchId?: string, reqUserRole?: string): Promise<Order> {
     // Validate patient ID
     if (!Types.ObjectId.isValid(createOrderDto.patientId)) {
       throw new BadRequestException('Invalid patient ID');
@@ -223,6 +224,14 @@ export class OrdersService {
       }
       if (visit.patientId.toString() !== createOrderDto.patientId) {
         throw new BadRequestException('Visit does not belong to the specified patient');
+      }
+      // Closed visits cannot receive new orders
+      if (['completed', 'cancelled'].includes(visit.status)) {
+        throw new BadRequestException(`Cannot create order for a visit with status "${visit.status}"`);
+      }
+      // Only the treating doctor may order while a consultation is in progress
+      if (visit.status === 'in_consultation' && reqUserRole !== UserRoleEnum.DOCTOR && reqUserRole !== UserRoleEnum.SPECIALIST && reqUserRole !== UserRoleEnum.ADMIN) {
+        throw new BadRequestException('Cannot create order while the patient is in consultation');
       }
     }
 

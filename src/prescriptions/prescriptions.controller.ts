@@ -16,7 +16,7 @@ export class PrescriptionsController {
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   create(@Body() createPrescriptionDto: CreatePrescriptionDto, @Request() req: any) {
-    return this.prescriptionsService.create(createPrescriptionDto, req.user?.userId, req.user?.branchId);
+    return this.prescriptionsService.create(createPrescriptionDto, req.user?.userId, req.user?.branchId, req.user?.role);
   }
 
   @Get()
