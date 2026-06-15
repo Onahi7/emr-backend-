@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export enum DoctorTypeEnum {
   GENERAL = 'general',
@@ -48,6 +48,11 @@ export class Doctor extends Document {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  /** Link to the user profile that can log in as this doctor.
+   *  When set, the doctor's dashboard/queue will be identified by this Doctor record's _id. */
+  @Prop({ type: Types.ObjectId, ref: 'Profile', index: true, unique: true, sparse: true })
+  userId?: Types.ObjectId;
 }
 
 export const DoctorSchema = SchemaFactory.createForClass(Doctor);

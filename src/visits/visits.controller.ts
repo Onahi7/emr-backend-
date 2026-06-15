@@ -94,7 +94,9 @@ export class VisitsController {
   @Get('doctor-dashboard')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   getDoctorDashboard(@Request() req: any) {
-    return this.visitsService.getDoctorDashboard(req.user?.userId, req.user?.branchId);
+    // Prefer the linked Doctor record ID so visits assigned from the nurse
+    // doctor dropdown (Doctor _id) match the logged-in doctor.
+    return this.visitsService.getDoctorDashboard(req.user?.doctorId || req.user?.userId, req.user?.branchId);
   }
 
   @Get('doctor-patients')
@@ -110,7 +112,7 @@ export class VisitsController {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit || '50', 10) || 50));
     const daysBackNum = daysBack ? Math.max(0, parseInt(daysBack, 10) || 0) : undefined;
     return this.visitsService.getDoctorPatients(
-      req.user?.userId,
+      req.user?.doctorId || req.user?.userId,
       req.user?.branchId,
       pageNum,
       limitNum,
@@ -156,7 +158,7 @@ export class VisitsController {
   @Patch(':id/accept')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   acceptPatient(@Param('id') id: string, @Request() req: any) {
-    return this.visitsService.acceptPatient(id, req.user?.userId, req.user?.branchId);
+    return this.visitsService.acceptPatient(id, req.user?.doctorId || req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/order-lab')

@@ -69,9 +69,9 @@ export class Visit extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
   patientId: Types.ObjectId;
 
-  // The treating doctor (system user — Profile) who is managing this visit.
-  // Set from req.user.userId when the doctor accepts the patient.
-  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  // The treating doctor (Doctor record) who is managing this visit.
+  // Set from the nurse triage doctor dropdown (Doctor _id) or from req.user.doctorId when the doctor accepts the patient.
+  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
   doctorId?: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(VisitTypeEnum), default: VisitTypeEnum.NEW })

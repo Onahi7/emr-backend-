@@ -12,6 +12,7 @@ import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Profile, ProfileSchema } from '../database/schemas/profile.schema';
 import { UserRole, UserRoleSchema } from '../database/schemas/user-role.schema';
+import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { UserRole, UserRoleSchema } from '../database/schemas/user-role.schema';
     MongooseModule.forFeature([
       { name: Profile.name, schema: ProfileSchema },
       { name: UserRole.name, schema: UserRoleSchema },
+      { name: Doctor.name, schema: DoctorSchema },
     ]),
   ],
   controllers: [AuthController],

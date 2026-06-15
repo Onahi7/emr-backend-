@@ -7,7 +7,26 @@ import { UpdateDoctorDto } from './dto/update-doctor.dto';
 
 @Injectable()
 export class DoctorsService {
-  constructor(@InjectModel(Doctor.name) private doctorModel: Model<Doctor>) {}
+  constructor(
+    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
+  ) {}
+
+  private async validateUserId(userId?: string): Promise<Types.ObjectId | undefined> {
+    if (!userId) return undefined;
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+    const ProfileModel = this.doctorModel.db.model('Profile');
+    const profile = await ProfileModel.findById(userId).exec();
+    if (!profile) {
+      throw new BadRequestException('Linked user profile not found');
+    }
+    const existing = await this.doctorModel.findOne({ userId: new Types.ObjectId(userId), isActive: true }).exec();
+    if (existing) {
+      throw new BadRequestException(`User is already linked to doctor ${existing.fullName}`);
+    }
+    return new Types.ObjectId(userId);
+  }
 
   async create(createDoctorDto: CreateDoctorDto) {
     const name = createDoctorDto.fullName.trim();
@@ -18,9 +37,12 @@ export class DoctorsService {
     });
     if (existing) return existing;
 
+    const userObjectId = await this.validateUserId(createDoctorDto.userId);
+
     const doctor = new this.doctorModel({
       ...createDoctorDto,
       fullName: name,
+      userId: userObjectId,
     });
     return doctor.save();
   }
@@ -59,6 +81,26 @@ export class DoctorsService {
     const patch: any = { ...updateDoctorDto };
     if (typeof patch.fullName === 'string') {
       patch.fullName = patch.fullName.trim();
+    }
+    if (patch.userId !== undefined) {
+      if (patch.userId === null || patch.userId === '') {
+        patch.userId = undefined;
+      } else {
+        const existing = await this.doctorModel.findOne({
+          userId: new Types.ObjectId(patch.userId),
+          isActive: true,
+          _id: { $ne: new Types.ObjectId(id) },
+        }).exec();
+        if (existing) {
+          throw new BadRequestException(`User is already linked to doctor ${existing.fullName}`);
+        }
+        const ProfileModel = this.doctorModel.db.model('Profile');
+        const profile = await ProfileModel.findById(patch.userId).exec();
+        if (!profile) {
+          throw new BadRequestException('Linked user profile not found');
+        }
+        patch.userId = new Types.ObjectId(patch.userId);
+      }
     }
 
     const doctor = await this.doctorModel.findByIdAndUpdate(id, patch, { new: true }).lean();

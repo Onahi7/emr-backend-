@@ -62,7 +62,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<{ accessToken: string }> {
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<{ accessToken: string; user?: { id: string; email: string; fullName: string; roles: string[]; doctorId?: string } }> {
     this.logger.log('Token refresh request received');
 
     try {

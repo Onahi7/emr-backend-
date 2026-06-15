@@ -26,6 +26,10 @@ export class CreateDoctorDto {
   licenseNumber?: string;
 
   @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

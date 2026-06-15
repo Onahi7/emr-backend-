@@ -1,17 +1,19 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { Profile } from '../database/schemas/profile.schema';
 import { UserRole } from '../database/schemas/user-role.schema';
+import { Doctor } from '../database/schemas/doctor.schema';
 
 export interface JwtPayload {
   sub: string; // user ID
   email: string;
   roles: string[];
   branchId?: string;
+  doctorId?: string; // linked Doctor record _id, when applicable
   iat?: number;
   exp?: number;
 }
@@ -25,6 +27,7 @@ export interface AuthResponse {
     fullName: string;
     roles: string[];
     branchId?: string;
+    doctorId?: string;
   };
   requiresBranchSelection?: boolean;
   availableBranches?: Array<{ _id: string; name: string; code: string }>;
@@ -38,9 +41,19 @@ export class AuthService {
   constructor(
     @InjectModel(Profile.name) private profileModel: Model<Profile>,
     @InjectModel(UserRole.name) private userRoleModel: Model<UserRole>,
+    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
+
+  private async getDoctorIdForUser(userId: string): Promise<string | undefined> {
+    try {
+      const doctor = await this.doctorModel.findOne({ userId: new Types.ObjectId(userId), isActive: true }).select('_id').lean().exec();
+      return doctor?._id?.toString();
+    } catch {
+      return undefined;
+    }
+  }
 
   /**
    * Hash a password using bcrypt
@@ -99,12 +112,13 @@ export class AuthService {
   /**
    * Generate JWT access token
    */
-  async generateAccessToken(user: { id: string; email: string; roles: string[] }, branchId?: string): Promise<string> {
+  async generateAccessToken(user: { id: string; email: string; roles: string[]; doctorId?: string }, branchId?: string): Promise<string> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       roles: user.roles,
       branchId,
+      doctorId: user.doctorId,
     };
 
     return this.jwtService.sign(payload);
@@ -113,12 +127,13 @@ export class AuthService {
   /**
    * Generate JWT refresh token
    */
-  async generateRefreshToken(user: { id: string; email: string; roles: string[] }, branchId?: string): Promise<string> {
+  async generateRefreshToken(user: { id: string; email: string; roles: string[]; doctorId?: string }, branchId?: string): Promise<string> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       roles: user.roles,
       branchId,
+      doctorId: user.doctorId,
     };
 
     const refreshTokenExpiry = this.configService.get<string>('jwt.refreshTokenExpiry', '7d');
@@ -138,22 +153,25 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const accessToken = await this.generateAccessToken(user, user.branchId);
-    const refreshToken = await this.generateRefreshToken(user, user.branchId);
+    const doctorId = await this.getDoctorIdForUser(user.id);
+    const userWithDoctor = { ...user, doctorId };
 
-    this.logger.log(`User logged in successfully: ${email}`);
+    const accessToken = await this.generateAccessToken(userWithDoctor, user.branchId);
+    const refreshToken = await this.generateRefreshToken(userWithDoctor, user.branchId);
+
+    this.logger.log(`User logged in successfully: ${email}${doctorId ? ` (doctorId: ${doctorId})` : ''}`);
 
     return {
       accessToken,
       refreshToken,
-      user,
+      user: userWithDoctor,
     };
   }
 
   /**
    * Refresh access token using refresh token
    */
-  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string }> {
+  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; user?: { id: string; email: string; fullName: string; roles: string[]; doctorId?: string } }> {
     try {
       const payload = this.jwtService.verify(refreshToken) as JwtPayload;
 
@@ -168,20 +186,23 @@ export class AuthService {
       const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
       const roles = userRoles.map((ur) => ur.role);
 
+      const doctorId = await this.getDoctorIdForUser(user._id.toString());
+
       const userData = {
         id: user._id.toString(),
         email: user.email,
         fullName: user.fullName,
         roles,
+        doctorId,
       };
 
       // Preserve branchId from the original refresh token, fall back to user's stored branchId
       const branchId = (payload as any).branchId || (user as any).branchId?.toString() || undefined;
       const accessToken = await this.generateAccessToken(userData, branchId);
 
-      this.logger.log(`Access token refreshed for user: ${user.email}`);
+      this.logger.log(`Access token refreshed for user: ${user.email}${doctorId ? ` (doctorId: ${doctorId})` : ''}`);
 
-      return { accessToken };
+      return { accessToken, user: userData };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const errorStack = error instanceof Error ? error.stack : undefined;
@@ -236,17 +257,20 @@ export class AuthService {
     const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
     const roles = userRoles.map((ur) => ur.role);
 
+    const doctorId = await this.getDoctorIdForUser(user._id.toString());
+
     const userObj = {
       id: user._id.toString(),
       email: user.email,
       fullName: user.fullName,
       roles,
+      doctorId,
     };
 
     const accessToken = await this.generateAccessToken(userObj, branchId);
     const refreshToken = await this.generateRefreshToken(userObj, branchId);
 
-    this.logger.log(`User ${user.email} selected branch ${branchId}`);
+    this.logger.log(`User ${user.email} selected branch ${branchId}${doctorId ? ` (doctorId: ${doctorId})` : ''}`);
 
     return {
       accessToken,
