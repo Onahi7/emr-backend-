@@ -153,6 +153,20 @@ export class Order extends Document {
   @Prop()
   lisResultsFetchedAt?: Date;
 
+  // Payment sync status — separate from order sync status.
+  // Order sync = order info sent to LIS. Payment sync = payment notification sent to LIS.
+  @Prop({
+    enum: ['not_synced', 'synced', 'failed'],
+    default: 'not_synced',
+  })
+  lisPaymentSyncStatus?: string;
+
+  @Prop()
+  lisPaymentSyncError?: string;
+
+  @Prop()
+  lisPaymentSyncedAt?: Date;
+
   // Exact LIS orderable codes requested by clinician (panel/test codes).
   // This preserves source-of-truth intent for partner LIS sync.
   @Prop({ type: [String], default: [] })

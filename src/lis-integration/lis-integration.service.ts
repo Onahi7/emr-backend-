@@ -318,11 +318,17 @@ export class LisIntegrationService {
           ? `Paid in EMR for ${order.orderNumber}${paymentMethod === PaymentMethodEnum.WALLET ? ' via wallet' : ''}`
           : `Payment collected in EMR for ${order.orderNumber}; financial amount retained in EMR`,
       });
+      await this.orderModel.findByIdAndUpdate(orderId, {
+        lisPaymentSyncStatus: 'synced',
+        lisPaymentSyncError: undefined,
+        lisPaymentSyncedAt: new Date(),
+      });
+      this.logger.log(`LIS payment synced for ${order.orderNumber}`);
     } catch (error: any) {
       const message = this.getErrorMessage(error);
       await this.orderModel.findByIdAndUpdate(orderId, {
-        lisSyncStatus: 'failed',
-        lisSyncError: `Payment sync failed: ${message}`,
+        lisPaymentSyncStatus: 'failed',
+        lisPaymentSyncError: message,
       });
       this.logger.warn(`LIS payment sync failed for ${order.orderNumber}: ${message}`);
     }
