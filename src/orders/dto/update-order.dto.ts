@@ -4,6 +4,7 @@ import {
   IsString,
   IsArray,
   IsNumber,
+  IsMongoId,
   Min,
   ValidateNested,
   ArrayMinSize,
@@ -40,7 +41,7 @@ export class UpdateOrderDto {
   referredByDoctor?: string;
 
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   doctorId?: string;
 
   /** Replace the order's test list (only allowed before payment) */

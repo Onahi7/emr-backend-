@@ -28,7 +28,6 @@ import { CommunicationLog, CommunicationLogSchema } from '../database/schemas/co
 import { CriticalResultNotification, CriticalResultNotificationSchema } from '../database/schemas/critical-result-notification.schema';
 import { QcSample, QcSampleSchema } from '../database/schemas/qc-sample.schema';
 import { QcResult, QcResultSchema } from '../database/schemas/qc-result.schema';
-import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
 
 @Module({
   imports: [
@@ -59,7 +58,6 @@ import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
       { name: CriticalResultNotification.name, schema: CriticalResultNotificationSchema },
       { name: QcSample.name, schema: QcSampleSchema },
       { name: QcResult.name, schema: QcResultSchema },
-      { name: Doctor.name, schema: DoctorSchema },
     ]),
   ],
   controllers: [AdminController],

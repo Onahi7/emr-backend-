@@ -9,7 +9,6 @@ describe('Environment Validation', () => {
         PORT: '3000',
         MONGODB_URI: 'mongodb://localhost:27017/lis',
         JWT_SECRET: 'test-secret-key',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
       };
 
       expect(() => validate(config)).not.toThrow();
@@ -20,7 +19,6 @@ describe('Environment Validation', () => {
         NODE_ENV: 'development',
         PORT: '3000',
         JWT_SECRET: 'test-secret-key',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
       };
 
       expect(() => validate(config)).toThrow('Environment validation failed');
@@ -32,23 +30,10 @@ describe('Environment Validation', () => {
         NODE_ENV: 'development',
         PORT: '3000',
         MONGODB_URI: 'mongodb://localhost:27017/lis',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
       };
 
       expect(() => validate(config)).toThrow('Environment validation failed');
       expect(() => validate(config)).toThrow('JWT_SECRET');
-    });
-
-    it('should throw error when JWT_REFRESH_SECRET is missing', () => {
-      const config = {
-        NODE_ENV: 'development',
-        PORT: '3000',
-        MONGODB_URI: 'mongodb://localhost:27017/lis',
-        JWT_SECRET: 'test-secret-key',
-      };
-
-      expect(() => validate(config)).toThrow('Environment validation failed');
-      expect(() => validate(config)).toThrow('JWT_REFRESH_SECRET');
     });
 
     it('should throw error when NODE_ENV has invalid value', () => {
@@ -57,7 +42,6 @@ describe('Environment Validation', () => {
         PORT: '3000',
         MONGODB_URI: 'mongodb://localhost:27017/lis',
         JWT_SECRET: 'test-secret-key',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
       };
 
       expect(() => validate(config)).toThrow('Environment validation failed');
@@ -70,7 +54,6 @@ describe('Environment Validation', () => {
         PORT: 'not-a-number',
         MONGODB_URI: 'mongodb://localhost:27017/lis',
         JWT_SECRET: 'test-secret-key',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
       };
 
       expect(() => validate(config)).toThrow('Environment validation failed');
@@ -80,15 +63,14 @@ describe('Environment Validation', () => {
       const config = {
         MONGODB_URI: 'mongodb://localhost:27017/lis',
         JWT_SECRET: 'test-secret-key',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
       };
 
       const result = validate(config);
 
       expect(result.NODE_ENV).toBe(Environment.Development);
       expect(result.PORT).toBe(3000);
-      expect(result.JWT_EXPIRES_IN).toBe('1h');
-      expect(result.JWT_REFRESH_EXPIRES_IN).toBe('7d');
+      expect(result.JWT_ACCESS_TOKEN_EXPIRY).toBe('1h');
+      expect(result.JWT_REFRESH_TOKEN_EXPIRY).toBe('7d');
       expect(result.CORS_ORIGIN).toBe('http://localhost:5173');
       expect(result.LOG_LEVEL).toBe('info');
     });
@@ -99,7 +81,6 @@ describe('Environment Validation', () => {
         PORT: '4000',
         MONGODB_URI: 'mongodb://localhost:27017/lis',
         JWT_SECRET: 'test-secret-key',
-        JWT_REFRESH_SECRET: 'test-refresh-secret-key',
         RATE_LIMIT_TTL: '120',
         RATE_LIMIT_MAX: '200',
         MAX_FILE_SIZE: '10485760',
@@ -124,8 +105,8 @@ describe('Environment Validation', () => {
 
       expect(env.NODE_ENV).toBe(Environment.Development);
       expect(env.PORT).toBe(3000);
-      expect(env.JWT_EXPIRES_IN).toBe('1h');
-      expect(env.JWT_REFRESH_EXPIRES_IN).toBe('7d');
+      expect(env.JWT_ACCESS_TOKEN_EXPIRY).toBe('1h');
+      expect(env.JWT_REFRESH_TOKEN_EXPIRY).toBe('7d');
       expect(env.CORS_ORIGIN).toBe('http://localhost:5173');
       expect(env.LOG_LEVEL).toBe('info');
       expect(env.RATE_LIMIT_TTL).toBe(60);

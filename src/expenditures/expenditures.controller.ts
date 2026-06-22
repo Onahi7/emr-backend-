@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ExpendituresService } from './expenditures.service';
 import { CreateExpenditureDto } from './dto/create-expenditure.dto';
+import { UpdateExpenditureDto } from './dto/update-expenditure.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -62,7 +63,7 @@ export class ExpendituresController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   async update(
     @Param('id') id: string,
-    @Body() updateDto: Partial<CreateExpenditureDto>,
+    @Body() updateDto: UpdateExpenditureDto,
     @Request() req?: any,
   ) {
     return this.expendituresService.update(id, updateDto, req?.user?.branchId);

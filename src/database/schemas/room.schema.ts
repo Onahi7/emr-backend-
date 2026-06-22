@@ -28,7 +28,7 @@ export class Room extends Document {
   @Prop({ required: true, enum: Object.values(RoomStatusEnum), default: RoomStatusEnum.AVAILABLE })
   status: RoomStatusEnum;
 
-  @Prop()
+  @Prop({ type: Types.ObjectId, ref: 'Visit' })
   currentVisitId?: Types.ObjectId;
 
   @Prop()

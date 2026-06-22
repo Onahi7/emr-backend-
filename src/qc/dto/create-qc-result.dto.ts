@@ -1,7 +1,7 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsMongoId, IsString, IsOptional } from 'class-validator';
 
 export class CreateQcResultDto {
-  @IsString()
+  @IsMongoId()
   qcSampleId: string;
 
   @IsString()

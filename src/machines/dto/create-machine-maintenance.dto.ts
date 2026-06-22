@@ -1,7 +1,7 @@
-import { IsString, IsEnum, IsOptional, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsDateString, IsNumber, IsMongoId, Min } from 'class-validator';
 
 export class CreateMachineMaintenanceDto {
-  @IsString()
+  @IsMongoId()
   @IsOptional()
   machineId?: string;
 

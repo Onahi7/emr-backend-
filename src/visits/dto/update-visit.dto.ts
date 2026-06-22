@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsBoolean, IsNumber, IsArray, ValidateNested, IsDateString } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsBoolean, IsNumber, IsArray, ValidateNested, IsDateString, IsMongoId } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VisitStatusEnum, VisitTypeEnum } from '../../database/schemas/visit.schema';
 
@@ -21,7 +21,7 @@ export class ProblemListItemDto {
 
 export class UpdateVisitDto {
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   doctorId?: string;
 
   @IsOptional()
@@ -37,7 +37,7 @@ export class UpdateVisitDto {
   consultationPaid?: boolean;
 
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   consultationOrderId?: string;
 
   @IsOptional()
@@ -109,7 +109,7 @@ export class UpdateVisitDto {
 
   // Referral
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   referredToSpecialistId?: string;
 
   @IsOptional()

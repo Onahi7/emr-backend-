@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { HttpModule } from '@nestjs/axios';
 import { PanelInterpretationsController } from './panel-interpretations.controller';
 import { PanelInterpretationsService } from './panel-interpretations.service';
-import { AiInterpretationService } from '../ai-interpretation/ai-interpretation.service';
+import { AiInterpretationModule } from '../ai-interpretation/ai-interpretation.module';
 import {
   PanelInterpretation,
   PanelInterpretationSchema,
@@ -14,10 +13,10 @@ import {
     MongooseModule.forFeature([
       { name: PanelInterpretation.name, schema: PanelInterpretationSchema },
     ]),
-    HttpModule,
+    AiInterpretationModule,
   ],
   controllers: [PanelInterpretationsController],
-  providers: [PanelInterpretationsService, AiInterpretationService],
+  providers: [PanelInterpretationsService],
   exports: [PanelInterpretationsService],
 })
 export class PanelInterpretationsModule {}

@@ -4,6 +4,13 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { InventoryService } from './inventory.service';
+import {
+  CreateSupplierDto,
+  RemoveExpiredStockDto,
+  StockAdjustmentDto,
+  StockReceiptDto,
+  UpdateSupplierDto,
+} from './dto/inventory.dto';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -50,20 +57,20 @@ export class InventoryController {
 
   @Post('receipts')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
-  receiveStock(@Body() dto: any, @Request() req: any) {
+  receiveStock(@Body() dto: StockReceiptDto, @Request() req: any) {
     return this.inventoryService.receiveStock(dto, req.user?.userId);
   }
 
   @Post('adjustments')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
-  adjustStock(@Body() dto: any, @Request() req: any) {
+  adjustStock(@Body() dto: StockAdjustmentDto, @Request() req: any) {
     return this.inventoryService.adjustStock(dto, req.user?.userId);
   }
 
   @Post('expired')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
   removeExpired(
-    @Body() body: { medicationId: string; quantity: number; reason: string },
+    @Body() body: RemoveExpiredStockDto,
     @Request() req: any,
   ) {
     return this.inventoryService.removeExpired(body.medicationId, body.quantity, body.reason, req.user?.userId);
@@ -78,13 +85,13 @@ export class InventoryController {
 
   @Post('suppliers')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
-  createSupplier(@Body() data: any) {
+  createSupplier(@Body() data: CreateSupplierDto) {
     return this.inventoryService.createSupplier(data);
   }
 
   @Patch('suppliers/:id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
-  updateSupplier(@Param('id') id: string, @Body() data: any) {
+  updateSupplier(@Param('id') id: string, @Body() data: UpdateSupplierDto) {
     return this.inventoryService.updateSupplier(id, data);
   }
 }

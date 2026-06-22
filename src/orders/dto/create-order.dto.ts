@@ -19,7 +19,7 @@ import {
 
 export class OrderTestDto {
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   testId?: string;
 
   @IsString()

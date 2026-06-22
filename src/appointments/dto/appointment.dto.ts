@@ -1,11 +1,11 @@
-import { IsString, IsOptional, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsMongoId } from 'class-validator';
 import { AppointmentStatusEnum } from '../../database/schemas/appointment.schema';
 
 export class CreateAppointmentDto {
-  @IsString()
+  @IsMongoId()
   patientId: string;
 
-  @IsString()
+  @IsMongoId()
   doctorId: string;
 
   @IsDateString()

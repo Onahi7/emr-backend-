@@ -1,5 +1,7 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsMongoId } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsNumber, IsOptional, IsString, IsMongoId, ValidateNested } from 'class-validator';
 import { ConsultationStatusEnum } from '../../database/schemas/consultation.schema';
+import { VitalSignsDto } from '../../common/dto/vital-signs.dto';
 
 export class UpdateConsultationDto {
   @IsEnum(ConsultationStatusEnum)
@@ -23,15 +25,9 @@ export class UpdateConsultationDto {
   notes?: string;
 
   @IsOptional()
-  vitalSigns?: {
-    bloodPressure?: string;
-    temperature?: number;
-    heartRate?: number;
-    respiratoryRate?: number;
-    oxygenSaturation?: number;
-    weight?: number;
-    height?: number;
-  };
+  @ValidateNested()
+  @Type(() => VitalSignsDto)
+  vitalSigns?: VitalSignsDto;
 
   @IsNumber()
   @IsOptional()

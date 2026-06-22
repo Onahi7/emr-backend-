@@ -1,16 +1,28 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { ConfigModule } from './config.module';
 
 describe('ConfigModule', () => {
   let configService: ConfigService;
+  const originalEnv = process.env;
 
   beforeEach(async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb://localhost:27017/lis_test',
+      JWT_SECRET: 'test-secret-key',
+    };
+
+    const { ConfigModule } = await import('./config.module');
     const module: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule],
     }).compile();
 
     configService = module.get<ConfigService>(ConfigService);
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   it('should be defined', () => {
@@ -31,14 +43,12 @@ describe('ConfigModule', () => {
 
   it('should load JWT configuration', () => {
     const jwtSecret = configService.get('jwt.secret');
-    const jwtExpiresIn = configService.get('jwt.expiresIn');
-    const jwtRefreshSecret = configService.get('jwt.refreshSecret');
-    const jwtRefreshExpiresIn = configService.get('jwt.refreshExpiresIn');
+    const jwtAccessTokenExpiry = configService.get('jwt.accessTokenExpiry');
+    const jwtRefreshTokenExpiry = configService.get('jwt.refreshTokenExpiry');
 
     expect(jwtSecret).toBeDefined();
-    expect(jwtExpiresIn).toBeDefined();
-    expect(jwtRefreshSecret).toBeDefined();
-    expect(jwtRefreshExpiresIn).toBeDefined();
+    expect(jwtAccessTokenExpiry).toBeDefined();
+    expect(jwtRefreshTokenExpiry).toBeDefined();
   });
 
   it('should load CORS configuration', () => {

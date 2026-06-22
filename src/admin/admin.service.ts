@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Order, OrderTypeEnum, OrderStatusEnum } from '../database/schemas/order.schema';
@@ -27,7 +27,6 @@ import { CommunicationLog } from '../database/schemas/communication-log.schema';
 import { CriticalResultNotification } from '../database/schemas/critical-result-notification.schema';
 import { QcSample } from '../database/schemas/qc-sample.schema';
 import { QcResult } from '../database/schemas/qc-result.schema';
-import { Doctor } from '../database/schemas/doctor.schema';
 
 @Injectable()
 export class AdminService {
@@ -58,7 +57,6 @@ export class AdminService {
     @InjectModel(CriticalResultNotification.name) private criticalResultModel: Model<CriticalResultNotification>,
     @InjectModel(QcSample.name) private qcSampleModel: Model<QcSample>,
     @InjectModel(QcResult.name) private qcResultModel: Model<QcResult>,
-    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
   ) {}
 
   private getDateRange(startDate?: string, endDate?: string) {
@@ -583,12 +581,8 @@ export class AdminService {
   }
 
   /**
-   * Permanently delete all transactional/clinical data while keeping
-   * reference data (users, branches, medications, rooms, doctor profiles,
-   * LIS catalog, machines, suppliers) intact.
-   *
-   * Requires the caller to pass the literal phrase "DELETE ALL TEST DATA"
-   * as proof that the action is intentional.
+   * Broad data clearing is intentionally disabled. Any future cleanup workflow
+   * must delete explicit IDs only, after a preview and per-category approval.
    */
   async clearTestData(actorUserId: string, confirmation: string): Promise<{
     deleted: Record<string, number>;
@@ -596,83 +590,10 @@ export class AdminService {
     actor: string;
     timestamp: string;
   }> {
-    if (confirmation !== 'DELETE ALL TEST DATA') {
-      throw new Error('Invalid confirmation phrase');
-    }
-
-    const deleteMany = async <T>(model: Model<T>, query: any = {}): Promise<number> => {
-      const result = await model.deleteMany(query).exec();
-      return result.deletedCount || 0;
-    };
-
-    const [
-      patients, visits, orders, orderTests, payments, prescriptions, results,
-      admissions, soapNotes, patientNotes, walletTx, samples, queue, cashRecon,
-      expenditures, stockMovements, consultations, communicationLogs,
-      criticalResults, qcSamples, qcResults, appointments,
-    ] = await Promise.all([
-      deleteMany(this.patientModel),
-      deleteMany(this.visitModel),
-      deleteMany(this.orderModel),
-      deleteMany(this.orderTestModel),
-      deleteMany(this.paymentModel),
-      deleteMany(this.prescriptionModel),
-      deleteMany(this.resultModel),
-      deleteMany(this.admissionModel),
-      deleteMany(this.soapNoteModel),
-      deleteMany(this.patientNoteModel),
-      deleteMany(this.walletTxModel),
-      deleteMany(this.sampleModel),
-      deleteMany(this.queueModel),
-      deleteMany(this.cashReconModel),
-      deleteMany(this.expenditureModel),
-      deleteMany(this.stockMovementModel),
-      deleteMany(this.consultationModel),
-      deleteMany(this.communicationLogModel),
-      deleteMany(this.criticalResultModel),
-      deleteMany(this.qcSampleModel),
-      deleteMany(this.qcResultModel),
-      deleteMany(this.appointmentModel),
-      deleteMany(this.doctorModel, {}),
-    ]);
-
-    const deleted = {
-      patients, visits, orders, orderTests, payments, prescriptions, results,
-      admissions, soapNotes, patientNotes, walletTransactions: walletTx, samples,
-      queue, cashReconciliations: cashRecon, expenditures, stockMovements,
-      consultations, communicationLogs, criticalResultNotifications: criticalResults,
-      qcSamples, qcResults, appointments,
-    };
-
-    const preserved = [
-      'profiles (users)', 'user-roles', 'branches', 'medications', 'rooms',
-      'doctors/specialists (will be reseeded from profiles)', 'test-catalog',
-      'test-panels', 'test-reference-ranges', 'panel-interpretations',
-      'machines', 'machine-maintenance', 'suppliers', 'report-templates',
-      'id-sequences',
-    ];
-
-    const timestamp = new Date();
-    try {
-      const auditLogPayload: any = {
-        userId: actorUserId ? new Types.ObjectId(actorUserId) : undefined,
-        action: 'DELETE' as any,
-        tableName: 'all_transactional_collections',
-        recordId: 'clear_test_data',
-        newData: { deleted, preserved } as any,
-        ipAddress: undefined,
-        userAgent: undefined,
-      };
-      await this.auditLogModel.create(auditLogPayload);
-    } catch (e) {
-      // audit log is best-effort; do not fail the operation
-    }
-
-    return {
-      deleted,
-      preserved,
-      actor: actorUserId,
-      timestamp: timestamp.toISOString(),
-    };
+    void actorUserId;
+    void confirmation;
+    throw new BadRequestException(
+      'Bulk clear-test-data is disabled. Use a targeted cleanup flow with explicit record IDs and confirmation.',
+    );
   }
 }

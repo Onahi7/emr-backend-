@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { ConnectionConfigDto } from './dto/connection-config.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -65,7 +66,7 @@ export class SettingsController {
 
   @Post('connection/config')
   @Roles(UserRoleEnum.ADMIN)
-  async updateConnectionConfig(@Body() config: any, @Request() req: any) {
+  async updateConnectionConfig(@Body() config: ConnectionConfigDto, @Request() req: any) {
     return this.settingsService.updateSetting(
       'connection_config',
       config,

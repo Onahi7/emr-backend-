@@ -1,5 +1,7 @@
-import { IsEnum, IsString, IsOptional, IsMongoId } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsString, IsOptional, IsMongoId, ValidateNested } from 'class-validator';
 import { SoapNoteTypeEnum } from '../../database/schemas/soap-note.schema';
+import { VitalSignsDto } from '../../common/dto/vital-signs.dto';
 
 export class UpdateSoapNoteDto {
   @IsEnum(SoapNoteTypeEnum)
@@ -19,16 +21,9 @@ export class UpdateSoapNoteDto {
   reviewOfSystems?: string;
 
   @IsOptional()
-  vitalSigns?: {
-    bloodPressure?: string;
-    temperature?: number;
-    heartRate?: number;
-    respiratoryRate?: number;
-    oxygenSaturation?: number;
-    weight?: number;
-    height?: number;
-    bmi?: number;
-  };
+  @ValidateNested()
+  @Type(() => VitalSignsDto)
+  vitalSigns?: VitalSignsDto;
 
   @IsString()
   @IsOptional()

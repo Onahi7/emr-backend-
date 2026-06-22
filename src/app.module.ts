@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
@@ -51,10 +50,6 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: ['.env', '.env.development', '.env.staging', '.env.production'],
-    }),
     ThrottlerModule.forRoot([
       {
         ttl: 60000, // 1 minute
