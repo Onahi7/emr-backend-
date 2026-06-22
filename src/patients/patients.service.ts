@@ -722,6 +722,7 @@ export class PatientsService {
 
   async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string, paymentMethod = 'cash', branchId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Deposit amount must be positive');
+    const depositedAt = new Date();
     const query: any = { _id: patientId };
     if (branchId) {
       query.branchId = branchId;
@@ -730,7 +731,7 @@ export class PatientsService {
     if (!patient) throw new NotFoundException('Patient not found');
     const balanceBefore = patient.walletBalance || 0;
     patient.walletBalance = balanceBefore + amount;
-    patient.walletLastUpdated = new Date();
+    patient.walletLastUpdated = depositedAt;
     await patient.save();
     await this.recordTransaction(
       new Types.ObjectId(patientId),
@@ -749,9 +750,10 @@ export class PatientsService {
       paymentMethod,
       receivedBy: userId ? new Types.ObjectId(userId) : undefined,
       notes: notes || `Wallet deposit for patient ${patient.patientId || patient._id}`,
+      createdAt: depositedAt,
     });
-    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod });
-    return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: new Date() };
+    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: depositedAt });
+    return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: depositedAt };
   }
 
   async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string, branchId?: string): Promise<any> {
