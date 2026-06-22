@@ -28,6 +28,33 @@ import { LisIntegrationService } from '../lis-integration/lis-integration.servic
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
+  private parseDateBoundary(value: string, endOfDay = false): Date {
+    const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        endOfDay ? 23 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 999 : 0,
+      );
+    }
+
+    return new Date(value);
+  }
+
+  private buildCreatedAtFilter(startDate?: string, endDate?: string) {
+    if (!startDate && !endDate) return undefined;
+
+    const dateFilter: any = {};
+    if (startDate) dateFilter.$gte = this.parseDateBoundary(startDate);
+    if (endDate) dateFilter.$lte = this.parseDateBoundary(endDate, true);
+    return dateFilter;
+  }
+
   private getEffectiveLinkedTests(testCode: string, configuredLinkedTests?: string[]): string[] {
     const linked = new Set((configuredLinkedTests || []).map((code) => code.toUpperCase()));
 
@@ -873,14 +900,8 @@ export class OrdersService {
     const orderQuery: any = {};
     const paymentQuery: any = {};
 
-    if (startDate || endDate) {
-      const dateFilter: any = {};
-      if (startDate) dateFilter.$gte = new Date(startDate);
-      if (endDate) {
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        dateFilter.$lte = endOfDay;
-      }
+    const dateFilter = this.buildCreatedAtFilter(startDate, endDate);
+    if (dateFilter) {
       orderQuery.createdAt = dateFilter;
       paymentQuery.createdAt = dateFilter;
     }
@@ -938,14 +959,9 @@ export class OrdersService {
   async getDailyIncome(startDate?: string, endDate?: string, branchId?: string) {
     const matchQuery: any = {};
 
-    if (startDate || endDate) {
-      matchQuery.createdAt = {};
-      if (startDate) matchQuery.createdAt.$gte = new Date(startDate);
-      if (endDate) {
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        matchQuery.createdAt.$lte = endOfDay;
-      }
+    const dateFilter = this.buildCreatedAtFilter(startDate, endDate);
+    if (dateFilter) {
+      matchQuery.createdAt = dateFilter;
     }
 
     if (branchId) {
