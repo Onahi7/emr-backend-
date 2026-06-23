@@ -245,15 +245,30 @@ export class TreatmentPlansService {
   async markPrinted(id: string, userId: string): Promise<TreatmentPlan> {
     const plan = await this.treatmentPlanModel.findById(id);
     if (!plan) throw new NotFoundException('Treatment plan not found');
+    if (plan.status !== TreatmentPlanStatusEnum.SENT_TO_RECEPTION && plan.status !== TreatmentPlanStatusEnum.PAID) {
+      throw new BadRequestException('Only sent or paid plans can be marked as printed');
+    }
     plan.printedAt = new Date();
     plan.printedBy = new Types.ObjectId(userId);
     await plan.save();
     return this.findById(id);
   }
 
+  private static readonly VALID_TRANSITIONS: Record<TreatmentPlanStatusEnum, TreatmentPlanStatusEnum[]> = {
+    [TreatmentPlanStatusEnum.DRAFT]: [TreatmentPlanStatusEnum.SENT_TO_RECEPTION, TreatmentPlanStatusEnum.CANCELLED],
+    [TreatmentPlanStatusEnum.SENT_TO_RECEPTION]: [TreatmentPlanStatusEnum.PAID, TreatmentPlanStatusEnum.CANCELLED],
+    [TreatmentPlanStatusEnum.PAID]: [TreatmentPlanStatusEnum.COMPLETED, TreatmentPlanStatusEnum.CANCELLED],
+    [TreatmentPlanStatusEnum.COMPLETED]: [],
+    [TreatmentPlanStatusEnum.CANCELLED]: [],
+  };
+
   async updateStatus(id: string, status: TreatmentPlanStatusEnum): Promise<TreatmentPlan> {
     const plan = await this.treatmentPlanModel.findById(id);
     if (!plan) throw new NotFoundException('Treatment plan not found');
+    const allowed = TreatmentPlansService.VALID_TRANSITIONS[plan.status] || [];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(`Cannot transition from "${plan.status}" to "${status}". Allowed: ${allowed.join(', ') || 'none'}`);
+    }
     plan.status = status;
     await plan.save();
     return this.findById(id);
@@ -267,6 +282,29 @@ export class TreatmentPlansService {
     }
     plan.status = TreatmentPlanStatusEnum.CANCELLED;
     await plan.save();
+
+    // Clean up child prescriptions
+    for (const rxId of plan.prescriptionIds) {
+      try {
+        await this.prescriptionModel.findByIdAndDelete(rxId);
+      } catch (err) {
+        this.logger.warn(`Failed to delete prescription ${rxId} during plan cancellation: ${err}`);
+      }
+    }
+
+    // Clean up child orders
+    for (const orderId of plan.orderIds) {
+      try {
+        const order = await this.orderModel.findById(orderId);
+        if (order) {
+          order.status = OrderStatusEnum.CANCELLED;
+          await order.save();
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to cancel order ${orderId} during plan cancellation: ${err}`);
+      }
+    }
+
     return this.findById(id);
   }
 
