@@ -55,6 +55,10 @@ export class OrdersService {
     return dateFilter;
   }
 
+  private normalizeObjectId(value?: string) {
+    return value && Types.ObjectId.isValid(value) ? new Types.ObjectId(value) : value;
+  }
+
   private getEffectiveLinkedTests(testCode: string, configuredLinkedTests?: string[]): string[] {
     const linked = new Set((configuredLinkedTests || []).map((code) => code.toUpperCase()));
 
@@ -907,8 +911,9 @@ export class OrdersService {
     }
 
     if (branchId) {
-      orderQuery.branchId = branchId;
-      paymentQuery.branchId = branchId;
+      const normalizedBranchId = this.normalizeObjectId(branchId);
+      orderQuery.branchId = normalizedBranchId;
+      paymentQuery.branchId = normalizedBranchId;
     }
 
     const [totalOrders, paidOrders, pendingOrders, totalRevenue, collectedByMethod] =
@@ -965,7 +970,7 @@ export class OrdersService {
     }
 
     if (branchId) {
-      matchQuery.branchId = branchId;
+      matchQuery.branchId = this.normalizeObjectId(branchId);
     }
 
     const dailyIncome = await this.paymentModel.aggregate([
