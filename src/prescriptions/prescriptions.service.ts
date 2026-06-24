@@ -1,16 +1,18 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Prescription, PrescriptionStatusEnum } from '../database/schemas/prescription.schema';
+import { Prescription, PrescriptionStatusEnum, RouteOfAdministrationEnum } from '../database/schemas/prescription.schema';
 import { Medication } from '../database/schemas/medication.schema';
 import { StockMovement, StockMovementTypeEnum } from '../database/schemas/stock-movement.schema';
 import { Consultation } from '../database/schemas/consultation.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
+import { Admission } from '../database/schemas/admission.schema';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
+import { AdministerPrescriptionDto } from './dto/administer-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CafIntegrationService } from '../caf-integration/caf-integration.service';
 
@@ -26,6 +28,7 @@ export class PrescriptionsService {
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
+    @InjectModel(Admission.name) private admissionModel: Model<Admission>,
     private realtimeGateway: RealtimeGateway,
     private cafIntegrationService: CafIntegrationService,
   ) {}
@@ -589,6 +592,14 @@ export class PrescriptionsService {
     const savedPrescription = await prescription.save();
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DOCTOR_REVIEW);
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
+
+    // Auto-initialize administration tracking
+    try {
+      await this.initializeAdministration(savedPrescription._id.toString());
+    } catch (err) {
+      this.logger.warn(`Failed to initialize administration tracking for ${prescription.prescriptionNumber}: ${err}`);
+    }
+
     this.realtimeGateway.emitToAll('prescription:dispensed', populatedPrescription);
     return populatedPrescription;
   }
@@ -702,5 +713,212 @@ export class PrescriptionsService {
     if (!result) {
       throw new NotFoundException(`Prescription with ID ${id} not found`);
     }
+  }
+
+  /**
+   * Record a medication administration on a prescription.
+   * Called by nurses (and doctors) to document each dose given/refused.
+   */
+  async administer(
+    id: string,
+    dto: AdministerPrescriptionDto,
+    userId: string,
+    userName: string,
+  ): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findById(id);
+    if (!prescription) throw new NotFoundException('Prescription not found');
+
+    if (prescription.status === PrescriptionStatusEnum.CANCELLED) {
+      throw new BadRequestException('Cannot administer medication on a cancelled prescription');
+    }
+
+    if (prescription.status === PrescriptionStatusEnum.COMPLETED) {
+      throw new BadRequestException('Prescription course is already completed');
+    }
+
+    // Determine if this dose is given or refused
+    const isGiven = dto.given !== false && !dto.refused;
+    const isRefused = dto.refused === true;
+
+    if (isRefused && !dto.refusalReason) {
+      throw new BadRequestException('Refusal reason is required when marking as refused');
+    }
+
+    // Add to administration log
+    const logEntry = {
+      medicationName: dto.medicationName,
+      dosage: dto.dosage,
+      route: dto.route,
+      given: isGiven,
+      refused: isRefused,
+      refusalReason: dto.refusalReason,
+      notes: dto.notes,
+      administeredBy: new Types.ObjectId(userId),
+      administeredByName: userName,
+      administeredAt: new Date(),
+    };
+
+    prescription.administrationLog.push(logEntry as any);
+
+    // Update doses given count
+    if (isGiven) {
+      prescription.dosesGiven = (prescription.dosesGiven || 0) + 1;
+    }
+
+    // Calculate total doses if not set yet
+    if (!prescription.totalDoses || prescription.totalDoses === 0) {
+      // For each item: totalDoses = dosesPerDay × durationDays
+      // Use the first item's calculation (prescriptions typically have one medication)
+      const firstItem = prescription.items?.[0];
+      if (firstItem) {
+        prescription.totalDoses = firstItem.dosesPerDay * firstItem.durationDays;
+      }
+    }
+
+    // Calculate next due time
+    const firstItem = prescription.items?.[0];
+    if (firstItem && prescription.dosesGiven < prescription.totalDoses) {
+      const hoursPerDose = 24 / firstItem.dosesPerDay;
+      prescription.nextDueAt = new Date(Date.now() + hoursPerDose * 60 * 60 * 1000);
+    }
+
+    // Update status
+    if (prescription.status === PrescriptionStatusEnum.DISPENSED) {
+      prescription.status = PrescriptionStatusEnum.ADMINISTERING;
+    }
+
+    // Check if course is complete
+    if (prescription.totalDoses > 0 && prescription.dosesGiven >= prescription.totalDoses) {
+      prescription.status = PrescriptionStatusEnum.COMPLETED;
+      prescription.nextDueAt = undefined;
+    }
+
+    const saved = await prescription.save();
+
+    // Also record in admission medicationLog if patient is admitted
+    const admission = await this.admissionModel.findOne({
+      patientId: prescription.patientId,
+      status: { $in: ['active', 'observation'] },
+    }).sort({ createdAt: -1 }).exec();
+
+    if (admission) {
+      admission.medicationLog.push({
+        medicationName: dto.medicationName,
+        dosage: dto.dosage,
+        route: dto.route,
+        prescriptionId: prescription._id,
+        refused: isRefused,
+        refusalReason: dto.refusalReason,
+        notes: dto.notes,
+        administeredBy: new Types.ObjectId(userId),
+        administeredAt: new Date(),
+      } as any);
+      await admission.save();
+    }
+
+    this.realtimeGateway.emitToAll('prescription:administered', {
+      prescriptionId: saved._id,
+      prescriptionNumber: saved.prescriptionNumber,
+      medicationName: dto.medicationName,
+      given: isGiven,
+      dosesGiven: saved.dosesGiven,
+      totalDoses: saved.totalDoses,
+    });
+
+    return this.findById(id);
+  }
+
+  /**
+   * Get the MAR worklist — all dispensed/administering prescriptions that need nurse attention.
+   * Includes:
+   *   - All admitted patients (all routes)
+   *   - Outpatient/observation patients (IV/IM/SC only)
+   */
+  async getMarWorklist(branchId?: string): Promise<any[]> {
+    const filter: any = {
+      status: { $in: [PrescriptionStatusEnum.DISPENSED, PrescriptionStatusEnum.ADMINISTERING] },
+      isPaid: true,
+      requiresAdministration: true,
+    };
+    if (branchId) filter.branchId = branchId;
+
+    const prescriptions = await this.prescriptionModel
+      .find(filter)
+      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('prescribedBy', 'fullName')
+      .populate('visitId', 'visitNumber status')
+      .sort({ nextDueAt: 1, createdAt: 1 })
+      .exec();
+
+    // Enrich with admission status and visit info
+    const results = [];
+    for (const rx of prescriptions) {
+      const patient = rx.patientId as any;
+      const visit = rx.visitId as any;
+
+      // Check if patient is admitted
+      const admission = await this.admissionModel.findOne({
+        patientId: rx.patientId,
+        status: { $in: ['active', 'observation'] },
+      }).sort({ createdAt: -1 }).lean().exec();
+
+      const isAdmitted = !!admission;
+      const route = rx.items?.[0]?.route || 'oral';
+      const isInjectable = ['intravenous', 'intramuscular', 'subcutaneous'].includes(route);
+
+      // Skip oral/tablet prescriptions for non-admitted patients
+      if (!isAdmitted && !isInjectable) continue;
+
+      results.push({
+        _id: rx._id,
+        prescriptionNumber: rx.prescriptionNumber,
+        patientId: rx.patientId,
+        visitId: rx.visitId,
+        prescribedBy: rx.prescribedBy,
+        status: rx.status,
+        items: rx.items,
+        totalDoses: rx.totalDoses,
+        dosesGiven: rx.dosesGiven,
+        nextDueAt: rx.nextDueAt,
+        administrationLog: rx.administrationLog?.slice(-10) || [],
+        isAdmitted,
+        admissionNumber: (admission as any)?.admissionNumber,
+        ward: (admission as any)?.ward,
+        bedNumber: (admission as any)?.bedNumber,
+        requiresAdministration: rx.requiresAdministration,
+        createdAt: rx.createdAt,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Initialize administration tracking on a prescription after dispensing.
+   * Sets totalDoses, requiresAdministration, and adminRoute.
+   */
+  async initializeAdministration(id: string): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findById(id);
+    if (!prescription) throw new NotFoundException('Prescription not found');
+
+    const firstItem = prescription.items?.[0];
+    if (!firstItem) throw new BadRequestException('Prescription has no items');
+
+    const route = firstItem.route || 'oral';
+    const isInjectable = ['intravenous', 'intramuscular', 'subcutaneous'].includes(route);
+
+    // Calculate total doses
+    prescription.totalDoses = firstItem.dosesPerDay * firstItem.durationDays;
+    prescription.adminRoute = route;
+
+    // Only require administration tracking for injectables or admitted patients
+    // For now, mark all as requiring administration — the worklist filters by route/admission status
+    prescription.requiresAdministration = true;
+
+    // Set initial next due time
+    prescription.nextDueAt = new Date();
+
+    const saved = await prescription.save();
+    return this.findById(id);
   }
 }

@@ -3,6 +3,7 @@ import { PrescriptionsService } from './prescriptions.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
+import { AdministerPrescriptionDto } from './dto/administer-prescription.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -105,5 +106,39 @@ export class PrescriptionsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id') id: string) {
     await this.prescriptionsService.remove(id);
+  }
+
+  /**
+   * MAR worklist — all prescriptions needing nurse administration
+   * GET /prescriptions/mar-worklist
+   */
+  @Get('mar-worklist')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR)
+  getMarWorklist(@Request() req: any) {
+    return this.prescriptionsService.getMarWorklist(req.user?.branchId);
+  }
+
+  /**
+   * Record a medication administration
+   * POST /prescriptions/:id/administer
+   */
+  @Post(':id/administer')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR)
+  administer(
+    @Param('id') id: string,
+    @Body() dto: AdministerPrescriptionDto,
+    @Request() req: any,
+  ) {
+    return this.prescriptionsService.administer(id, dto, req.user?.userId, req.user?.fullName || 'Nurse');
+  }
+
+  /**
+   * Initialize administration tracking on a dispensed prescription
+   * POST /prescriptions/:id/initialize-admin
+   */
+  @Post(':id/initialize-admin')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.RECEPTIONIST)
+  initializeAdmin(@Param('id') id: string) {
+    return this.prescriptionsService.initializeAdministration(id);
   }
 }

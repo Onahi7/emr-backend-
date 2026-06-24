@@ -4,6 +4,8 @@ import { Document, Types } from 'mongoose';
 export enum PrescriptionStatusEnum {
   PENDING = 'pending',
   DISPENSED = 'dispensed',
+  ADMINISTERING = 'administering',
+  COMPLETED = 'completed',
   CANCELLED = 'cancelled',
 }
 
@@ -170,6 +172,58 @@ export class Prescription extends Document {
 
   @Prop({ default: false })
   hasCafItems?: boolean;
+
+  // === MAR (Medication Administration Record) tracking ===
+  /** Total doses to administer across the full course */
+  @Prop({ default: 0 })
+  totalDoses: number;
+
+  /** Doses administered so far */
+  @Prop({ default: 0 })
+  dosesGiven: number;
+
+  /** When the next dose is due (auto-calculated from dosesPerDay) */
+  @Prop()
+  nextDueAt?: Date;
+
+  /** Route that needs nurse administration (IV, IM, SC, etc.) — oral/tablets for outpatients are not tracked */
+  @Prop()
+  adminRoute?: string;
+
+  /** Whether this prescription requires nurse administration */
+  @Prop({ default: false })
+  requiresAdministration: boolean;
+
+  /** Full administration log — each entry is one dose given/refused */
+  @Prop({
+    type: [
+      {
+        medicationName: { type: String, required: true },
+        dosage: { type: String, required: true },
+        route: { type: String, required: true },
+        given: { type: Boolean, default: true },
+        refused: { type: Boolean, default: false },
+        refusalReason: { type: String },
+        notes: { type: String },
+        administeredBy: { type: Types.ObjectId, ref: 'Profile' },
+        administeredByName: { type: String },
+        administeredAt: { type: Date, required: true },
+      },
+    ],
+    default: [],
+  })
+  administrationLog: Array<{
+    medicationName: string;
+    dosage: string;
+    route: string;
+    given: boolean;
+    refused: boolean;
+    refusalReason?: string;
+    notes?: string;
+    administeredBy?: Types.ObjectId;
+    administeredByName?: string;
+    administeredAt: Date;
+  }>;
 
   createdAt: Date;
   updatedAt: Date;
