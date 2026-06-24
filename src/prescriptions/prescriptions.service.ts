@@ -8,7 +8,7 @@ import { Consultation } from '../database/schemas/consultation.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
-import { Admission } from '../database/schemas/admission.schema';
+import { Admission, AdmissionStatusEnum } from '../database/schemas/admission.schema';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
@@ -859,15 +859,14 @@ export class PrescriptionsService {
       // Check if patient is admitted
       const admission = await this.admissionModel.findOne({
         patientId: rx.patientId,
-        status: { $in: ['active', 'observation'] },
+        status: AdmissionStatusEnum.ADMITTED,
       }).sort({ createdAt: -1 }).lean().exec();
 
       const isAdmitted = !!admission;
-      const route = rx.items?.[0]?.route || 'oral';
-      const isInjectable = ['intravenous', 'intramuscular', 'subcutaneous'].includes(route);
 
-      // Skip oral/tablet prescriptions for non-admitted patients
-      if (!isAdmitted && !isInjectable) continue;
+      // MAR is an inpatient workflow. Outpatient injections should be handled
+      // through the visit/observation flow unless the patient is admitted.
+      if (!isAdmitted) continue;
 
       results.push({
         _id: rx._id,

@@ -36,6 +36,14 @@ export class AdmissionsService {
   }
 
   async create(dto: CreateAdmissionDto, admittedBy?: string): Promise<Admission> {
+    const existingAdmission = await this.admissionModel.findOne({
+      patientId: new Types.ObjectId(dto.patientId),
+      status: AdmissionStatusEnum.ADMITTED,
+    });
+    if (existingAdmission) {
+      throw new BadRequestException('Patient already has an active admission');
+    }
+
     const admissionNumber = await this.generateAdmissionNumber();
 
     const admission = new this.admissionModel({
