@@ -9,6 +9,7 @@ import { Consultation, ConsultationSchema } from '../database/schemas/consultati
 import { Patient, PatientSchema } from '../database/schemas/patient.schema';
 import { Visit, VisitSchema } from '../database/schemas/visit.schema';
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
+import { Admission, AdmissionSchema } from '../database/schemas/admission.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CafIntegrationModule } from '../caf-integration/caf-integration.module';
 
@@ -24,6 +25,7 @@ import { CafIntegrationModule } from '../caf-integration/caf-integration.module'
       { name: Patient.name, schema: PatientSchema },
       { name: Visit.name, schema: VisitSchema },
       { name: Payment.name, schema: PaymentSchema },
+      { name: Admission.name, schema: AdmissionSchema },
     ]),
   ],
   controllers: [PrescriptionsController],
