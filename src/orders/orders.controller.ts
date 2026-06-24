@@ -130,6 +130,12 @@ export class OrdersController {
     return this.ordersService.getOutstandingBalances(req.user?.branchId);
   }
 
+  @Get('stats/patient-outstanding')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
+  async getPatientOutstanding(@Request() req: any) {
+    return this.ordersService.getPatientOutstanding(req.user?.branchId);
+  }
+
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST)
   async findOne(@Param('id') id: string, @Request() req: any) {

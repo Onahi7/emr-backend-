@@ -144,6 +144,18 @@ export class PaymentsService {
       .exec();
   }
 
+  async findByPatient(patientId: string, branchId?: string): Promise<Payment[]> {
+    const filter: any = { patientId: new Types.ObjectId(patientId) };
+    if (branchId) filter.branchId = branchId;
+    return this.paymentModel
+      .find(filter)
+      .populate('receivedBy', 'fullName')
+      .populate('orderId', 'orderNumber total paymentStatus')
+      .populate('treatmentPlanId', 'planNumber totalAmount paymentStatus')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
   async refund(paymentId: string, reason: string): Promise<Payment> {
     const payment = await this.paymentModel.findById(paymentId);
     if (!payment) throw new NotFoundException('Payment not found');

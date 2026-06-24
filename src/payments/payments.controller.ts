@@ -53,6 +53,13 @@ export class PaymentsController {
     return this.paymentsService.findByPrescription(prescriptionId, branchId);
   }
 
+  @Get('patient/:patientId')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.PHARMACIST)
+  findByPatient(@Param('patientId') patientId: string, @Request() req: any) {
+    const branchId = req.user?.branchId;
+    return this.paymentsService.findByPatient(patientId, branchId);
+  }
+
   @Patch(':id/refund')
   @Roles(UserRoleEnum.ADMIN)
   refund(@Param('id') id: string, @Body() body: { reason: string }) {

@@ -1049,6 +1049,80 @@ export class OrdersService {
   }
 
   /**
+   * Get patient-level outstanding balances — aggregated by patient
+   */
+  async getPatientOutstanding(branchId?: string) {
+    const query: any = {
+      paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
+      status: { $ne: OrderStatusEnum.CANCELLED },
+    };
+    if (branchId) {
+      query.branchId = branchId;
+    }
+
+    const orders = await this.orderModel
+      .find(query)
+      .populate('patientId', 'patientId firstName lastName phone')
+      .lean()
+      .exec();
+
+    // Aggregate by patient
+    const patientMap = new Map<string, {
+      patientId: string;
+      patientCode: string;
+      firstName: string;
+      lastName: string;
+      phone?: string;
+      totalOwed: number;
+      orderCount: number;
+      orders: { _id: string; orderNumber: string; total: number; balance: number; paymentStatus: string; createdAt: Date }[];
+    }>();
+
+    for (const order of orders) {
+      const patient = order.patientId as any;
+      if (!patient?._id) continue;
+      const pid = patient._id.toString();
+
+      if (!patientMap.has(pid)) {
+        patientMap.set(pid, {
+          patientId: pid,
+          patientCode: patient.patientId || '',
+          firstName: patient.firstName || '',
+          lastName: patient.lastName || '',
+          phone: patient.phone,
+          totalOwed: 0,
+          orderCount: 0,
+          orders: [],
+        });
+      }
+
+      const entry = patientMap.get(pid)!;
+      const owed = order.paymentStatus === PaymentStatusEnum.PARTIAL ? (order.balance || 0) : (order.total || 0);
+      entry.totalOwed += owed;
+      entry.orderCount += 1;
+      entry.orders.push({
+        _id: order._id.toString(),
+        orderNumber: order.orderNumber,
+        total: order.total,
+        balance: order.balance,
+        paymentStatus: order.paymentStatus,
+        createdAt: order.createdAt,
+      });
+    }
+
+    const patients = Array.from(patientMap.values()).sort((a, b) => b.totalOwed - a.totalOwed);
+    const totalOutstanding = patients.reduce((sum, p) => sum + p.totalOwed, 0);
+
+    return {
+      patients,
+      summary: {
+        totalPatients: patients.length,
+        totalOutstanding,
+      },
+    };
+  }
+
+  /**
    * Add a payment to an order — supports partial / credit payments
    */
   async addPayment(

@@ -315,58 +315,79 @@ export class TreatmentPlansService {
       throw new BadRequestException('Cannot pay for a cancelled plan');
     }
 
-    const remaining = plan.totalAmount - (plan.amountPaid || 0);
-    if (dto.amount > remaining + 0.01) {
-      throw new BadRequestException(`Payment amount (Le ${dto.amount}) exceeds remaining balance (Le ${remaining})`);
-    }
-
-    // Handle wallet payment — deduct from patient wallet
-    if (dto.paymentMethod === 'wallet') {
-      const patient = await this.patientModel.findById(plan.patientId);
-      if (!patient) throw new NotFoundException('Patient not found');
-      const balanceBefore = patient.walletBalance || 0;
-      if (dto.amount > balanceBefore) {
-        throw new BadRequestException(`Insufficient wallet balance. Available: Le ${balanceBefore.toLocaleString()}`);
+    // Normalize to payments array — support both single and split
+    const payments: { amount: number; paymentMethod: string }[] = [];
+    if (dto.payments && dto.payments.length > 0) {
+      for (const p of dto.payments) {
+        payments.push({ amount: p.amount, paymentMethod: p.paymentMethod });
       }
-      patient.walletBalance = balanceBefore - dto.amount;
-      patient.walletLastUpdated = new Date();
-      await patient.save();
-      await this.walletTransactionModel.create({
-        patientId: plan.patientId,
-        type: WalletTransactionTypeEnum.PAYMENT,
-        amount: dto.amount,
-        balanceBefore,
-        balanceAfter: patient.walletBalance,
-        reference: `Payment for treatment plan ${plan.planNumber}`,
-        paymentMethod: 'wallet',
-        performedBy: new Types.ObjectId(userId),
-      });
-      this.realtimeGateway.emitToAll('wallet:updated', {
-        patientId: plan.patientId.toString(),
-        balance: patient.walletBalance,
-        type: 'payment',
-        amount: dto.amount,
-      });
+    } else if (dto.amount && dto.paymentMethod) {
+      payments.push({ amount: dto.amount, paymentMethod: dto.paymentMethod });
+    } else {
+      throw new BadRequestException('Provide either "amount" + "paymentMethod" or "payments" array');
     }
 
-    // Create payment record
-    await this.paymentModel.create({
-      branchId,
-      treatmentPlanId: plan._id,
-      visitId: plan.visitId,
-      paymentType: PaymentTypeEnum.OTHER,
-      amount: dto.amount,
-      paymentMethod: dto.paymentMethod,
-      receivedBy: new Types.ObjectId(userId),
-      notes: dto.notes || `Treatment plan ${plan.planNumber} payment`,
-    });
+    // Validate total
+    const totalPayment = payments.reduce((sum, p) => sum + p.amount, 0);
+    const remaining = plan.totalAmount - (plan.amountPaid || 0);
+    if (totalPayment > remaining + 0.01) {
+      throw new BadRequestException(`Total payment (Le ${totalPayment}) exceeds remaining balance (Le ${remaining})`);
+    }
 
-    // Update plan payment tracking
-    plan.amountPaid = Math.round(((plan.amountPaid || 0) + dto.amount) * 100) / 100;
+    // Load patient once for wallet operations
+    let patient = await this.patientModel.findById(plan.patientId);
+    if (!patient) throw new NotFoundException('Patient not found');
+
+    for (const split of payments) {
+      // Handle wallet payment — deduct from patient wallet
+      if (split.paymentMethod === 'wallet') {
+        const balanceBefore = patient.walletBalance || 0;
+        if (split.amount > balanceBefore) {
+          throw new BadRequestException(`Insufficient wallet balance. Available: Le ${balanceBefore.toLocaleString()}, requested: Le ${split.amount.toLocaleString()}`);
+        }
+        patient.walletBalance = balanceBefore - split.amount;
+        patient.walletLastUpdated = new Date();
+        await patient.save();
+        await this.walletTransactionModel.create({
+          patientId: plan.patientId,
+          type: WalletTransactionTypeEnum.PAYMENT,
+          amount: split.amount,
+          balanceBefore,
+          balanceAfter: patient.walletBalance,
+          reference: `Payment for treatment plan ${plan.planNumber}`,
+          paymentMethod: 'wallet',
+          performedBy: new Types.ObjectId(userId),
+        });
+        this.realtimeGateway.emitToAll('wallet:updated', {
+          patientId: plan.patientId.toString(),
+          balance: patient.walletBalance,
+          type: 'payment',
+          amount: split.amount,
+        });
+      }
+
+      // Create payment record for each split
+      await this.paymentModel.create({
+        branchId,
+        treatmentPlanId: plan._id,
+        visitId: plan.visitId,
+        patientId: plan.patientId,
+        paymentType: PaymentTypeEnum.OTHER,
+        amount: split.amount,
+        paymentMethod: split.paymentMethod,
+        receivedBy: new Types.ObjectId(userId),
+        notes: dto.notes || `Treatment plan ${plan.planNumber} payment`,
+      });
+
+      plan.amountPaid = Math.round(((plan.amountPaid || 0) + split.amount) * 100) / 100;
+    }
+
+    // Update plan balance
     plan.balance = Math.round((plan.totalAmount - plan.amountPaid) * 100) / 100;
 
     if (plan.balance <= 0) {
       plan.paymentStatus = TreatmentPlanPaymentStatusEnum.PAID;
+      plan.status = TreatmentPlanStatusEnum.PAID;
       plan.balance = 0;
       // Mark all child prescriptions as paid
       for (const rxId of plan.prescriptionIds) {
@@ -391,7 +412,7 @@ export class TreatmentPlansService {
     }
 
     await plan.save();
-    this.logger.log(`Treatment plan ${plan.planNumber} payment: Le ${dto.amount} (${dto.paymentMethod}), remaining: Le ${plan.balance}`);
+    this.logger.log(`Treatment plan ${plan.planNumber} payment: Le ${totalPayment} (${payments.map(p => p.paymentMethod).join(' + ')}), remaining: Le ${plan.balance}`);
     return this.findById(id);
   }
 }
