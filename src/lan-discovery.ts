@@ -43,8 +43,5 @@ export function startLanDiscovery(backendPort: number): void {
 
   server.bind(DISCOVERY_PORT, '0.0.0.0', () => {
     server.setBroadcast(true);
-    console.log(
-      `[LAN Discovery] Listening on UDP port ${DISCOVERY_PORT} (all interfaces)`,
-    );
   });
 }

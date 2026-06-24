@@ -682,11 +682,7 @@ export class PatientsService {
   // ─── Wallet System ───
 
   async getWalletBalance(patientId: string, branchId?: string): Promise<{ patientId: string; balance: number; lastUpdated: Date | null }> {
-    const query: any = { _id: patientId };
-    if (branchId) {
-      query.branchId = branchId;
-    }
-    const patient = await this.patientModel.findOne(query).select('walletBalance walletLastUpdated').lean();
+    const patient = await this.patientModel.findById(patientId).select('walletBalance walletLastUpdated').lean();
     if (!patient) throw new NotFoundException('Patient not found');
     return {
       patientId,
@@ -723,11 +719,7 @@ export class PatientsService {
   async depositToWallet(patientId: string, amount: number, notes?: string, userId?: string, paymentMethod = 'cash', branchId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Deposit amount must be positive');
     const depositedAt = new Date();
-    const query: any = { _id: patientId };
-    if (branchId) {
-      query.branchId = branchId;
-    }
-    const patient = await this.patientModel.findOne(query);
+    const patient = await this.patientModel.findById(patientId);
     if (!patient) throw new NotFoundException('Patient not found');
     const balanceBefore = patient.walletBalance || 0;
     patient.walletBalance = balanceBefore + amount;
@@ -758,11 +750,7 @@ export class PatientsService {
 
   async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string, branchId?: string): Promise<any> {
     if (amount <= 0) throw new BadRequestException('Withdrawal amount must be positive');
-    const query: any = { _id: patientId };
-    if (branchId) {
-      query.branchId = branchId;
-    }
-    const patient = await this.patientModel.findOne(query);
+    const patient = await this.patientModel.findById(patientId);
     if (!patient) throw new NotFoundException('Patient not found');
     const currentBalance = patient.walletBalance || 0;
     if (amount > currentBalance) {
