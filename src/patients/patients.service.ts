@@ -12,6 +12,7 @@ import { PatientNote } from '../database/schemas/patient-note.schema';
 import { IdSequence } from '../database/schemas/id-sequence.schema';
 import { WalletTransaction, WalletTransactionTypeEnum } from '../database/schemas/wallet-transaction.schema';
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
+import { Order, OrderStatusEnum, OrderTypeEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { CreatePatientNoteDto } from './dto/create-patient-note.dto';
@@ -28,6 +29,7 @@ export class PatientsService {
     @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
     @InjectModel(WalletTransaction.name) private walletTransactionModel: Model<WalletTransaction>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
     private realtimeGateway: RealtimeGateway,
     private lisIntegrationService: LisIntegrationService,
   ) {}
@@ -744,8 +746,148 @@ export class PatientsService {
       notes: notes || `Wallet deposit for patient ${patient.patientId || patient._id}`,
       createdAt: depositedAt,
     });
-    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: depositedAt });
-    return { patientId, balance: patient.walletBalance, type: 'deposit', amount, notes, paymentMethod, timestamp: depositedAt };
+
+    const autoApplied = await this.applyWalletToOutstandingOrders(patient, userId, branchId, notes);
+    this.realtimeGateway.emitToAll('wallet:updated', {
+      patientId,
+      balance: patient.walletBalance,
+      type: 'deposit',
+      amount,
+      notes,
+      paymentMethod,
+      autoAppliedAmount: autoApplied.totalApplied,
+      timestamp: depositedAt,
+    });
+    return {
+      patientId,
+      balance: patient.walletBalance,
+      type: 'deposit',
+      amount,
+      notes,
+      paymentMethod,
+      autoAppliedAmount: autoApplied.totalApplied,
+      autoAppliedOrders: autoApplied.orders,
+      timestamp: depositedAt,
+    };
+  }
+
+  private getPaymentTypeForOrder(orderType: OrderTypeEnum): PaymentTypeEnum {
+    if (orderType === OrderTypeEnum.LAB) return PaymentTypeEnum.LAB_ORDER;
+    if (orderType === OrderTypeEnum.PHARMACY) return PaymentTypeEnum.PHARMACY_ORDER;
+    if (orderType === OrderTypeEnum.CONSULTATION) return PaymentTypeEnum.CONSULTATION;
+    return PaymentTypeEnum.OTHER;
+  }
+
+  private getPaidStatusForOrder(orderType: OrderTypeEnum): OrderStatusEnum {
+    if (orderType === OrderTypeEnum.LAB) return OrderStatusEnum.PENDING_COLLECTION;
+    if (orderType === OrderTypeEnum.PHARMACY) return OrderStatusEnum.PAID;
+    return OrderStatusEnum.COMPLETED;
+  }
+
+  private async applyWalletToOutstandingOrders(
+    patient: Patient,
+    userId?: string,
+    branchId?: string,
+    depositNotes?: string,
+  ): Promise<{ totalApplied: number; orders: Array<{ orderId: string; orderNumber: string; amount: number }> }> {
+    const patientObjectId = patient._id as Types.ObjectId;
+    const query: any = {
+      patientId: patientObjectId,
+      paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
+      status: { $ne: OrderStatusEnum.CANCELLED },
+    };
+    if (branchId) query.branchId = branchId;
+
+    const orders = await this.orderModel.find(query).sort({ createdAt: 1 }).exec();
+    const appliedOrders: Array<{ orderId: string; orderNumber: string; amount: number }> = [];
+    let totalApplied = 0;
+
+    for (const order of orders) {
+      const walletBalance = Math.round((patient.walletBalance || 0) * 100) / 100;
+      if (walletBalance <= 0) break;
+
+      const remaining = Math.round(((order.balance ?? (order.total - (order.amountPaid || 0))) || 0) * 100) / 100;
+      if (remaining <= 0) continue;
+
+      const amountToApply = Math.min(walletBalance, remaining);
+      const balanceBefore = walletBalance;
+      patient.walletBalance = Math.round((walletBalance - amountToApply) * 100) / 100;
+      patient.walletLastUpdated = new Date();
+
+      await this.recordTransaction(
+        patientObjectId,
+        WalletTransactionTypeEnum.PAYMENT,
+        amountToApply,
+        balanceBefore,
+        patient.walletBalance,
+        branchId,
+        {
+          notes: depositNotes || `Auto-applied wallet deposit to ${order.orderNumber}`,
+          reference: `Auto payment for order ${order.orderNumber}`,
+          paymentMethod: 'wallet',
+          performedBy: userId,
+          orderId: order._id.toString(),
+        },
+      );
+
+      await this.paymentModel.create({
+        branchId,
+        orderId: order._id,
+        patientId: patientObjectId,
+        visitId: order.visitId,
+        paymentType: this.getPaymentTypeForOrder(order.orderType),
+        amount: amountToApply,
+        paymentMethod: 'wallet',
+        receivedBy: userId ? new Types.ObjectId(userId) : undefined,
+        notes: `Auto-applied from wallet deposit${depositNotes ? `: ${depositNotes}` : ''}`,
+      });
+
+      order.amountPaid = Math.round(((order.amountPaid || 0) + amountToApply) * 100) / 100;
+      order.balance = Math.round((order.total - order.amountPaid) * 100) / 100;
+      if (order.amountPaid >= order.total) {
+        order.paymentStatus = PaymentStatusEnum.PAID;
+        order.balance = 0;
+      } else {
+        order.paymentStatus = PaymentStatusEnum.PARTIAL;
+      }
+      if (order.paymentStatus === PaymentStatusEnum.PAID && order.status === OrderStatusEnum.AWAITING_PAYMENT) {
+        order.status = this.getPaidStatusForOrder(order.orderType);
+      }
+      await order.save();
+
+      totalApplied = Math.round((totalApplied + amountToApply) * 100) / 100;
+      appliedOrders.push({ orderId: order._id.toString(), orderNumber: order.orderNumber, amount: amountToApply });
+
+      const populatedOrder = await this.orderModel
+        .findById(order._id)
+        .populate('patientId', 'patientId firstName lastName walletBalance')
+        .lean()
+        .exec();
+      this.realtimeGateway.notifyOrderUpdated(populatedOrder || order);
+      this.realtimeGateway.emitToAll('wallet:updated', {
+        patientId: patientObjectId.toString(),
+        balance: patient.walletBalance,
+        type: 'payment',
+        amount: amountToApply,
+        orderId: order._id.toString(),
+      });
+
+      if (order.orderType === OrderTypeEnum.LAB && order.paymentStatus === PaymentStatusEnum.PAID) {
+        this.lisIntegrationService.syncPaymentToLis(
+          order._id.toString(),
+          order.amountPaid,
+          'wallet',
+          branchId,
+        ).catch(err => this.logger.error(`LIS payment sync failed for ${order.orderNumber}: ${err?.message}`));
+      }
+    }
+
+    if (totalApplied > 0) {
+      await patient.save();
+      this.logger.log(`Auto-applied Le ${totalApplied} from wallet to ${appliedOrders.length} outstanding order(s) for patient ${patientObjectId}`);
+    }
+
+    return { totalApplied, orders: appliedOrders };
   }
 
   async withdrawFromWallet(patientId: string, amount: number, notes?: string, userId?: string, branchId?: string): Promise<any> {

@@ -16,6 +16,11 @@ import { TestCatalog } from '../database/schemas/test-catalog.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
+import {
+  TreatmentPlan,
+  TreatmentPlanPaymentStatusEnum,
+  TreatmentPlanStatusEnum,
+} from '../database/schemas/treatment-plan.schema';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
@@ -78,6 +83,7 @@ export class OrdersService {
     @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
+    @InjectModel(TreatmentPlan.name) private treatmentPlanModel: Model<TreatmentPlan>,
     private realtimeGateway: RealtimeGateway,
     private lisIntegrationService: LisIntegrationService,
   ) {}
@@ -915,8 +921,9 @@ export class OrdersService {
       orderQuery.branchId = normalizedBranchId;
       paymentQuery.branchId = normalizedBranchId;
     }
+    const cashCollectionQuery = { ...paymentQuery, paymentMethod: { $ne: 'wallet' } };
 
-    const [totalOrders, paidOrders, pendingOrders, totalRevenue, collectedByMethod] =
+    const [totalOrders, paidOrders, pendingOrders, billedOrdersRevenue, collectedRevenue, collectedByMethod] =
       await Promise.all([
         this.orderModel.countDocuments(orderQuery),
         this.orderModel.countDocuments({
@@ -932,7 +939,11 @@ export class OrdersService {
           { $group: { _id: null, total: { $sum: '$total' } } },
         ]),
         this.paymentModel.aggregate([
-          { $match: paymentQuery },
+          { $match: cashCollectionQuery },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        this.paymentModel.aggregate([
+          { $match: cashCollectionQuery },
           { $group: { _id: '$paymentMethod', total: { $sum: '$amount' } } },
         ]),
       ]);
@@ -944,14 +955,16 @@ export class OrdersService {
       paidRevenue += m.total;
     }
 
-    const totalRev = totalRevenue[0]?.total || 0;
+    const collectedTotal = collectedRevenue[0]?.total || 0;
+    const billedRevenue = billedOrdersRevenue[0]?.total || 0;
     return {
       totalOrders,
       paidOrders,
       pendingOrders,
-      totalRevenue: totalRev,
-      paidRevenue,
-      pendingRevenue: totalRev - paidRevenue,
+      totalRevenue: collectedTotal,
+      billedRevenue,
+      paidRevenue: collectedTotal,
+      pendingRevenue: Math.max(0, billedRevenue - collectedTotal),
       cashCollected: methodTotals.cash,
       orangeMoneyCollected: methodTotals.orange_money,
       afrimoneyCollected: methodTotals.afrimoney,
@@ -972,6 +985,7 @@ export class OrdersService {
     if (branchId) {
       matchQuery.branchId = this.normalizeObjectId(branchId);
     }
+    matchQuery.paymentMethod = { $ne: 'wallet' };
 
     const dailyIncome = await this.paymentModel.aggregate([
       { $match: matchQuery },
@@ -1060,11 +1074,33 @@ export class OrdersService {
       query.branchId = branchId;
     }
 
-    const orders = await this.orderModel
+    const [orders, treatmentPlans] = await Promise.all([
+      this.orderModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName phone')
       .lean()
-      .exec();
+        .exec(),
+      this.treatmentPlanModel
+        .find({
+          paymentStatus: {
+            $in: [
+              TreatmentPlanPaymentStatusEnum.UNPAID,
+              TreatmentPlanPaymentStatusEnum.PARTIAL,
+            ],
+          },
+          status: {
+            $in: [
+              TreatmentPlanStatusEnum.SENT_TO_RECEPTION,
+              TreatmentPlanStatusEnum.PAID,
+            ],
+          },
+          balance: { $gt: 0 },
+          ...(branchId ? { branchId } : {}),
+        })
+        .populate('patientId', 'patientId firstName lastName phone')
+        .lean()
+        .exec(),
+    ]);
 
     // Aggregate by patient
     const patientMap = new Map<string, {
@@ -1074,13 +1110,22 @@ export class OrdersService {
       lastName: string;
       phone?: string;
       totalOwed: number;
+      billCount: number;
       orderCount: number;
-      orders: { _id: string; orderNumber: string; total: number; balance: number; paymentStatus: string; createdAt: Date }[];
+      treatmentPlanCount: number;
+      orders: {
+        _id: string;
+        orderNumber: string;
+        total: number;
+        balance: number;
+        paymentStatus: string;
+        createdAt: Date;
+        billType: 'order' | 'treatment_plan';
+      }[];
     }>();
 
-    for (const order of orders) {
-      const patient = order.patientId as any;
-      if (!patient?._id) continue;
+    const ensurePatientEntry = (patient: any) => {
+      if (!patient?._id) return undefined;
       const pid = patient._id.toString();
 
       if (!patientMap.has(pid)) {
@@ -1091,14 +1136,22 @@ export class OrdersService {
           lastName: patient.lastName || '',
           phone: patient.phone,
           totalOwed: 0,
+          billCount: 0,
           orderCount: 0,
+          treatmentPlanCount: 0,
           orders: [],
         });
       }
 
-      const entry = patientMap.get(pid)!;
+      return patientMap.get(pid)!;
+    };
+
+    for (const order of orders) {
+      const entry = ensurePatientEntry(order.patientId as any);
+      if (!entry) continue;
       const owed = order.paymentStatus === PaymentStatusEnum.PARTIAL ? (order.balance || 0) : (order.total || 0);
       entry.totalOwed += owed;
+      entry.billCount += 1;
       entry.orderCount += 1;
       entry.orders.push({
         _id: order._id.toString(),
@@ -1107,6 +1160,26 @@ export class OrdersService {
         balance: order.balance,
         paymentStatus: order.paymentStatus,
         createdAt: order.createdAt,
+        billType: 'order',
+      });
+    }
+
+    for (const plan of treatmentPlans) {
+      const entry = ensurePatientEntry(plan.patientId as any);
+      if (!entry) continue;
+      const owed = Math.max(0, Number(plan.balance ?? (plan.totalAmount - (plan.amountPaid || 0))) || 0);
+      if (owed <= 0) continue;
+      entry.totalOwed += owed;
+      entry.billCount += 1;
+      entry.treatmentPlanCount += 1;
+      entry.orders.push({
+        _id: plan._id.toString(),
+        orderNumber: plan.planNumber,
+        total: plan.totalAmount,
+        balance: plan.balance,
+        paymentStatus: plan.paymentStatus,
+        createdAt: plan.createdAt,
+        billType: 'treatment_plan',
       });
     }
 

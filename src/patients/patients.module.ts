@@ -16,6 +16,7 @@ import {
   WalletTransactionSchema,
 } from '../database/schemas/wallet-transaction.schema';
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
+import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { LisIntegrationModule } from '../lis-integration/lis-integration.module';
 
@@ -27,6 +28,7 @@ import { LisIntegrationModule } from '../lis-integration/lis-integration.module'
       { name: IdSequence.name, schema: IdSequenceSchema },
       { name: WalletTransaction.name, schema: WalletTransactionSchema },
       { name: Payment.name, schema: PaymentSchema },
+      { name: Order.name, schema: OrderSchema },
     ]),
     RealtimeModule,
     LisIntegrationModule,

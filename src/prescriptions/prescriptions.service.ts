@@ -148,6 +148,39 @@ export class PrescriptionsService {
     return `${days} days`;
   }
 
+  private normalizeCafProductForDispense(product: any) {
+    const defaultPack = product.packSizes?.[0];
+    const unitPrice =
+      defaultPack && defaultPack.quantityPerPack > 0
+        ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
+        : product.suggestedRetailPrice || product.basePrice || 0;
+
+    return {
+      _id: product._id,
+      name: product.name,
+      baseUnit: product.unit || 'unit',
+      unitPrice,
+      stockQuantity:
+        Number(product.quantityAvailable ?? product.calculatedStock ?? product.availableStock ?? product.stockQuantity ?? 0) || 0,
+      isCafSourced: true,
+      packSizes: product.packSizes?.map((pack) => ({
+        name: pack.name,
+        unit: pack.unit,
+        unitsPerPack: pack.unitsPerPack ?? pack.quantityPerPack,
+        sellingPrice: pack.sellingPrice,
+      })) || [],
+    };
+  }
+
+  private async resolveMedicationForDispense(medicationId: Types.ObjectId | string) {
+    const localMedication = await this.medicationModel.findById(medicationId).lean();
+    if (localMedication) return localMedication as any;
+
+    if (!this.cafIntegrationService.isConfigured()) return null;
+    const cafProduct = await this.cafIntegrationService.getProductById(medicationId.toString());
+    return cafProduct ? this.normalizeCafProductForDispense(cafProduct) : null;
+  }
+
   /**
    * Auto-generate patient-facing label instructions from structured fields
    * when the doctor hasn't written them explicitly.
@@ -437,7 +470,7 @@ export class PrescriptionsService {
       const actualMedicationId = override?.substituteMedicationId
         ? new Types.ObjectId(override.substituteMedicationId)
         : item.medicationId;
-      const medication = await this.medicationModel.findById(actualMedicationId).lean();
+      const medication = await this.resolveMedicationForDispense(actualMedicationId);
       const medicationName = medication?.name || item.medicationName;
       const isSubstitute = !!override?.substituteMedicationId;
 

@@ -240,7 +240,7 @@ export class AdminService {
       this.orderModel.countDocuments({ ...dayFilter, orderType: OrderTypeEnum.PHARMACY }),
       this.prescriptionModel.countDocuments({ ...dayFilter }),
       this.paymentModel.aggregate([
-        { $match: dayFilter },
+        { $match: { ...dayFilter, paymentMethod: { $ne: 'wallet' } } },
         {
           $group: {
             _id: '$paymentType',
@@ -327,11 +327,12 @@ export class AdminService {
     start.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
+    const cashCollectionMatch = { createdAt: { $gte: start, $lte: end }, paymentMethod: { $ne: 'wallet' } };
 
     const [dailyRevenue, revenueByType, revenueByMethod, topPayingPatients] = await Promise.all([
       // Daily revenue breakdown
       this.paymentModel.aggregate([
-        { $match: { createdAt: { $gte: start, $lte: end } } },
+        { $match: cashCollectionMatch },
         {
           $group: {
             _id: {
@@ -351,17 +352,17 @@ export class AdminService {
       ]),
       // Revenue by payment type
       this.paymentModel.aggregate([
-        { $match: { createdAt: { $gte: start, $lte: end } } },
+        { $match: cashCollectionMatch },
         { $group: { _id: '$paymentType', total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       // Revenue by payment method
       this.paymentModel.aggregate([
-        { $match: { createdAt: { $gte: start, $lte: end } } },
+        { $match: cashCollectionMatch },
         { $group: { _id: '$paymentMethod', total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       // Top paying patients (via visits)
       this.paymentModel.aggregate([
-        { $match: { createdAt: { $gte: start, $lte: end }, visitId: { $exists: true } } },
+        { $match: { ...cashCollectionMatch, visitId: { $exists: true } } },
         { $group: { _id: '$visitId', total: { $sum: '$amount' } } },
         { $sort: { total: -1 } },
         { $limit: 10 },
@@ -454,6 +455,7 @@ export class AdminService {
           $match: {
             receivedBy: { $exists: true },
             createdAt: { $gte: start, $lte: end },
+            paymentMethod: { $ne: 'wallet' },
           },
         },
         {

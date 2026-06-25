@@ -18,6 +18,45 @@ export class MedicationsController {
     private readonly cafIntegrationService: CafIntegrationService,
   ) {}
 
+  private normalizeCafMedication(p: any) {
+    const stockQuantity =
+      Number(p.quantityAvailable ?? p.calculatedStock ?? p.availableStock ?? p.stockQuantity ?? 0) || 0;
+    const defaultPack = p.packSizes?.[0];
+    const perBaseUnitPrice =
+      defaultPack && defaultPack.quantityPerPack > 0
+        ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
+        : (p.suggestedRetailPrice || p.basePrice || 0);
+
+    return {
+      _id: p._id,
+      medicationCode: p.sku,
+      name: p.name,
+      genericName: p.brand,
+      category: p.category,
+      stockQuantity,
+      quantityAvailable: stockQuantity,
+      unit: p.unit,
+      unitPrice: perBaseUnitPrice,
+      baseUnit: p.unit || 'tablet',
+      sellMode: p.packSizes && p.packSizes.length > 0 ? 'both' : 'individual',
+      isActive: p.isActive,
+      dosageForm: p.unit,
+      strength: p.packSizes?.[0]?.name || '',
+      packSizes: p.packSizes?.map((ps) => ({
+        name: ps.name,
+        unit: ps.unit,
+        unitsPerPack: ps.unitsPerPack ?? ps.quantityPerPack,
+        quantityPerPack: ps.quantityPerPack ?? ps.unitsPerPack,
+        sellingPrice: ps.sellingPrice,
+        barcode: ps.barcode,
+      })) || [],
+      isCafSourced: true,
+      cafProductId: p._id,
+      __cafProduct: true,
+      __cafBranchId: this.cafIntegrationService.getBranchId(),
+    };
+  }
+
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.INVENTORY_MANAGER)
   create(@Body() createMedicationDto: CreateMedicationDto) {
@@ -25,7 +64,7 @@ export class MedicationsController {
   }
 
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async findAll(@Query('category') category?: MedicationCategoryEnum, @Query('lowStock') lowStock?: boolean) {
     if (lowStock) {
       return this.medicationsService.findLowStock();
@@ -43,44 +82,7 @@ export class MedicationsController {
           this.logger.warn('CAF getProducts returned 0 results, trying search fallback');
           cafProducts = await this.cafIntegrationService.searchProducts('a');
         }
-        const cafMeds = cafProducts.map((p) => {
-          // Derive per-base-unit price from the default pack (or first pack).
-          // If no packs, fall back to the product's suggested/base price as-is.
-          const defaultPack = p.packSizes?.[0];
-          const perBaseUnitPrice =
-            defaultPack && defaultPack.quantityPerPack > 0
-              ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
-              : (p.suggestedRetailPrice || p.basePrice || 0);
-          return {
-            _id: p._id,
-            medicationCode: p.sku,
-            name: p.name,
-            genericName: p.brand,
-            category: p.category,
-            stockQuantity: p.quantityAvailable,
-            unit: p.unit,
-            // per-base-unit price (for individual-mode dispensing)
-            unitPrice: perBaseUnitPrice,
-            // small base unit like "tablet", "ampule"
-            baseUnit: p.unit || 'tablet',
-            // CAF products are always pack-first (selling packs is the norm in pharmacy)
-            sellMode: p.packSizes && p.packSizes.length > 0 ? 'both' : 'individual',
-            isActive: p.isActive,
-            dosageForm: p.unit,
-            strength: p.packSizes?.[0]?.name || '',
-            packSizes: p.packSizes?.map((ps) => ({
-              name: ps.name,
-              unit: ps.unit,
-              unitsPerPack: ps.quantityPerPack, // renamed for consistency with EMR schema
-              sellingPrice: ps.sellingPrice,
-              barcode: ps.barcode,
-            })) || [],
-            isCafSourced: true,
-            cafProductId: p._id,
-            __cafProduct: true,
-            __cafBranchId: this.cafIntegrationService.getBranchId(),
-          };
-        });
+        const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p));
         this.logger.log(`Loaded ${cafMeds.length} CAF products`);
         return [...cafMeds, ...localMeds];
       } catch (error: any) {
@@ -91,7 +93,7 @@ export class MedicationsController {
   }
 
   @Get('search')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async search(@Query('q') searchTerm: string) {
     const localResults = await this.medicationsService.search(searchTerm);
 
@@ -99,39 +101,7 @@ export class MedicationsController {
       try {
         const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm);
         if (cafProducts.length > 0) {
-          const cafMeds = cafProducts.map((p) => {
-            const defaultPack = p.packSizes?.[0];
-            const perBaseUnitPrice =
-              defaultPack && defaultPack.quantityPerPack > 0
-                ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
-                : (p.suggestedRetailPrice || p.basePrice || 0);
-            return {
-              _id: p._id,
-              medicationCode: p.sku,
-              name: p.name,
-              genericName: p.brand,
-              category: p.category,
-              stockQuantity: p.quantityAvailable,
-              unit: p.unit,
-              unitPrice: perBaseUnitPrice,
-              baseUnit: p.unit || 'tablet',
-              sellMode: p.packSizes && p.packSizes.length > 0 ? 'both' : 'individual',
-              isActive: p.isActive,
-              dosageForm: p.unit,
-              strength: p.packSizes?.[0]?.name || '',
-              packSizes: p.packSizes?.map((ps) => ({
-                name: ps.name,
-                unit: ps.unit,
-                unitsPerPack: ps.quantityPerPack,
-                sellingPrice: ps.sellingPrice,
-                barcode: ps.barcode,
-              })) || [],
-              isCafSourced: true,
-              cafProductId: p._id,
-              __cafProduct: true,
-              __cafBranchId: this.cafIntegrationService.getBranchId(),
-            };
-          });
+          const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p));
           this.logger.log(`Search merged ${cafMeds.length} CAF + ${localResults.length} local results for "${searchTerm}"`);
           return [...cafMeds, ...localResults];
         }
@@ -143,7 +113,7 @@ export class MedicationsController {
   }
 
   @Get('caf-products')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async listCafProducts(
     @Query('search') search?: string,
     @Query('category') category?: string,
@@ -176,15 +146,23 @@ export class MedicationsController {
   }
 
   @Get('code/:code')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   findByCode(@Param('code') code: string) {
     return this.medicationsService.findByCode(code);
   }
 
   @Get(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string) {
-    return this.medicationsService.findById(id);
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
+  async findOne(@Param('id') id: string) {
+    try {
+      return await this.medicationsService.findById(id);
+    } catch (error) {
+      if (this.cafIntegrationService.isConfigured()) {
+        const product = await this.cafIntegrationService.getProductById(id);
+        if (product) return this.normalizeCafMedication(product);
+      }
+      throw error;
+    }
   }
 
   @Patch(':id')

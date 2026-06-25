@@ -7,6 +7,9 @@ export class CafProduct {
   brand: string;
   unit: string;
   quantityAvailable: number;
+  calculatedStock?: number;
+  availableStock?: number;
+  stockQuantity?: number;
   reorderLevel: number;
   basePrice: number;
   suggestedRetailPrice: number;

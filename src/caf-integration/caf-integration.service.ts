@@ -305,6 +305,31 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
+  async getProductById(productId: string): Promise<CafProduct | null> {
+    if (!this.isConfigured()) return null;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.ensureAuthenticated(attempt > 0);
+        const { data } = await firstValueFrom(
+          this.httpService.get(`${this.baseUrl}/products/${productId}`, {
+            headers: this.headers,
+          }),
+        );
+        return data.data || data;
+      } catch (error: any) {
+        if (error.response?.status === 401 && attempt === 0) {
+          this.invalidateAuth();
+          continue;
+        }
+        this.logger.error(`CAF product lookup failed: ${error.message}`);
+        return null;
+      }
+    }
+
+    return null;
+  }
+
   async getLowStockAlerts(branchId?: string): Promise<any[]> {
     if (!this.isConfigured()) return [];
     await this.ensureAuthenticated();
@@ -334,7 +359,12 @@ export class CafIntegrationService implements OnModuleInit {
           headers: this.headers,
         }),
       );
-      const productStock = productRes?.data?.data?.quantityAvailable ?? productRes?.data?.quantityAvailable;
+      const product = productRes?.data?.data ?? productRes?.data;
+      const productStock =
+        product?.quantityAvailable ??
+        product?.calculatedStock ??
+        product?.availableStock ??
+        product?.stockQuantity;
       if (typeof productStock === 'number') {
         return productStock;
       }
@@ -345,7 +375,7 @@ export class CafIntegrationService implements OnModuleInit {
           params: { branchId: effectiveBranchId, productId },
         }),
       );
-      return data?.data?.calculatedStock ?? data?.data?.quantityAvailable ?? 0;
+      return data?.data?.calculatedStock ?? data?.data?.quantityAvailable ?? data?.data?.availableStock ?? 0;
     } catch (error: any) {
       this.logger.error(`CAF stock check failed: ${error.message}`);
       return 0;

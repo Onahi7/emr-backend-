@@ -9,6 +9,7 @@ import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog.schema';
 import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
 import { Visit, VisitSchema } from '../database/schemas/visit.schema';
+import { TreatmentPlan, TreatmentPlanSchema } from '../database/schemas/treatment-plan.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { LisIntegrationModule } from '../lis-integration/lis-integration.module';
 
@@ -22,6 +23,7 @@ import { LisIntegrationModule } from '../lis-integration/lis-integration.module'
       { name: TestCatalog.name, schema: TestCatalogSchema },
       { name: Doctor.name, schema: DoctorSchema },
       { name: Visit.name, schema: VisitSchema },
+      { name: TreatmentPlan.name, schema: TreatmentPlanSchema },
     ]),
     RealtimeModule,
     LisIntegrationModule,
