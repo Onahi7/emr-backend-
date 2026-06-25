@@ -181,6 +181,17 @@ export class PrescriptionsService {
     return cafProduct ? this.normalizeCafProductForDispense(cafProduct) : null;
   }
 
+  private getDoseSchedule(item: any): { dosesPerDay: number; durationDays: number; totalDoses: number; hoursPerDose: number } {
+    const dosesPerDay = Number(item?.dosesPerDay) > 0 ? Number(item.dosesPerDay) : 1;
+    const durationDays = Number(item?.durationDays) > 0 ? Number(item.durationDays) : 1;
+    return {
+      dosesPerDay,
+      durationDays,
+      totalDoses: dosesPerDay * durationDays,
+      hoursPerDose: 24 / dosesPerDay,
+    };
+  }
+
   /**
    * Auto-generate patient-facing label instructions from structured fields
    * when the doctor hasn't written them explicitly.
@@ -804,14 +815,14 @@ export class PrescriptionsService {
       // Use the first item's calculation (prescriptions typically have one medication)
       const firstItem = prescription.items?.[0];
       if (firstItem) {
-        prescription.totalDoses = firstItem.dosesPerDay * firstItem.durationDays;
+        prescription.totalDoses = this.getDoseSchedule(firstItem).totalDoses;
       }
     }
 
     // Calculate next due time
     const firstItem = prescription.items?.[0];
     if (firstItem && prescription.dosesGiven < prescription.totalDoses) {
-      const hoursPerDose = 24 / firstItem.dosesPerDay;
+      const { hoursPerDose } = this.getDoseSchedule(firstItem);
       prescription.nextDueAt = new Date(Date.now() + hoursPerDose * 60 * 60 * 1000);
     }
 
@@ -831,7 +842,7 @@ export class PrescriptionsService {
     // Also record in admission medicationLog if patient is admitted
     const admission = await this.admissionModel.findOne({
       patientId: prescription.patientId,
-      status: { $in: ['active', 'observation'] },
+      status: AdmissionStatusEnum.ADMITTED,
     }).sort({ createdAt: -1 }).exec();
 
     if (admission) {
@@ -891,7 +902,7 @@ export class PrescriptionsService {
 
       // Check if patient is admitted
       const admission = await this.admissionModel.findOne({
-        patientId: rx.patientId,
+        patientId: patient?._id || rx.patientId,
         status: AdmissionStatusEnum.ADMITTED,
       }).sort({ createdAt: -1 }).lean().exec();
 
@@ -940,7 +951,7 @@ export class PrescriptionsService {
     const isInjectable = ['intravenous', 'intramuscular', 'subcutaneous'].includes(route);
 
     // Calculate total doses
-    prescription.totalDoses = firstItem.dosesPerDay * firstItem.durationDays;
+    prescription.totalDoses = this.getDoseSchedule(firstItem).totalDoses;
     prescription.adminRoute = route;
 
     // Only require administration tracking for injectables or admitted patients
