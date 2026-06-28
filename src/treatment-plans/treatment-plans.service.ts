@@ -92,6 +92,7 @@ export class TreatmentPlansService {
               durationDays: item.durationDays,
               quantity,
               route: (item.route as any) || (item.type === TreatmentPlanItemTypeEnum.IV ? 'intravenous' : 'oral'),
+              instructions: item.notes,
             }],
           },
           userId,

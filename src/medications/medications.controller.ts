@@ -20,12 +20,12 @@ export class MedicationsController {
 
   private normalizeCafMedication(p: any) {
     const stockQuantity =
-      Number(p.quantityAvailable ?? p.calculatedStock ?? p.availableStock ?? p.stockQuantity ?? 0) || 0;
+      Number(p.quantityAvailable ?? p.stockAvailable ?? p.stock ?? p.calculatedStock ?? p.availableStock ?? p.stockQuantity ?? 0) || 0;
     const defaultPack = p.packSizes?.[0];
     const perBaseUnitPrice =
       defaultPack && defaultPack.quantityPerPack > 0
         ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
-        : (p.suggestedRetailPrice || p.basePrice || 0);
+        : (p.suggestedRetailPrice || p.sellingPrice || p.price || p.basePrice || 0);
 
     return {
       _id: p._id,
@@ -35,9 +35,11 @@ export class MedicationsController {
       category: p.category,
       stockQuantity,
       quantityAvailable: stockQuantity,
+      stockAvailable: stockQuantity,
+      stock: stockQuantity,
       unit: p.unit,
       unitPrice: perBaseUnitPrice,
-      baseUnit: p.unit || 'tablet',
+      baseUnit: p.unit || 'unit',
       sellMode: p.packSizes && p.packSizes.length > 0 ? 'both' : 'individual',
       isActive: p.isActive,
       dosageForm: p.unit,

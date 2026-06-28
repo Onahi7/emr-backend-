@@ -102,7 +102,7 @@ export class PrescriptionsService {
             price =
               defaultPack && defaultPack.quantityPerPack > 0
                 ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
-                : cafMed.suggestedRetailPrice || cafMed.basePrice || 0;
+                : cafMed.suggestedRetailPrice || cafMed.sellingPrice || cafMed.price || cafMed.basePrice || 0;
           }
         } catch {
           // ignore — fall through with price=0
@@ -153,7 +153,7 @@ export class PrescriptionsService {
     const unitPrice =
       defaultPack && defaultPack.quantityPerPack > 0
         ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
-        : product.suggestedRetailPrice || product.basePrice || 0;
+        : product.suggestedRetailPrice || product.sellingPrice || product.price || product.basePrice || 0;
 
     return {
       _id: product._id,
@@ -161,7 +161,7 @@ export class PrescriptionsService {
       baseUnit: product.unit || 'unit',
       unitPrice,
       stockQuantity:
-        Number(product.quantityAvailable ?? product.calculatedStock ?? product.availableStock ?? product.stockQuantity ?? 0) || 0,
+        Number(product.quantityAvailable ?? product.stockAvailable ?? product.stock ?? product.calculatedStock ?? product.availableStock ?? product.stockQuantity ?? 0) || 0,
       isCafSourced: true,
       packSizes: product.packSizes?.map((pack) => ({
         name: pack.name,

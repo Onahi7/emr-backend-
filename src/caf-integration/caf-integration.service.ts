@@ -362,6 +362,8 @@ export class CafIntegrationService implements OnModuleInit {
       const product = productRes?.data?.data ?? productRes?.data;
       const productStock =
         product?.quantityAvailable ??
+        product?.stockAvailable ??
+        product?.stock ??
         product?.calculatedStock ??
         product?.availableStock ??
         product?.stockQuantity;
@@ -375,7 +377,7 @@ export class CafIntegrationService implements OnModuleInit {
           params: { branchId: effectiveBranchId, productId },
         }),
       );
-      return data?.data?.calculatedStock ?? data?.data?.quantityAvailable ?? data?.data?.availableStock ?? 0;
+      return data?.data?.calculatedStock ?? data?.data?.quantityAvailable ?? data?.data?.stockAvailable ?? data?.data?.stock ?? data?.data?.availableStock ?? 0;
     } catch (error: any) {
       this.logger.error(`CAF stock check failed: ${error.message}`);
       return 0;

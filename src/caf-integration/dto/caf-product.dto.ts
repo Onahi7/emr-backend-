@@ -7,12 +7,17 @@ export class CafProduct {
   brand: string;
   unit: string;
   quantityAvailable: number;
+  stock?: number;
+  stockAvailable?: number;
   calculatedStock?: number;
   availableStock?: number;
   stockQuantity?: number;
   reorderLevel: number;
   basePrice: number;
   suggestedRetailPrice: number;
+  price?: number;
+  sellingPrice?: number;
+  costPrice?: number;
   requiresPrescription: boolean;
   isControlled: boolean;
   isActive: boolean;
