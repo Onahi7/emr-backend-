@@ -42,6 +42,11 @@ export class TreatmentPlanItemDto {
   durationDays?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(1)
+  quantity?: number;
+
+  @IsOptional()
   @IsString()
   route?: string;
 

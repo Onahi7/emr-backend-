@@ -79,7 +79,7 @@ export class TreatmentPlansService {
         if (!item.medicationId || !item.medicationName || !item.strengthPerDose || !item.dosesPerDay || !item.durationDays) {
           throw new BadRequestException(`Drug/IV items require medicationId, medicationName, strengthPerDose, dosesPerDay, durationDays`);
         }
-        const quantity = item.dosesPerDay * item.durationDays;
+        const quantity = item.quantity && item.quantity > 0 ? item.quantity : item.dosesPerDay * item.durationDays;
         const rx = await this.prescriptionsService.create(
           {
             patientId: dto.patientId,
