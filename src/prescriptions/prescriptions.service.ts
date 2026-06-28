@@ -164,10 +164,12 @@ export class PrescriptionsService {
         Number(product.quantityAvailable ?? product.stockAvailable ?? product.stock ?? product.calculatedStock ?? product.availableStock ?? product.stockQuantity ?? 0) || 0,
       isCafSourced: true,
       packSizes: product.packSizes?.map((pack) => ({
+        code: pack.code,
         name: pack.name,
         unit: pack.unit,
         unitsPerPack: pack.unitsPerPack ?? pack.quantityPerPack,
         sellingPrice: pack.sellingPrice,
+        barcode: pack.barcode,
       })) || [],
     };
   }
@@ -444,10 +446,6 @@ export class PrescriptionsService {
       throw new BadRequestException('Prescription already dispensed');
     }
 
-    if (!prescription.isPaid) {
-      throw new BadRequestException('Prescription must be paid before dispensing');
-    }
-
     // Build the per-item dispense plan: merge prescription items with receptionist
     // selections (dispense mode, pack, sell units, substitute).
     type DispenseLine = {
@@ -463,6 +461,13 @@ export class PrescriptionsService {
       // Pricing
       pricePerSellUnit: number;
       lineTotal: number;
+      cafPackSize?: {
+        code?: string;
+        name: string;
+        unit: string;
+        quantityPerPack: number;
+        barcode?: string;
+      };
       // Substitute tracking
       isSubstitute: boolean;
     };
@@ -489,6 +494,7 @@ export class PrescriptionsService {
       let baseUnits: number;
       let pricePerSellUnit: number;
       let packName: string | undefined;
+      let cafPackSize: DispenseLine['cafPackSize'];
 
       if (dispenseMode === 'pack') {
         if (
@@ -505,6 +511,13 @@ export class PrescriptionsService {
         baseUnits = sellUnits * pack.unitsPerPack;
         pricePerSellUnit = pack.sellingPrice;
         packName = pack.name;
+        cafPackSize = {
+          code: (pack as any).code,
+          name: pack.name,
+          unit: pack.unit,
+          quantityPerPack: pack.unitsPerPack,
+          barcode: pack.barcode,
+        };
       } else {
         // Individual mode: sell units = base units, price per base unit
         sellUnits = override?.sellUnits ?? item.quantity;
@@ -540,6 +553,7 @@ export class PrescriptionsService {
         medicationName,
         pricePerSellUnit,
         lineTotal,
+        cafPackSize,
         isSubstitute,
       });
     }
@@ -610,6 +624,8 @@ export class PrescriptionsService {
         items: cafOnlyLines.map((l) => ({
           productId: l.medicationId.toString(),
           quantity: l.sellUnits,
+          quantityInBaseUnits: l.baseUnits,
+          ...(l.cafPackSize ? { packSize: l.cafPackSize } : {}),
         })),
         patientName,
         prescriptionRef: prescription.prescriptionNumber,
@@ -623,9 +639,11 @@ export class PrescriptionsService {
 
     // === Mark prescription dispensed ===
     prescription.status = PrescriptionStatusEnum.DISPENSED;
+    prescription.isPaid = true;
     prescription.dispensedBy = new Types.ObjectId(dispensedBy);
     prescription.dispensedAt = new Date();
     prescription.actualTotalAmount = actualTotal;
+    prescription.totalAmount = actualTotal;
     if (dto?.dispensingNotes) {
       prescription.dispensingNotes = dto.dispensingNotes;
     }
@@ -634,6 +652,32 @@ export class PrescriptionsService {
     if (cafOnlyLines.length > 0) prescription.hasCafItems = true;
 
     const savedPrescription = await prescription.save();
+
+    const existingPayment = await this.paymentModel.findOne({
+      prescriptionId: savedPrescription._id,
+      paymentType: PaymentTypeEnum.PRESCRIPTION,
+      isRefunded: { $ne: true },
+    });
+
+    if (existingPayment) {
+      existingPayment.amount = actualTotal;
+      existingPayment.paymentMethod = dto?.paymentMethod || existingPayment.paymentMethod || 'cash';
+      existingPayment.notes = `Prescription ${savedPrescription.prescriptionNumber} adjusted to actual dispensed total`;
+      await existingPayment.save();
+    } else {
+      await this.paymentModel.create({
+        branchId: savedPrescription.branchId,
+        paymentType: PaymentTypeEnum.PRESCRIPTION,
+        amount: actualTotal,
+        paymentMethod: dto?.paymentMethod || 'cash',
+        visitId: savedPrescription.visitId,
+        prescriptionId: savedPrescription._id,
+        receivedBy: dispensedBy ? new Types.ObjectId(dispensedBy) : undefined,
+        notes: `Prescription ${savedPrescription.prescriptionNumber} dispensed and paid`,
+        isRefunded: false,
+      });
+    }
+
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DOCTOR_REVIEW);
     const populatedPrescription = await this.findById(savedPrescription._id.toString());
 

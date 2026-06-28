@@ -423,7 +423,18 @@ export class CafIntegrationService implements OnModuleInit {
 
   async dispensePrescription(params: {
     shiftId: string;
-    items: Array<{ productId: string; quantity: number }>;
+    items: Array<{
+      productId: string;
+      quantity: number;
+      quantityInBaseUnits?: number;
+      packSize?: {
+        code?: string;
+        name: string;
+        unit: string;
+        quantityPerPack: number;
+        barcode?: string;
+      };
+    }>;
     patientName?: string;
     patientId?: string;
     prescriptionRef: string;
@@ -438,6 +449,8 @@ export class CafIntegrationService implements OnModuleInit {
       productId: item.productId,
       quantity: item.quantity,
       unitPrice: 0,
+      ...(item.quantityInBaseUnits ? { quantityInBaseUnits: item.quantityInBaseUnits } : {}),
+      ...(item.packSize ? { packSize: item.packSize } : {}),
     }));
 
     const { data } = await firstValueFrom(
