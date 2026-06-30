@@ -13,6 +13,8 @@ import { RapidTestResultDto } from './dto/rapid-test-result.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OrdersService } from '../orders/orders.service';
 import { OrderTypeEnum, PriorityEnum, OrderStatusEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
+import { ServicePriceCodeEnum } from '../database/schemas/service-price.schema';
+import { ServicePricesService } from '../service-prices/service-prices.service';
 
 @Injectable()
 export class VisitsService {
@@ -27,6 +29,7 @@ export class VisitsService {
     @InjectModel(Queue.name) private queueModel: Model<Queue>,
     private realtimeGateway: RealtimeGateway,
     private ordersService: OrdersService,
+    private servicePricesService: ServicePricesService,
   ) {}
 
   private async generateVisitNumber(): Promise<string> {
@@ -71,13 +74,19 @@ export class VisitsService {
     const effectiveDoctorId = serviceType === 'specialist_consultation' && specialistId
       ? specialistId
       : doctorId;
+    const serviceCode = (serviceType || ServicePriceCodeEnum.NORMAL_CONSULTATION) as ServicePriceCodeEnum;
+    const configuredBaseFee = await this.servicePricesService.getPrice(branchId, serviceCode);
+    const configuredRapidFee =
+      (rapidTestsRequested?.includes('malaria') ? await this.servicePricesService.getPrice(branchId, ServicePriceCodeEnum.RAPID_MALARIA) : 0) +
+      (rapidTestsRequested?.includes('typhoid') ? await this.servicePricesService.getPrice(branchId, ServicePriceCodeEnum.RAPID_TYPHOID) : 0);
+    const configuredConsultationFee = Math.round((configuredBaseFee + configuredRapidFee) * 100) / 100;
 
     const visitData: any = {
       visitNumber,
       patientId: new Types.ObjectId(patientId),
       doctorId: effectiveDoctorId ? new Types.ObjectId(effectiveDoctorId) : undefined,
       visitType: visitType || VisitTypeEnum.NEW,
-      consultationFee,
+      consultationFee: configuredConsultationFee || consultationFee,
       chiefComplaint,
       notes,
       temperature: temperature || undefined,

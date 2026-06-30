@@ -10,6 +10,7 @@ import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { Queue, QueueSchema } from '../database/schemas/queue.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { OrdersModule } from '../orders/orders.module';
+import { ServicePricesModule } from '../service-prices/service-prices.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { OrdersModule } from '../orders/orders.module';
     ]),
     RealtimeModule,
     OrdersModule,
+    ServicePricesModule,
   ],
   controllers: [VisitsController],
   providers: [VisitsService],
