@@ -915,6 +915,7 @@ export class OrdersService {
       orderQuery.createdAt = dateFilter;
       paymentQuery.createdAt = dateFilter;
     }
+    paymentQuery.isRefunded = { $ne: true };
 
     if (branchId) {
       const normalizedBranchId = this.normalizeObjectId(branchId);
@@ -922,8 +923,34 @@ export class OrdersService {
       paymentQuery.branchId = normalizedBranchId;
     }
     const cashCollectionQuery = { ...paymentQuery, paymentMethod: { $ne: 'wallet' } };
+    const walletDepositQuery = {
+      ...cashCollectionQuery,
+      paymentType: PaymentTypeEnum.OTHER,
+      $or: [
+        { notes: /^Wallet deposit/i },
+        {
+          patientId: { $exists: true },
+          orderId: { $exists: false },
+          consultationId: { $exists: false },
+          prescriptionId: { $exists: false },
+          treatmentPlanId: { $exists: false },
+        },
+      ],
+    };
+    const treatmentPlanPaymentQuery = { ...paymentQuery, treatmentPlanId: { $exists: true } };
+    const walletInternalPaymentQuery = { ...paymentQuery, paymentMethod: 'wallet' };
 
-    const [totalOrders, paidOrders, pendingOrders, billedOrdersRevenue, collectedRevenue, collectedByMethod] =
+    const [
+      totalOrders,
+      paidOrders,
+      pendingOrders,
+      billedOrdersRevenue,
+      collectedRevenue,
+      collectedByMethod,
+      walletDepositRevenue,
+      treatmentPlanRevenue,
+      walletInternalRevenue,
+    ] =
       await Promise.all([
         this.orderModel.countDocuments(orderQuery),
         this.orderModel.countDocuments({
@@ -945,6 +972,18 @@ export class OrdersService {
         this.paymentModel.aggregate([
           { $match: cashCollectionQuery },
           { $group: { _id: '$paymentMethod', total: { $sum: '$amount' } } },
+        ]),
+        this.paymentModel.aggregate([
+          { $match: walletDepositQuery },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        ]),
+        this.paymentModel.aggregate([
+          { $match: treatmentPlanPaymentQuery },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        ]),
+        this.paymentModel.aggregate([
+          { $match: walletInternalPaymentQuery },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
         ]),
       ]);
 
@@ -968,6 +1007,12 @@ export class OrdersService {
       cashCollected: methodTotals.cash,
       orangeMoneyCollected: methodTotals.orange_money,
       afrimoneyCollected: methodTotals.afrimoney,
+      walletDeposits: walletDepositRevenue[0]?.total || 0,
+      walletDepositCount: walletDepositRevenue[0]?.count || 0,
+      treatmentPlanCollected: treatmentPlanRevenue[0]?.total || 0,
+      treatmentPlanPaymentCount: treatmentPlanRevenue[0]?.count || 0,
+      walletInternalPayments: walletInternalRevenue[0]?.total || 0,
+      walletInternalPaymentCount: walletInternalRevenue[0]?.count || 0,
     };
   }
 
@@ -981,6 +1026,7 @@ export class OrdersService {
     if (dateFilter) {
       matchQuery.createdAt = dateFilter;
     }
+    matchQuery.isRefunded = { $ne: true };
 
     if (branchId) {
       matchQuery.branchId = this.normalizeObjectId(branchId);
@@ -1007,6 +1053,43 @@ export class OrdersService {
           },
           afrimoneyPayments: {
             $sum: { $cond: [{ $eq: ['$paymentMethod', 'afrimoney'] }, '$amount', 0] },
+          },
+          walletDeposits: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    {
+                      $and: [
+                        { $eq: ['$paymentType', PaymentTypeEnum.OTHER] },
+                        { $regexMatch: { input: { $ifNull: ['$notes', ''] }, regex: /^Wallet deposit/i } },
+                      ],
+                    },
+                    {
+                      $and: [
+                        { $eq: ['$paymentType', PaymentTypeEnum.OTHER] },
+                        { $ne: [{ $ifNull: ['$patientId', null] }, null] },
+                        { $eq: [{ $ifNull: ['$orderId', null] }, null] },
+                        { $eq: [{ $ifNull: ['$consultationId', null] }, null] },
+                        { $eq: [{ $ifNull: ['$prescriptionId', null] }, null] },
+                        { $eq: [{ $ifNull: ['$treatmentPlanId', null] }, null] },
+                      ],
+                    },
+                  ],
+                },
+                '$amount',
+                0,
+              ],
+            },
+          },
+          treatmentPlanPayments: {
+            $sum: {
+              $cond: [
+                { $ne: [{ $ifNull: ['$treatmentPlanId', null] }, null] },
+                '$amount',
+                0,
+              ],
+            },
           },
         },
       },

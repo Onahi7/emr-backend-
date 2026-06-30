@@ -11,6 +11,9 @@ export enum WalletTransactionTypeEnum {
 
 @Schema({ timestamps: true, collection: 'wallet_transactions' })
 export class WalletTransaction extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ required: true, type: Types.ObjectId, ref: 'Patient' })
   patientId: Types.ObjectId;
 

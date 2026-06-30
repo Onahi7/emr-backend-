@@ -723,6 +723,7 @@ export class PatientsService {
     const depositedAt = new Date();
     const patient = await this.patientModel.findById(patientId);
     if (!patient) throw new NotFoundException('Patient not found');
+    const effectiveBranchId = branchId || patient.branchId?.toString();
     const balanceBefore = patient.walletBalance || 0;
     patient.walletBalance = balanceBefore + amount;
     patient.walletLastUpdated = depositedAt;
@@ -733,21 +734,24 @@ export class PatientsService {
       amount,
       balanceBefore,
       patient.walletBalance,
-      branchId,
+      effectiveBranchId,
       { notes, performedBy: userId, paymentMethod },
     );
     // Create a Payment record so wallet deposits appear in daily income aggregation
     await this.paymentModel.create({
-      branchId,
+      branchId: effectiveBranchId,
+      patientId: new Types.ObjectId(patientId),
       paymentType: PaymentTypeEnum.OTHER,
       amount,
       paymentMethod,
       receivedBy: userId ? new Types.ObjectId(userId) : undefined,
-      notes: notes || `Wallet deposit for patient ${patient.patientId || patient._id}`,
+      notes: notes
+        ? `Wallet deposit for patient ${patient.patientId || patient._id}: ${notes}`
+        : `Wallet deposit for patient ${patient.patientId || patient._id}`,
       createdAt: depositedAt,
     });
 
-    const autoApplied = await this.applyWalletToOutstandingOrders(patient, userId, branchId, notes);
+    const autoApplied = await this.applyWalletToOutstandingOrders(patient, userId, effectiveBranchId, notes);
     this.realtimeGateway.emitToAll('wallet:updated', {
       patientId,
       balance: patient.walletBalance,
@@ -791,12 +795,13 @@ export class PatientsService {
     depositNotes?: string,
   ): Promise<{ totalApplied: number; orders: Array<{ orderId: string; orderNumber: string; amount: number }> }> {
     const patientObjectId = patient._id as Types.ObjectId;
+    const effectiveBranchId = branchId || patient.branchId?.toString();
     const query: any = {
       patientId: patientObjectId,
       paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
       status: { $ne: OrderStatusEnum.CANCELLED },
     };
-    if (branchId) query.branchId = branchId;
+    if (effectiveBranchId) query.branchId = effectiveBranchId;
 
     const orders = await this.orderModel.find(query).sort({ createdAt: 1 }).exec();
     const appliedOrders: Array<{ orderId: string; orderNumber: string; amount: number }> = [];
@@ -820,7 +825,7 @@ export class PatientsService {
         amountToApply,
         balanceBefore,
         patient.walletBalance,
-        branchId,
+        effectiveBranchId,
         {
           notes: depositNotes || `Auto-applied wallet deposit to ${order.orderNumber}`,
           reference: `Auto payment for order ${order.orderNumber}`,
@@ -831,7 +836,7 @@ export class PatientsService {
       );
 
       await this.paymentModel.create({
-        branchId,
+        branchId: effectiveBranchId,
         orderId: order._id,
         patientId: patientObjectId,
         visitId: order.visitId,
@@ -877,7 +882,7 @@ export class PatientsService {
           order._id.toString(),
           order.amountPaid,
           'wallet',
-          branchId,
+          effectiveBranchId,
         ).catch(err => this.logger.error(`LIS payment sync failed for ${order.orderNumber}: ${err?.message}`));
       }
     }

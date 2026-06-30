@@ -338,6 +338,7 @@ export class TreatmentPlansService {
     // Load patient once for wallet operations
     let patient = await this.patientModel.findById(plan.patientId);
     if (!patient) throw new NotFoundException('Patient not found');
+    const effectiveBranchId = branchId || plan.branchId?.toString() || patient.branchId?.toString();
 
     for (const split of payments) {
       // Handle wallet payment — deduct from patient wallet
@@ -350,6 +351,7 @@ export class TreatmentPlansService {
         patient.walletLastUpdated = new Date();
         await patient.save();
         await this.walletTransactionModel.create({
+          branchId: effectiveBranchId,
           patientId: plan.patientId,
           type: WalletTransactionTypeEnum.PAYMENT,
           amount: split.amount,
@@ -369,7 +371,7 @@ export class TreatmentPlansService {
 
       // Create payment record for each split
       await this.paymentModel.create({
-        branchId,
+        branchId: effectiveBranchId,
         treatmentPlanId: plan._id,
         visitId: plan.visitId,
         patientId: plan.patientId,
