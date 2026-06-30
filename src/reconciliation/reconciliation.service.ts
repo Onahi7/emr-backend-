@@ -11,7 +11,7 @@ import {
   ReconciliationStatusEnum,
 } from '../database/schemas/cash-reconciliation.schema';
 import { Order, PaymentStatusEnum } from '../database/schemas/order.schema';
-import { Payment } from '../database/schemas/payment.schema';
+import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { OrderTest } from '../database/schemas/order-test.schema';
 import { Expenditure } from '../database/schemas/expenditure.schema';
 import { Patient } from '../database/schemas/patient.schema';
@@ -47,7 +47,10 @@ export class ReconciliationService {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Use Payment model (same source as getDailyIncome) for gross collected
-    const paymentQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    const paymentQuery: any = {
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
+      isRefunded: { $ne: true },
+    };
     if (branchId) paymentQuery.branchId = branchId;
     const payments = await this.paymentModel
       .find(paymentQuery)
@@ -62,6 +65,15 @@ export class ReconciliationService {
       .reduce((sum, p) => sum + p.amount, 0);
     const incomeAfrimoney = payments
       .filter((p) => p.paymentMethod === 'afrimoney')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const incomeWalletDeposits = payments
+      .filter((p) => this.isWalletDepositPayment(p))
+      .reduce((sum, p) => sum + p.amount, 0);
+    const incomeTreatmentPlans = payments
+      .filter((p) => !!p.treatmentPlanId)
+      .reduce((sum, p) => sum + p.amount, 0);
+    const walletInternalPayments = payments
+      .filter((p) => p.paymentMethod === 'wallet')
       .reduce((sum, p) => sum + p.amount, 0);
 
     // Get all expenditures for the day
@@ -112,7 +124,20 @@ export class ReconciliationService {
       incomeCash,
       incomeOrangeMoney,
       incomeAfrimoney,
+      incomeWalletDeposits,
+      incomeTreatmentPlans,
+      walletInternalPayments,
     };
+  }
+
+  private isWalletDepositPayment(payment: Pick<Payment, 'paymentType' | 'notes' | 'patientId' | 'orderId' | 'consultationId' | 'prescriptionId' | 'treatmentPlanId'>): boolean {
+    if (payment.paymentType !== PaymentTypeEnum.OTHER) return false;
+    if (/^Wallet deposit/i.test(payment.notes || '')) return true;
+    return !!payment.patientId
+      && !payment.orderId
+      && !payment.consultationId
+      && !payment.prescriptionId
+      && !payment.treatmentPlanId;
   }
 
   async create(createDto: CreateReconciliationDto, userId: string, branchId?: string) {
@@ -305,7 +330,10 @@ export class ReconciliationService {
     testBreakdown.sort((a, b) => b.count - a.count);
 
     // 3. Payments (actual money received)
-    const paymentQuery: any = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    const paymentQuery: any = {
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
+      isRefunded: { $ne: true },
+    };
     if (branchId) paymentQuery.branchId = branchId;
     const payments = await this.paymentModel
       .find(paymentQuery)
@@ -319,6 +347,15 @@ export class ReconciliationService {
       .reduce((s, p) => s + p.amount, 0);
     const afriCollected = payments
       .filter(p => p.paymentMethod === 'afrimoney')
+      .reduce((s, p) => s + p.amount, 0);
+    const walletDeposits = payments
+      .filter(p => this.isWalletDepositPayment(p as any))
+      .reduce((s, p) => s + p.amount, 0);
+    const treatmentPlanCollected = payments
+      .filter(p => !!p.treatmentPlanId)
+      .reduce((s, p) => s + p.amount, 0);
+    const walletInternalPayments = payments
+      .filter(p => p.paymentMethod === 'wallet')
       .reduce((s, p) => s + p.amount, 0);
     const totalCollected = cashCollected + orangeCollected + afriCollected;
 
@@ -391,6 +428,9 @@ export class ReconciliationService {
         orangeMoney: orangeCollected,
         afrimoney: afriCollected,
         total: totalCollected,
+        walletDeposits,
+        treatmentPlanCollected,
+        walletInternalPayments,
       },
       expenditures: {
         cash: cashExpenditure,
