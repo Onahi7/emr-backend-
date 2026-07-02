@@ -8,13 +8,16 @@ import {
 } from '../database/schemas/service-price.schema';
 import { UpdateServicePricesDto } from './dto/update-service-prices.dto';
 
-export const DEFAULT_SERVICE_PRICES: Array<{
-  code: ServicePriceCodeEnum;
+type ServicePriceConfig = {
+  code: string;
   label: string;
   category: string;
   amount: number;
   description: string;
-}> = [
+  isCustom?: boolean;
+};
+
+export const DEFAULT_SERVICE_PRICES: ServicePriceConfig[] = [
   {
     code: ServicePriceCodeEnum.NORMAL_CONSULTATION,
     label: 'Normal Consultation',
@@ -72,24 +75,64 @@ export class ServicePricesService {
     @InjectModel(ServicePrice.name) private servicePriceModel: Model<ServicePriceDocument>,
   ) {}
 
+  private normalizeCode(value: string) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  private sortPrices<T extends { category?: string; label?: string; code?: string }>(prices: T[]) {
+    return prices.sort((a, b) => {
+      const categoryCompare = String(a.category || '').localeCompare(String(b.category || ''));
+      if (categoryCompare !== 0) return categoryCompare;
+      return String(a.label || a.code || '').localeCompare(String(b.label || b.code || ''));
+    });
+  }
+
   async getEffectivePrices(branchId?: string) {
     if (!branchId || !Types.ObjectId.isValid(branchId)) {
-      return DEFAULT_SERVICE_PRICES.map((price) => ({ ...price, isActive: true, branchId: null }));
+      return this.sortPrices(DEFAULT_SERVICE_PRICES.map((price) => ({
+        ...price,
+        isCustom: false,
+        isActive: true,
+        branchId: null,
+      })));
     }
 
     const docs = await this.servicePriceModel.find({ branchId: new Types.ObjectId(branchId) }).lean().exec();
     const byCode = new Map(docs.map((doc) => [doc.code, doc]));
 
-    return DEFAULT_SERVICE_PRICES.map((defaultPrice) => {
+    const builtIns = DEFAULT_SERVICE_PRICES.map((defaultPrice) => {
       const saved = byCode.get(defaultPrice.code);
       return {
         ...defaultPrice,
         _id: saved?._id,
         branchId,
         amount: saved?.amount ?? defaultPrice.amount,
+        description: saved?.description ?? defaultPrice.description,
+        isCustom: false,
         isActive: saved?.isActive ?? true,
       };
     });
+
+    const defaultCodes = new Set(DEFAULT_SERVICE_PRICES.map((price) => price.code));
+    const customPrices = docs
+      .filter((doc) => !defaultCodes.has(doc.code))
+      .map((doc) => ({
+        _id: doc._id,
+        branchId,
+        code: doc.code,
+        label: doc.label,
+        category: doc.category,
+        amount: doc.amount,
+        description: doc.description || '',
+        isCustom: true,
+        isActive: doc.isActive ?? true,
+      }));
+
+    return this.sortPrices([...builtIns, ...customPrices]);
   }
 
   async getPrice(branchId: string | undefined, code: ServicePriceCodeEnum): Promise<number> {
@@ -107,19 +150,30 @@ export class ServicePricesService {
     const defaultsByCode = new Map(DEFAULT_SERVICE_PRICES.map((price) => [price.code, price]));
 
     for (const item of dto.prices) {
-      const defaultPrice = defaultsByCode.get(item.code);
-      if (!defaultPrice) throw new BadRequestException(`Unsupported service price code: ${item.code}`);
+      const code = this.normalizeCode(item.code || item.label || '');
+      if (!code) throw new BadRequestException('Service code is required');
+      if (code.length > 80) throw new BadRequestException(`Service code is too long: ${code}`);
+
+      const defaultPrice = defaultsByCode.get(code);
+      const isCustom = !defaultPrice;
+      const label = (defaultPrice?.label || item.label || '').trim();
+      const category = (defaultPrice?.category || item.category || '').trim();
+
+      if (isCustom && (!label || !category)) {
+        throw new BadRequestException(`Custom service ${code} requires a label and category`);
+      }
 
       await this.servicePriceModel.findOneAndUpdate(
-        { branchId: branchObjectId, code: item.code },
+        { branchId: branchObjectId, code },
         {
           $set: {
             branchId: branchObjectId,
-            code: item.code,
-            label: defaultPrice.label,
-            category: defaultPrice.category,
+            code,
+            label,
+            category,
             amount: Math.round(Number(item.amount || 0) * 100) / 100,
-            description: defaultPrice.description,
+            description: (item.description ?? defaultPrice?.description ?? '').trim(),
+            isCustom,
             isActive: item.isActive ?? true,
           },
         },

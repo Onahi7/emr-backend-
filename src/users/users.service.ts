@@ -87,6 +87,7 @@ export class UsersService {
         passwordHash,
         fullName: createUserDto.fullName,
         department: createUserDto.department,
+        branchId: createUserDto.branchId ? new Types.ObjectId(createUserDto.branchId) : undefined,
         isActive: true,
       });
 
@@ -202,6 +203,9 @@ export class UsersService {
       }
       if (updateUserDto.isActive !== undefined) {
         profile.isActive = updateUserDto.isActive;
+      }
+      if (updateUserDto.branchId !== undefined) {
+        profile.branchId = updateUserDto.branchId ? new Types.ObjectId(updateUserDto.branchId) : undefined;
       }
 
       await profile.save();

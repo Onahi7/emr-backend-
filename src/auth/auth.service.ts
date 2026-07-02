@@ -1,11 +1,11 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { Profile } from '../database/schemas/profile.schema';
-import { UserRole } from '../database/schemas/user-role.schema';
+import { UserRole, UserRoleEnum } from '../database/schemas/user-role.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
 
 export interface JwtPayload {
@@ -214,7 +214,7 @@ export class AuthService {
   /**
    * Get user profile by ID
    */
-  async getProfile(userId: string): Promise<{ id: string; email: string; fullName: string; department?: string; avatarUrl?: string; roles: string[]; createdAt: Date }> {
+  async getProfile(userId: string): Promise<{ id: string; email: string; fullName: string; department?: string; avatarUrl?: string; roles: string[]; branchId?: string; branch?: { _id: string; name: string; code: string } | null; createdAt: Date }> {
     const user = await this.profileModel.findById(userId).exec();
     
     if (!user) {
@@ -224,6 +224,10 @@ export class AuthService {
     // Get user roles
     const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
     const roles = userRoles.map((ur) => ur.role);
+    const BranchModel = this.profileModel.db.model('Branch');
+    const branch: any = user.branchId
+      ? await BranchModel.findById(user.branchId).select('name code').lean().exec()
+      : null;
 
     return {
       id: user._id.toString(),
@@ -232,6 +236,8 @@ export class AuthService {
       department: user.department,
       avatarUrl: user.avatarUrl,
       roles,
+      branchId: user.branchId?.toString(),
+      branch: branch ? { _id: branch._id?.toString() || '', name: branch.name || '', code: branch.code || '' } : null,
       createdAt: user.createdAt,
     };
   }
@@ -256,6 +262,12 @@ export class AuthService {
 
     const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
     const roles = userRoles.map((ur) => ur.role);
+    const isAdmin = roles.includes(UserRoleEnum.ADMIN);
+    const assignedBranchId = user.branchId?.toString();
+
+    if (!isAdmin && assignedBranchId !== branchId) {
+      throw new ForbiddenException('You are not assigned to this branch');
+    }
 
     const doctorId = await this.getDoctorIdForUser(user._id.toString());
 
@@ -283,8 +295,19 @@ export class AuthService {
    * Get available branches for a user
    */
   async getUserBranches(userId: string): Promise<Array<{ _id: string; name: string; code: string }>> {
+    const user = await this.profileModel.findById(userId).exec();
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
+    const roles = userRoles.map((ur) => ur.role);
     const BranchModel = this.profileModel.db.model('Branch');
-    const branches = await BranchModel.find({ isActive: true }).select('name code').lean().exec();
+    const query: any = { isActive: true };
+    if (!roles.includes(UserRoleEnum.ADMIN)) {
+      if (!user.branchId) return [];
+      query._id = user.branchId;
+    }
+    const branches = await BranchModel.find(query).select('name code').lean().exec();
     return branches.map((b: any) => ({ _id: b._id?.toString() || '', name: b.name || '', code: b.code || '' }));
   }
 }

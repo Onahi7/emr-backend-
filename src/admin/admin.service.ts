@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Order, OrderTypeEnum, OrderStatusEnum } from '../database/schemas/order.schema';
@@ -202,7 +202,7 @@ export class AdminService {
   /**
    * Full admin dashboard — hospital-wide summary
    */
-  async getDashboard(date?: string): Promise<{
+  async getDashboard(date?: string, branchId?: string): Promise<{
     todayStats: any;
     revenueBreakdown: any;
     departmentActivity: any;
@@ -214,7 +214,11 @@ export class AdminService {
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
-    const dayFilter = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
+    const branchObjectId = branchId && branchId !== 'all' && Types.ObjectId.isValid(branchId)
+      ? new Types.ObjectId(branchId)
+      : undefined;
+    const branchFilter = branchObjectId ? { branchId: branchObjectId } : {};
+    const dayFilter = { createdAt: { $gte: startOfDay, $lte: endOfDay }, ...branchFilter };
 
     const [
       totalPatients,
@@ -229,7 +233,7 @@ export class AdminService {
       expiredMeds,
       staffCount,
     ] = await Promise.all([
-      this.patientModel.countDocuments({ isActive: true }),
+      this.patientModel.countDocuments({ isActive: true, ...branchFilter }),
       this.patientModel.countDocuments({ ...dayFilter }),
       this.visitModel.countDocuments({ ...dayFilter }),
       this.visitModel.aggregate([
@@ -257,7 +261,7 @@ export class AdminService {
         isActive: true,
         expiryDate: { $lte: new Date() },
       }).select('name expiryDate stockQuantity').lean(),
-      this.profileModel.countDocuments({ isActive: true }),
+      this.profileModel.countDocuments({ isActive: true, ...branchFilter }),
     ]);
 
     // Build visit status map

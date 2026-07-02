@@ -1,14 +1,33 @@
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ServicePriceCodeEnum } from '../../database/schemas/service-price.schema';
 
 export class ServicePriceUpdateItemDto {
-  @IsEnum(ServicePriceCodeEnum)
-  code!: ServicePriceCodeEnum;
+  @IsString()
+  @MaxLength(80)
+  code!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  label?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  description?: string;
 
   @IsNumber()
   @Min(0)
   amount!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isCustom?: boolean;
 
   @IsOptional()
   @IsBoolean()

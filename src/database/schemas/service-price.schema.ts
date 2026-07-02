@@ -18,8 +18,8 @@ export class ServicePrice {
   @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
   branchId!: Types.ObjectId;
 
-  @Prop({ required: true, enum: Object.values(ServicePriceCodeEnum), index: true })
-  code!: ServicePriceCodeEnum;
+  @Prop({ required: true, trim: true, lowercase: true, index: true })
+  code!: string;
 
   @Prop({ required: true })
   label!: string;
@@ -32,6 +32,9 @@ export class ServicePrice {
 
   @Prop({ default: '' })
   description!: string;
+
+  @Prop({ default: false })
+  isCustom!: boolean;
 
   @Prop({ default: true })
   isActive!: boolean;

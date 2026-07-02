@@ -119,9 +119,11 @@ export class OrdersController {
   async getDailyIncome(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('branchId') branchId?: string,
     @Request() req?: any,
   ) {
-    return this.ordersService.getDailyIncome(startDate, endDate, req.user?.branchId);
+    const isAdmin = Array.isArray(req.user?.roles) && req.user.roles.includes('admin');
+    return this.ordersService.getDailyIncome(startDate, endDate, isAdmin && branchId ? branchId : req.user?.branchId);
   }
 
   @Get('stats/outstanding')

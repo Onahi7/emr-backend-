@@ -35,8 +35,8 @@ export class AdminController {
    * GET /admin/dashboard?date=2026-05-10
    */
   @Get('dashboard')
-  getDashboard(@Query('date') date?: string) {
-    return this.adminService.getDashboard(date);
+  getDashboard(@Query('date') date?: string, @Query('branchId') branchId?: string) {
+    return this.adminService.getDashboard(date, branchId);
   }
 
   @Get('management-kpis')
