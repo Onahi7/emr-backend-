@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
+import { LisResultsPollerService } from './lis-results-poller.service';
 import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { OrderTest, OrderTestSchema } from '../database/schemas/order-test.schema';
 import { IdSequence, IdSequenceSchema } from '../database/schemas/id-sequence.schema';
@@ -29,7 +30,7 @@ import { LisIntegrationModule } from '../lis-integration/lis-integration.module'
     LisIntegrationModule,
   ],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, LisResultsPollerService],
   exports: [OrdersService],
 })
 export class OrdersModule {}
