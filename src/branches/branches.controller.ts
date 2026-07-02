@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Request, UseGuards } from '@nestjs/common';
 import { BranchesService } from './branches.service';
-import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto';
+import { CreateBranchDto, UpdateBranchDto, BatchCreateUsersDto, ProvisionCafBranchDto } from './dto/branch.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -37,5 +37,29 @@ export class BranchesController {
   @Roles(UserRoleEnum.ADMIN)
   async getConfig(@Param('id') id: string) {
     return this.service.getBranchConfig(id);
+  }
+
+  @Post(':id/batch-create-users')
+  @Roles(UserRoleEnum.ADMIN)
+  async batchCreateUsers(@Param('id') id: string, @Body() dto: BatchCreateUsersDto, @Request() req: any) {
+    return this.service.batchCreateUsers(id, dto, req.user?.userId);
+  }
+
+  @Post(':id/test-caf')
+  @Roles(UserRoleEnum.ADMIN)
+  async testCaf(@Param('id') id: string) {
+    return this.service.testCafConfig(id);
+  }
+
+  @Post(':id/test-lis')
+  @Roles(UserRoleEnum.ADMIN)
+  async testLis(@Param('id') id: string) {
+    return this.service.testLisConfig(id);
+  }
+
+  @Post(':id/provision-caf')
+  @Roles(UserRoleEnum.ADMIN)
+  async provisionCaf(@Param('id') id: string, @Body() dto: ProvisionCafBranchDto) {
+    return this.service.provisionCafBranch(id, dto);
   }
 }

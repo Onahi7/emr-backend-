@@ -11,6 +11,8 @@ import { IdSequence } from '../database/schemas/id-sequence.schema';
 import { SoapNote, SoapNoteTypeEnum } from '../database/schemas/soap-note.schema';
 import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ServicePriceCodeEnum } from '../database/schemas/service-price.schema';
+import { ServicePricesService } from '../service-prices/service-prices.service';
 
 @Injectable()
 export class AdmissionsService {
@@ -22,6 +24,7 @@ export class AdmissionsService {
     @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
     @InjectModel(SoapNote.name) private soapNoteModel: Model<SoapNote>,
     private realtimeGateway: RealtimeGateway,
+    private servicePricesService: ServicePricesService,
   ) {}
 
   private async generateAdmissionNumber(): Promise<string> {
@@ -35,7 +38,7 @@ export class AdmissionsService {
     return `ADM-${datePart}-${sequence.currentValue.toString().padStart(4, '0')}`;
   }
 
-  async create(dto: CreateAdmissionDto, admittedBy?: string): Promise<Admission> {
+  async create(dto: CreateAdmissionDto, admittedBy?: string, branchId?: string): Promise<Admission> {
     const existingAdmission = await this.admissionModel.findOne({
       patientId: new Types.ObjectId(dto.patientId),
       status: AdmissionStatusEnum.ADMITTED,
@@ -54,6 +57,7 @@ export class AdmissionsService {
       doctorId: dto.doctorId ? new Types.ObjectId(dto.doctorId) : undefined,
       primaryNurseId: dto.primaryNurseId ? new Types.ObjectId(dto.primaryNurseId) : undefined,
       admittedBy: admittedBy ? new Types.ObjectId(admittedBy) : undefined,
+      branchId: branchId ? new Types.ObjectId(branchId) : undefined,
     });
 
     const saved = await admission.save();
@@ -340,6 +344,75 @@ export class AdmissionsService {
     const saved = await admission.save();
     this.realtimeGateway.emitToAll('admission:incident_reported', saved);
     return saved;
+  }
+
+  // ---------- Oxygen therapy ----------
+  async startOxygenTherapy(id: string, data: {
+    litersPerMinute: number;
+    hoursPerDay: number;
+    days: number;
+    ratePerHour?: number;
+    notes?: string;
+  }, startedBy?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findById(id);
+    if (!admission) throw new NotFoundException('Admission not found');
+    this.ensureActive(admission);
+
+    if (data.litersPerMinute <= 0) throw new BadRequestException('Flow rate must be positive');
+    if (data.hoursPerDay <= 0 || data.hoursPerDay > 24) throw new BadRequestException('Hours per day must be between 1 and 24');
+    if (data.days <= 0) throw new BadRequestException('Days must be positive');
+    if (data.ratePerHour !== undefined && data.ratePerHour < 0) throw new BadRequestException('Rate per hour cannot be negative');
+
+    const configuredRate = await this.servicePricesService.getPrice(admission.branchId?.toString(), ServicePriceCodeEnum.OXYGEN_HOUR);
+    const rate = data.ratePerHour ?? configuredRate;
+    const totalHours = data.hoursPerDay * data.days;
+    const totalCost = totalHours * rate;
+
+    if (!Array.isArray(admission.oxygenTherapy)) admission.oxygenTherapy = [];
+    admission.oxygenTherapy.push({
+      litersPerMinute: data.litersPerMinute,
+      hoursPerDay: data.hoursPerDay,
+      days: data.days,
+      ratePerHour: rate,
+      totalCost,
+      notes: data.notes,
+      status: 'active',
+      startedBy: startedBy ? new Types.ObjectId(startedBy) : undefined,
+      startedAt: new Date(),
+    } as any);
+
+    const saved = await admission.save();
+    this.realtimeGateway.emitToAll('admission:oxygen_started', saved);
+    return saved;
+  }
+
+  async stopOxygenTherapy(id: string, therapyIndex: number, stoppedBy?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findById(id);
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (!Number.isInteger(therapyIndex) || therapyIndex < 0) throw new BadRequestException('Invalid oxygen therapy index');
+    if (!admission.oxygenTherapy?.[therapyIndex]) throw new NotFoundException('Oxygen therapy entry not found');
+
+    admission.oxygenTherapy[therapyIndex].status = 'stopped';
+    admission.oxygenTherapy[therapyIndex].stoppedAt = new Date();
+    admission.oxygenTherapy[therapyIndex].stoppedBy = stoppedBy ? new Types.ObjectId(stoppedBy) : undefined;
+
+    const saved = await admission.save();
+    this.realtimeGateway.emitToAll('admission:oxygen_stopped', saved);
+    return saved;
+  }
+
+  getOxygenCostSummary(admission: Admission) {
+    const activeTherapies = (admission.oxygenTherapy || []).filter(t => t.status === 'active');
+    const completedTherapies = (admission.oxygenTherapy || []).filter(t => t.status !== 'active');
+    const activeCost = activeTherapies.reduce((sum, t) => sum + (t.totalCost || 0), 0);
+    const completedCost = completedTherapies.reduce((sum, t) => sum + (t.totalCost || 0), 0);
+    return {
+      activeCount: activeTherapies.length,
+      activeCost,
+      completedCost,
+      totalCost: activeCost + completedCost,
+      therapies: admission.oxygenTherapy || [],
+    };
   }
 
   // ---------- Transfer / Discharge ----------

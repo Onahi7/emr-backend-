@@ -118,6 +118,14 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  CAF_ADMIN_USERNAME?: string;
+
+  @IsString()
+  @IsOptional()
+  CAF_ADMIN_PASSWORD?: string;
+
+  @IsString()
+  @IsOptional()
   CAF_BRANCH_ID?: string;
 
   // Partner LIS integration (Optional)

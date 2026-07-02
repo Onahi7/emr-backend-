@@ -40,6 +40,18 @@ export class Branch {
   operatingHours!: string;
 
   // CAF integration
+  @Prop({ default: false })
+  cafEnabled!: boolean;
+
+  @Prop({ default: '' })
+  cafBaseUrl!: string;
+
+  @Prop({ default: '' })
+  cafUsername!: string;
+
+  @Prop({ default: '' })
+  cafPassword!: string;
+
   @Prop()
   cafBranchId?: string;
 
@@ -47,6 +59,12 @@ export class Branch {
   cafTerminalId!: string;
 
   // LAB integration
+  @Prop({ default: false })
+  lisEnabled!: boolean;
+
+  @Prop({ default: '' })
+  lisBaseUrl!: string;
+
   @Prop()
   labApiKey?: string;
 

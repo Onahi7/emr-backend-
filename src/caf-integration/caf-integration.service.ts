@@ -1,14 +1,33 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { CafProduct, CafAuthResponse } from './dto/caf-product.dto';
+import { Branch, BranchDocument } from '../branches/branch.schema';
 
 interface JwtPayload {
   sub: string;
   username: string;
   role: string;
   branchId?: string;
+}
+
+interface CafResolvedConfig {
+  baseUrl: string;
+  username: string;
+  password: string;
+  branchId: string;
+  terminalId: string;
+  key: string;
+}
+
+interface CafAuthState {
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: Date | null;
+  cafUserId: string | null;
 }
 
 @Injectable()
@@ -18,6 +37,7 @@ export class CafIntegrationService implements OnModuleInit {
   private refreshToken: string | null = null;
   private tokenExpiresAt: Date | null = null;
   private cafUserId: string | null = null;
+  private readonly authByConfig = new Map<string, CafAuthState>();
   private readonly baseUrl: string;
   private readonly username: string;
   private readonly password: string;
@@ -26,6 +46,7 @@ export class CafIntegrationService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
+    @InjectModel(Branch.name) private readonly branchModel: Model<BranchDocument>,
   ) {
     this.baseUrl = this.configService.get<string>('caf.baseUrl', '');
     this.username = this.configService.get<string>('caf.username', '');
@@ -43,6 +64,35 @@ export class CafIntegrationService implements OnModuleInit {
 
   isConfigured(): boolean {
     return !!(this.baseUrl && this.username && this.password && this.branchId);
+  }
+
+  private async resolveConfig(branchId?: string): Promise<CafResolvedConfig | null> {
+    const branch = branchId
+      ? await this.branchModel.findById(branchId).lean().exec().catch(() => null)
+      : null;
+
+    if (branch && branch.cafEnabled === false && !branch.cafBranchId) {
+      return null;
+    }
+
+    const baseUrl = (branch?.cafBaseUrl || this.baseUrl || '').replace(/\/$/, '');
+    const username = branch?.cafUsername || this.username || '';
+    const password = branch?.cafPassword || this.password || '';
+    const cafBranchId = branch?.cafBranchId || this.branchId || '';
+    const terminalId = branch?.cafTerminalId || 'emr-integration';
+
+    if (!baseUrl || !username || !password || !cafBranchId) {
+      return null;
+    }
+
+    return {
+      baseUrl,
+      username,
+      password,
+      branchId: cafBranchId,
+      terminalId,
+      key: `${baseUrl}|${username}|${cafBranchId}|${terminalId}`,
+    };
   }
 
   getConfigStatus(): { configured: boolean; baseUrl: string; username: string; branchId: string; authenticated: boolean } {
@@ -73,28 +123,44 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async ensureAuthenticated(forceRefresh = false): Promise<{ accessToken: string; cafUserId: string }> {
-    if (!forceRefresh && this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt && this.cafUserId) {
-      return { accessToken: this.accessToken, cafUserId: this.cafUserId };
+  async ensureAuthenticated(forceRefresh = false, branchId?: string): Promise<{ accessToken: string; cafUserId: string; config: CafResolvedConfig }> {
+    const config = await this.resolveConfig(branchId);
+    if (!config) {
+      throw new Error('CAF integration is not configured for this branch');
+    }
+
+    const cached = this.authByConfig.get(config.key);
+    if (!forceRefresh && cached?.accessToken && cached.tokenExpiresAt && new Date() < cached.tokenExpiresAt && cached.cafUserId) {
+      return { accessToken: cached.accessToken, cafUserId: cached.cafUserId, config };
     }
 
     try {
-      this.logger.log(`Authenticating with CAF at ${this.baseUrl}/auth/login as ${this.username}`);
+      this.logger.log(`Authenticating with CAF at ${config.baseUrl}/auth/login as ${config.username}`);
       const { data } = await firstValueFrom(
-        this.httpService.post<CafAuthResponse>(`${this.baseUrl}/auth/login`, {
-          username: this.username,
-          password: this.password,
+        this.httpService.post<CafAuthResponse>(`${config.baseUrl}/auth/login`, {
+          username: config.username,
+          password: config.password,
         }),
       );
 
-      this.accessToken = data.accessToken;
-      this.refreshToken = data.refreshToken;
-      this.tokenExpiresAt = new Date(Date.now() + data.expiresIn * 1000);
-
       const payload = this.decodeJwt(data.accessToken);
-      this.cafUserId = payload?.sub || null;
-      this.logger.log(`Authenticated with CAF as user ${this.cafUserId}`);
-      return { accessToken: this.accessToken, cafUserId: this.cafUserId };
+      const state: CafAuthState = {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        tokenExpiresAt: new Date(Date.now() + data.expiresIn * 1000),
+        cafUserId: payload?.sub || null,
+      };
+      this.authByConfig.set(config.key, state);
+
+      if (!branchId) {
+        this.accessToken = state.accessToken;
+        this.refreshToken = state.refreshToken;
+        this.tokenExpiresAt = state.tokenExpiresAt;
+        this.cafUserId = state.cafUserId;
+      }
+
+      this.logger.log(`Authenticated with CAF as user ${state.cafUserId}`);
+      return { accessToken: state.accessToken!, cafUserId: state.cafUserId!, config };
     } catch (error: any) {
       this.logger.error(`CAF authentication failed: ${error.message}`);
       throw error;
@@ -102,6 +168,7 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   private invalidateAuth(): void {
+    this.authByConfig.clear();
     this.accessToken = null;
     this.refreshToken = null;
     this.tokenExpiresAt = null;
@@ -109,9 +176,9 @@ export class CafIntegrationService implements OnModuleInit {
     this.logger.log('CAF auth invalidated — will re-authenticate on next request');
   }
 
-  private get headers() {
+  private headers(accessToken: string) {
     return {
-      Authorization: `Bearer ${this.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     };
   }
@@ -121,16 +188,17 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   async searchProducts(query: string, branchId?: string): Promise<CafProduct[]> {
-    if (!this.isConfigured()) return [];
-    const searchBranchId = branchId || this.branchId;
+    const initialConfig = await this.resolveConfig(branchId);
+    if (!initialConfig) return [];
+    const searchBranchId = initialConfig.branchId;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await this.ensureAuthenticated(attempt > 0);
+        const auth = await this.ensureAuthenticated(attempt > 0, branchId);
         this.logger.log(`CAF searchProducts query="${query}" branchId="${searchBranchId}"${attempt > 0 ? ' (retry)' : ''}`);
         const { data } = await firstValueFrom(
-          this.httpService.get(`${this.baseUrl}/products/search`, {
-            headers: this.headers,
+          this.httpService.get(`${auth.config.baseUrl}/products/search`, {
+            headers: this.headers(auth.accessToken),
             params: { query, branchId: searchBranchId },
           }),
         );
@@ -155,10 +223,10 @@ export class CafIntegrationService implements OnModuleInit {
 
     try {
       this.logger.log(`CAF searchProducts fallback to /products?search="${query}"`);
-      await this.ensureAuthenticated();
+      const auth = await this.ensureAuthenticated(false, branchId);
       const { data } = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/products`, {
-          headers: this.headers,
+        this.httpService.get(`${auth.config.baseUrl}/products`, {
+          headers: this.headers(auth.accessToken),
           params: { search: query, branchId: searchBranchId },
         }),
       );
@@ -178,14 +246,15 @@ export class CafIntegrationService implements OnModuleInit {
     limit?: number;
     branchId?: string;
   } = {}): Promise<{ products: CafProduct[]; raw: any }> {
-    if (!this.isConfigured()) {
+    const initialConfig = await this.resolveConfig(params.branchId);
+    if (!initialConfig) {
       this.logger.warn('CAF not configured — skipping product fetch');
       return { products: [], raw: { error: 'not configured' } };
     }
     const doFetch = async (isRetry: boolean) => {
-      await this.ensureAuthenticated(isRetry);
+      const auth = await this.ensureAuthenticated(isRetry, params.branchId);
       const { branchId, ...rest } = params;
-      const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
+      const cleanParams: Record<string, any> = { branchId: auth.config.branchId };
       for (const [key, val] of Object.entries(rest)) {
         if (val !== undefined && val !== null && val !== '') {
           cleanParams[key] = val;
@@ -193,8 +262,8 @@ export class CafIntegrationService implements OnModuleInit {
       }
       this.logger.log(`CAF getProductsDebug params: ${JSON.stringify(cleanParams)}${isRetry ? ' (retry after 401)' : ''}`);
       const axiosResponse = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/products`, {
-          headers: this.headers,
+        this.httpService.get(`${auth.config.baseUrl}/products`, {
+          headers: this.headers(auth.accessToken),
           params: cleanParams,
         }),
       );
@@ -239,13 +308,14 @@ export class CafIntegrationService implements OnModuleInit {
     limit?: number;
     branchId?: string;
   } = {}): Promise<CafProduct[]> {
-    if (!this.isConfigured()) {
+    const initialConfig = await this.resolveConfig(params.branchId);
+    if (!initialConfig) {
       this.logger.warn('CAF not configured — skipping product fetch');
       return [];
     }
-    const buildParams = () => {
+    const buildParams = (cafBranchId: string) => {
       const { branchId, ...rest } = params;
-      const cleanParams: Record<string, any> = { branchId: branchId || this.branchId };
+      const cleanParams: Record<string, any> = { branchId: cafBranchId };
       for (const [key, val] of Object.entries(rest)) {
         if (val !== undefined && val !== null && val !== '') {
           cleanParams[key] = val;
@@ -256,12 +326,12 @@ export class CafIntegrationService implements OnModuleInit {
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await this.ensureAuthenticated(attempt > 0);
-        const cleanParams = buildParams();
+        const auth = await this.ensureAuthenticated(attempt > 0, params.branchId);
+        const cleanParams = buildParams(auth.config.branchId);
         this.logger.log(`CAF getProducts params: ${JSON.stringify(cleanParams)}`);
         const { data } = await firstValueFrom(
-          this.httpService.get(`${this.baseUrl}/products`, {
-            headers: this.headers,
+          this.httpService.get(`${auth.config.baseUrl}/products`, {
+            headers: this.headers(auth.accessToken),
             params: cleanParams,
           }),
         );
@@ -289,14 +359,15 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   async getProductByBarcode(barcode: string, branchId?: string): Promise<CafProduct | null> {
-    if (!this.isConfigured()) return null;
-    await this.ensureAuthenticated();
+    const initialConfig = await this.resolveConfig(branchId);
+    if (!initialConfig) return null;
+    const auth = await this.ensureAuthenticated(false, branchId);
 
     try {
       const { data } = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/products/barcode/${barcode}`, {
-          headers: this.headers,
-          params: { branchId: branchId || this.branchId },
+        this.httpService.get(`${auth.config.baseUrl}/products/barcode/${barcode}`, {
+          headers: this.headers(auth.accessToken),
+          params: { branchId: auth.config.branchId },
         }),
       );
       return data.data || data;
@@ -306,14 +377,15 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   async getProductById(productId: string): Promise<CafProduct | null> {
-    if (!this.isConfigured()) return null;
+    const initialConfig = await this.resolveConfig();
+    if (!initialConfig) return null;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await this.ensureAuthenticated(attempt > 0);
+        const auth = await this.ensureAuthenticated(attempt > 0);
         const { data } = await firstValueFrom(
-          this.httpService.get(`${this.baseUrl}/products/${productId}`, {
-            headers: this.headers,
+          this.httpService.get(`${auth.config.baseUrl}/products/${productId}`, {
+            headers: this.headers(auth.accessToken),
           }),
         );
         return data.data || data;
@@ -331,14 +403,15 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   async getLowStockAlerts(branchId?: string): Promise<any[]> {
-    if (!this.isConfigured()) return [];
-    await this.ensureAuthenticated();
+    const initialConfig = await this.resolveConfig(branchId);
+    if (!initialConfig) return [];
+    const auth = await this.ensureAuthenticated(false, branchId);
 
     try {
       const { data } = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/inventory/low-stock-alerts`, {
-          headers: this.headers,
-          params: { branchId: branchId || this.branchId },
+        this.httpService.get(`${auth.config.baseUrl}/inventory/low-stock-alerts`, {
+          headers: this.headers(auth.accessToken),
+          params: { branchId: auth.config.branchId },
         }),
       );
       return data.data || [];
@@ -348,15 +421,15 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   async getProductStock(productId: string, branchId?: string): Promise<number> {
-    if (!this.isConfigured()) return 0;
-    await this.ensureAuthenticated();
-
-    const effectiveBranchId = branchId || this.branchId;
+    const initialConfig = await this.resolveConfig(branchId);
+    if (!initialConfig) return 0;
+    const auth = await this.ensureAuthenticated(false, branchId);
+    const effectiveBranchId = auth.config.branchId;
 
     try {
       const productRes = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/products/${productId}`, {
-          headers: this.headers,
+        this.httpService.get(`${auth.config.baseUrl}/products/${productId}`, {
+          headers: this.headers(auth.accessToken),
         }),
       );
       const product = productRes?.data?.data ?? productRes?.data;
@@ -372,8 +445,8 @@ export class CafIntegrationService implements OnModuleInit {
       }
 
       const { data } = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/inventory/product-stock`, {
-          headers: this.headers,
+        this.httpService.get(`${auth.config.baseUrl}/inventory/product-stock`, {
+          headers: this.headers(auth.accessToken),
           params: { branchId: effectiveBranchId, productId },
         }),
       );
@@ -385,13 +458,13 @@ export class CafIntegrationService implements OnModuleInit {
   }
 
   async ensureOpenShift(branchId?: string): Promise<string> {
-    const { cafUserId } = await this.ensureAuthenticated();
-    const effectiveBranchId = branchId || this.branchId;
+    const { cafUserId, accessToken, config } = await this.ensureAuthenticated(false, branchId);
+    const effectiveBranchId = config.branchId;
 
     const currentRes = await firstValueFrom(
-      this.httpService.get(`${this.baseUrl}/shifts/current`, {
-        headers: this.headers,
-        params: { branchId: effectiveBranchId, cashierId: cafUserId, terminalId: 'emr-integration' },
+      this.httpService.get(`${config.baseUrl}/shifts/current`, {
+        headers: this.headers(accessToken),
+        params: { branchId: effectiveBranchId, cashierId: cafUserId, terminalId: config.terminalId },
       }),
     ).catch(() => ({ data: null }));
 
@@ -402,11 +475,11 @@ export class CafIntegrationService implements OnModuleInit {
 
     const openRes = await firstValueFrom(
       this.httpService.post(
-        `${this.baseUrl}/shifts/open`,
-        { branchId: effectiveBranchId, cashierId: cafUserId, terminalId: 'emr-integration', openingCash: 0 },
+        `${config.baseUrl}/shifts/open`,
+        { branchId: effectiveBranchId, cashierId: cafUserId, terminalId: config.terminalId, openingCash: 0 },
         {
           headers: {
-            ...this.headers,
+            ...this.headers(accessToken),
             'X-Idempotency-Key': this.idempotencyKey('emr-shift-open'),
           },
         },
@@ -442,8 +515,8 @@ export class CafIntegrationService implements OnModuleInit {
     notes?: string;
     branchId?: string;
   }): Promise<{ saleId: string; receiptNumber: string }> {
-    await this.ensureAuthenticated();
-    const effectiveBranchId = params.branchId || this.branchId;
+    const auth = await this.ensureAuthenticated(false, params.branchId);
+    const effectiveBranchId = auth.config.branchId;
 
     const checkoutItems = params.items.map((item) => ({
       productId: item.productId,
@@ -455,11 +528,11 @@ export class CafIntegrationService implements OnModuleInit {
 
     const { data } = await firstValueFrom(
       this.httpService.post(
-        `${this.baseUrl}/sales/checkout`,
+        `${auth.config.baseUrl}/sales/checkout`,
         {
           branchId: effectiveBranchId,
           shiftId: params.shiftId,
-          terminalId: 'emr-integration',
+          terminalId: auth.config.terminalId,
           items: checkoutItems,
           paymentMethod: params.paymentMethod || 'cash',
           customerName: params.patientName || 'EMR Patient',
@@ -470,7 +543,7 @@ export class CafIntegrationService implements OnModuleInit {
         },
         {
           headers: {
-            ...this.headers,
+            ...this.headers(auth.accessToken),
             'X-Idempotency-Key': this.idempotencyKey('emr-checkout'),
           },
         },

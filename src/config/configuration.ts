@@ -84,6 +84,8 @@ export default () => ({
     baseUrl: process.env.CAF_API_BASE_URL,
     username: process.env.CAF_API_USERNAME,
     password: process.env.CAF_API_PASSWORD,
+    adminUsername: process.env.CAF_ADMIN_USERNAME,
+    adminPassword: process.env.CAF_ADMIN_PASSWORD,
     branchId: process.env.CAF_BRANCH_ID,
   },
 });

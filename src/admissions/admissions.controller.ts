@@ -26,7 +26,7 @@ export class AdmissionsController {
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   create(@Body() dto: CreateAdmissionDto, @Request() req: any) {
-    return this.admissionsService.create(dto, req.user?.userId);
+    return this.admissionsService.create(dto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
@@ -143,6 +143,34 @@ export class AdmissionsController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   reportIncident(@Param('id') id: string, @Body() incident: any, @Request() req: any) {
     return this.admissionsService.reportIncident(id, incident, req.user?.userId);
+  }
+
+  // ---------- Oxygen therapy ----------
+  @Post(':id/oxygen')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
+  startOxygen(
+    @Param('id') id: string,
+    @Body() data: { litersPerMinute: number; hoursPerDay: number; days: number; ratePerHour?: number; notes?: string },
+    @Request() req: any,
+  ) {
+    return this.admissionsService.startOxygenTherapy(id, data, req.user?.userId);
+  }
+
+  @Patch(':id/oxygen/:index/stop')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
+  stopOxygen(
+    @Param('id') id: string,
+    @Param('index') index: string,
+    @Request() req: any,
+  ) {
+    return this.admissionsService.stopOxygenTherapy(id, parseInt(index, 10), req.user?.userId);
+  }
+
+  @Get(':id/oxygen-cost')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  async getOxygenCost(@Param('id') id: string) {
+    const admission = await this.admissionsService.findOne(id);
+    return this.admissionsService.getOxygenCostSummary(admission);
   }
 
   // ---------- Transfer / Discharge ----------

@@ -70,14 +70,14 @@ export class LisIntegrationService {
 
     try {
       const branch = await this.branchModel.findById(branchId).lean().exec();
-      if (branch && branch.labApiKey) {
+      if (branch && branch.lisEnabled !== false && (branch.labApiKey || branch.lisBaseUrl)) {
         return {
-          apiKey: branch.labApiKey,
-          baseUrl: defaultConfig.baseUrl,
+          apiKey: branch.labApiKey || defaultConfig.apiKey,
+          baseUrl: branch.lisBaseUrl || defaultConfig.baseUrl,
           facilityName: branch.name || defaultConfig.facilityName,
           facilityLocation: branch.address || defaultConfig.facilityLocation,
           sourceSystem: `${branch.name} EMR`,
-          branchCode: branch.code,
+          branchCode: branch.labFacilityId || branch.code,
           branchId: branch._id?.toString(),
         };
       }

@@ -113,6 +113,43 @@ export class IncidentReport {
 export const IncidentReportSchema = SchemaFactory.createForClass(IncidentReport);
 
 @Schema({ _id: false, timestamps: false })
+export class OxygenTherapy {
+  @Prop({ required: true })
+  litersPerMinute: number; // flow rate (e.g. 2, 5, 10)
+
+  @Prop({ required: true })
+  hoursPerDay: number; // how many hours per day
+
+  @Prop({ required: true })
+  days: number; // number of days (can be fractional, e.g. 1.5)
+
+  @Prop({ default: 200 })
+  ratePerHour: number; // Le 200/hour default
+
+  @Prop()
+  totalCost: number; // auto-calculated: hoursPerDay × days × ratePerHour
+
+  @Prop()
+  notes?: string;
+
+  @Prop({ enum: ['active', 'completed', 'stopped'], default: 'active' })
+  status: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  startedBy?: Types.ObjectId;
+
+  @Prop({ default: () => new Date() })
+  startedAt: Date;
+
+  @Prop()
+  stoppedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  stoppedBy?: Types.ObjectId;
+}
+export const OxygenTherapySchema = SchemaFactory.createForClass(OxygenTherapy);
+
+@Schema({ _id: false, timestamps: false })
 export class ShiftHandover {
   @Prop({ required: true })
   shift: string; // morning, afternoon, night
@@ -135,6 +172,9 @@ export const ShiftHandoverSchema = SchemaFactory.createForClass(ShiftHandover);
 
 @Schema({ timestamps: true, collection: 'admissions' })
 export class Admission extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ required: true, unique: true })
   admissionNumber: string; // ADM-YYYYMMDD-XXXX
 
@@ -216,6 +256,9 @@ export class Admission extends Document {
 
   @Prop({ type: [ShiftHandoverSchema], default: [] })
   shiftHandovers: ShiftHandover[];
+
+  @Prop({ type: [OxygenTherapySchema], default: [] })
+  oxygenTherapy: OxygenTherapy[];
 
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   admittedBy?: Types.ObjectId;

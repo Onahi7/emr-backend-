@@ -7,6 +7,7 @@ import { SoapNote, SoapNoteSchema } from '../database/schemas/soap-note.schema';
 import { AdmissionsController } from './admissions.controller';
 import { AdmissionsService } from './admissions.service';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { ServicePricesModule } from '../service-prices/service-prices.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
       { name: SoapNote.name, schema: SoapNoteSchema },
     ]),
     RealtimeModule,
+    ServicePricesModule,
   ],
   controllers: [AdmissionsController],
   providers: [AdmissionsService],
