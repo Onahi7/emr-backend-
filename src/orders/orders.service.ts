@@ -224,9 +224,9 @@ export class OrdersService {
    * Create a new order
    */
   private getPaymentTypeForOrder(orderType: OrderTypeEnum): PaymentTypeEnum {
-    return orderType === OrderTypeEnum.PHARMACY
-      ? PaymentTypeEnum.PHARMACY_ORDER
-      : PaymentTypeEnum.LAB_ORDER;
+    if (orderType === OrderTypeEnum.PHARMACY) return PaymentTypeEnum.PHARMACY_ORDER;
+    if (orderType === OrderTypeEnum.LAB) return PaymentTypeEnum.LAB_ORDER;
+    return PaymentTypeEnum.OTHER;
   }
 
   private getPaidStatusForOrder(orderType: OrderTypeEnum): OrderStatusEnum {
@@ -1385,6 +1385,9 @@ export class OrdersService {
 
     const populatedOrder = await this.findOne(id, branchId);
     this.realtimeGateway.notifyOrderUpdated(populatedOrder);
+    if (order.paymentStatus === PaymentStatusEnum.PAID && await this.isObservationOrder(order._id as Types.ObjectId)) {
+      await this.activateObservationVisit(order);
+    }
     if (order.visitId) {
       await this.syncVisitStatus(order.visitId as Types.ObjectId);
     }
@@ -1528,18 +1531,45 @@ export class OrdersService {
     return { data: dataWithTests as unknown as Order[], total, page, limit };
   }
 
+  private async isObservationOrder(orderId: Types.ObjectId | string): Promise<boolean> {
+    const tests = await this.orderTestModel.find({ orderId }).lean().exec();
+    return tests.some((test) => String(test.testCode || '').toUpperCase().startsWith('OBSERVATION'));
+  }
+
+  private async activateObservationVisit(order: Order): Promise<void> {
+    if (!order.visitId) return;
+    const visit = await this.visitModel.findById(order.visitId);
+    if (!visit || [VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED, VisitStatusEnum.ADMITTED].includes(visit.status)) return;
+
+    if (!visit.room || visit.roomType !== 'observation') {
+      const RoomModel = this.visitModel.db.model('Room');
+      const room: any = await RoomModel.findOneAndUpdate(
+        { roomType: 'observation', status: 'available' },
+        { status: 'occupied', currentVisitId: visit._id, currentPatientName: visit._id },
+        { sort: { name: 1 } },
+      ).exec();
+      if (room) {
+        visit.room = room.name;
+      }
+    }
+
+    visit.roomType = 'observation';
+    visit.status = VisitStatusEnum.AWAITING_TRIAGE;
+    await visit.save();
+    this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status: visit.status });
+  }
+
   /**
    * Get pending clinical orders (awaiting payment)
-   * Used by Reception dashboard to show what needs to be paid
-   * Covers both lab orders and pharmacy orders
+   * Used by Reception dashboard to show what needs to be paid.
+   * Includes lab, pharmacy, and service orders such as observation/procedure.
    */
   async getPendingClinicalOrders(orderType?: OrderTypeEnum, branchId?: string): Promise<Order[]> {
     const query: any = { status: OrderStatusEnum.AWAITING_PAYMENT };
     if (orderType) {
       query.orderType = orderType;
     } else {
-      // By default only show lab and pharmacy orders (not consultation orders)
-      query.orderType = { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] };
+      query.orderType = { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY, OrderTypeEnum.PROCEDURE, OrderTypeEnum.ADMISSION, OrderTypeEnum.OTHER] };
     }
 
     if (branchId) {
@@ -1625,6 +1655,10 @@ export class OrdersService {
     });
 
     this.logger.log(`Order ${order.orderNumber} marked as paid`);
+
+    if (await this.isObservationOrder(order._id as Types.ObjectId)) {
+      await this.activateObservationVisit(order);
+    }
 
     // Sync visit status if this order belongs to a visit
     if (order.visitId) {
