@@ -125,18 +125,7 @@ export class VisitsService {
   }
 
   async findAll(query: any = {}, branchId?: string): Promise<Visit[]> {
-    const filter = { ...query };
-    if (filter.status === 'in_progress') {
-      filter.status = {
-        $in: [
-          VisitStatusEnum.AWAITING_TRIAGE,
-          VisitStatusEnum.IN_QUEUE,
-          VisitStatusEnum.IN_CONSULTATION,
-          VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
-        ],
-      };
-    }
-    if (branchId) filter.branchId = branchId;
+    const filter = branchId ? { ...query, branchId } : query;
     return this.visitModel
       .find(filter)
       .populate('patientId', 'patientId firstName lastName age gender phone')
@@ -928,7 +917,7 @@ export class VisitsService {
       .model('Order')
       .find({
         visitId: visit._id,
-        orderType: { $ne: OrderTypeEnum.CONSULTATION },
+        orderType: { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] },
         status: { $ne: OrderStatusEnum.CANCELLED },
       })
       .lean();

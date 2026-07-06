@@ -46,14 +46,12 @@ export class VisitsController {
     @Query('status') status?: VisitStatusEnum,
     @Query('patientId') patientId?: string,
     @Query('doctorId') doctorId?: string,
-    @Query('roomType') roomType?: string,
     @Request() req?: any,
   ) {
     const query: any = {};
     if (status) query.status = status;
     if (patientId) query.patientId = patientId;
     if (doctorId) query.doctorId = doctorId;
-    if (roomType) query.roomType = roomType;
     return this.visitsService.findAll(query, req?.user?.branchId);
   }
 
