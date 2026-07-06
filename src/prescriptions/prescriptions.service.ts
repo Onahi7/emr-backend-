@@ -52,7 +52,7 @@ export class PrescriptionsService {
    *   "2 tablets"       → 2
    *   "2 ampules"       → 2
    *   "1 ampule"        → 1
-   *   "5 ml"            → 5
+   *   "5 ml"            → 1 (volume/strength label)
    *   "0.5 tablet"      → 0.5 (halved tablet)
    */
   private parseUnitsPerDose(strength: string): number {
@@ -64,7 +64,7 @@ export class PrescriptionsService {
       const n = parseFloat(m[1]);
       // If the next word is one of these explicit unit words, treat as count
       const rest = s.slice(m[0].length).trim();
-      const countUnits = ['tablet', 'tablets', 'capsule', 'capsules', 'ampule', 'ampules', 'vial', 'vials', 'patch', 'patches', 'drop', 'drops', 'puff', 'puffs', 'sachet', 'sachets', 'ml'];
+      const countUnits = ['tablet', 'tablets', 'capsule', 'capsules', 'ampule', 'ampules', 'vial', 'vials', 'patch', 'patches', 'drop', 'drops', 'puff', 'puffs', 'sachet', 'sachets'];
       if (countUnits.some((u) => rest.startsWith(u))) {
         return n;
       }
@@ -82,11 +82,15 @@ export class PrescriptionsService {
     let total = 0;
     for (const item of items) {
       let price = 0;
+      let packSizes: any[] = [];
+      let sellMode: string | undefined;
 
       // Try local DB first
       const localMed = await this.medicationModel.findById(item.medicationId).lean();
       if (localMed) {
         price = localMed.unitPrice || 0;
+        packSizes = localMed.packSizes || [];
+        sellMode = (localMed as any).sellMode;
         if ((!price || price === 0) && localMed.packSizes && localMed.packSizes.length > 0) {
           const def = localMed.packSizes.find((p) => p.isDefault) || localMed.packSizes[0];
           price = def.unitsPerPack > 0 ? def.sellingPrice / def.unitsPerPack : 0;
@@ -99,6 +103,8 @@ export class PrescriptionsService {
           if (cafMed) {
             // Per-base-unit price (same logic as the medications controller uses)
             const defaultPack = cafMed.packSizes?.[0];
+            packSizes = cafMed.packSizes || [];
+            sellMode = (cafMed as any).sellMode;
             price =
               defaultPack && defaultPack.quantityPerPack > 0
                 ? (defaultPack.sellingPrice || 0) / defaultPack.quantityPerPack
@@ -109,7 +115,30 @@ export class PrescriptionsService {
         }
       }
 
-      total += item.quantity * (price || 0);
+      const quantity = Math.max(1, Number(item.quantity || 1));
+      const packs = packSizes
+        .map((pack) => ({
+          units: Number(pack.unitsPerPack ?? pack.quantityPerPack ?? 0) || 0,
+          price: Number(pack.sellingPrice ?? 0) || 0,
+        }))
+        .filter((pack) => pack.units > 0 && pack.price > 0)
+        .map((pack) => ({
+          ...pack,
+          sellUnits: Math.max(1, Math.ceil(quantity / pack.units)),
+        }))
+        .map((pack) => ({
+          ...pack,
+          coveredUnits: pack.sellUnits * pack.units,
+          lineTotal: pack.sellUnits * pack.price,
+        }))
+        .filter((pack) => pack.coveredUnits >= quantity)
+        .sort((a, b) => a.coveredUnits - b.coveredUnits || a.lineTotal - b.lineTotal);
+
+      if (sellMode !== 'individual' && packs.length > 0) {
+        total += packs[0].lineTotal;
+      } else {
+        total += quantity * (price || 0);
+      }
     }
     return total;
   }
