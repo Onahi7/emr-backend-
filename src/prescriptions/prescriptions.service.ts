@@ -85,17 +85,20 @@ export class PrescriptionsService {
       let packSizes: any[] = [];
       let sellMode: string | undefined;
 
-      // Try local DB first
-      const localMed = await this.medicationModel.findById(item.medicationId).lean();
-      if (localMed) {
-        price = localMed.unitPrice || 0;
-        packSizes = localMed.packSizes || [];
-        sellMode = (localMed as any).sellMode;
-        if ((!price || price === 0) && localMed.packSizes && localMed.packSizes.length > 0) {
-          const def = localMed.packSizes.find((p) => p.isDefault) || localMed.packSizes[0];
-          price = def.unitsPerPack > 0 ? def.sellingPrice / def.unitsPerPack : 0;
+      // Try local first
+      if (Types.ObjectId.isValid(item.medicationId)) {
+        const localMed = await this.medicationModel.findById(item.medicationId).lean();
+        if (localMed) {
+          price = localMed.unitPrice || 0;
+          packSizes = localMed.packSizes || [];
+          sellMode = (localMed as any).sellMode;
+          if ((!price || price === 0) && localMed.packSizes && localMed.packSizes.length > 0) {
+            const def = localMed.packSizes.find((p) => p.isDefault) || localMed.packSizes[0];
+            price = def.unitsPerPack > 0 ? def.sellingPrice / def.unitsPerPack : 0;
+          }
         }
-      } else if (this.cafIntegrationService.isConfigured()) {
+      }
+      if (!price && this.cafIntegrationService.isConfigured()) {
         // Fall back to CAF — fetch all CAF products and find a matching one
         try {
           const cafProducts = await this.cafIntegrationService.getProducts({ page: 1, limit: 500 });
@@ -204,8 +207,11 @@ export class PrescriptionsService {
   }
 
   private async resolveMedicationForDispense(medicationId: Types.ObjectId | string) {
-    const localMedication = await this.medicationModel.findById(medicationId).lean();
-    if (localMedication) return localMedication as any;
+    // Guard: only attempt local lookup for valid ObjectId strings (CAF products have non-ObjectId IDs)
+    if (Types.ObjectId.isValid(medicationId)) {
+      const localMedication = await this.medicationModel.findById(medicationId).lean();
+      if (localMedication) return localMedication as any;
+    }
 
     if (!this.cafIntegrationService.isConfigured()) return null;
     const cafProduct = await this.cafIntegrationService.getProductById(medicationId.toString());
@@ -328,7 +334,10 @@ export class PrescriptionsService {
 
     // Check medication stock — local meds or CAF products
     for (const item of normalizedItems) {
-      const medication = await this.medicationModel.findById(item.medicationId).lean();
+      let medication: any = null;
+      if (Types.ObjectId.isValid(item.medicationId)) {
+        medication = await this.medicationModel.findById(item.medicationId).lean();
+      }
       if (!medication) {
         if (this.cafIntegrationService.isConfigured()) {
           const cafStock = await this.cafIntegrationService.getProductStock(item.medicationId);
@@ -375,7 +384,7 @@ export class PrescriptionsService {
         const duration = item.duration || this.durationFromDays(item.durationDays);
         return {
           ...item,
-          medicationId: new Types.ObjectId(item.medicationId),
+          medicationId: item.medicationId,
           dosage,
           frequency,
           duration,
@@ -485,7 +494,7 @@ export class PrescriptionsService {
       sellUnits: number; // number of sell units to dispense
       baseUnits: number; // derived = sellUnits × unitsPerPack (or sellUnits in individual mode)
       // Medication being dispensed (could be a substitute)
-      medicationId: Types.ObjectId;
+      medicationId: string | Types.ObjectId;
       medicationName: string;
       // Pricing
       pricePerSellUnit: number;
@@ -512,9 +521,7 @@ export class PrescriptionsService {
       const packSizeIndex = override?.packSizeIndex;
 
       // Resolve the actual medication (substitute-aware)
-      const actualMedicationId = override?.substituteMedicationId
-        ? new Types.ObjectId(override.substituteMedicationId)
-        : item.medicationId;
+      const actualMedicationId = override?.substituteMedicationId || item.medicationId;
       const medication = await this.resolveMedicationForDispense(actualMedicationId);
       const medicationName = medication?.name || item.medicationName;
       const isSubstitute = !!override?.substituteMedicationId;
@@ -524,6 +531,9 @@ export class PrescriptionsService {
       let pricePerSellUnit: number;
       let packName: string | undefined;
       let cafPackSize: DispenseLine['cafPackSize'];
+      const manualUnitLabel = override?.manualSellUnitLabel?.trim();
+      const manualPrice = Number(override?.manualPricePerSellUnit ?? NaN);
+      const manualUnitsPerSellUnit = Number(override?.manualBaseUnitsPerSellUnit ?? NaN);
 
       if (dispenseMode === 'pack') {
         if (
@@ -548,10 +558,12 @@ export class PrescriptionsService {
           barcode: pack.barcode,
         };
       } else {
-        // Individual mode: sell units = base units, price per base unit
+        // Individual/manual mode: receptionist may override unit label and price
+        // while catalog base-unit cleanup is still in progress.
         sellUnits = override?.sellUnits ?? item.quantity;
-        baseUnits = sellUnits;
-        pricePerSellUnit = medication?.unitPrice ?? 0;
+        baseUnits = sellUnits * (Number.isFinite(manualUnitsPerSellUnit) && manualUnitsPerSellUnit > 0 ? manualUnitsPerSellUnit : 1);
+        pricePerSellUnit = Number.isFinite(manualPrice) ? manualPrice : (medication?.unitPrice ?? 0);
+        packName = manualUnitLabel || undefined;
       }
 
       const lineTotal = sellUnits * pricePerSellUnit;
@@ -568,7 +580,7 @@ export class PrescriptionsService {
       if (isSubstitute) {
         item.substituteForId = item.medicationId;
         item.substituteForName = item.medicationName;
-        item.medicationId = actualMedicationId;
+        item.medicationId = actualMedicationId.toString();
         item.medicationName = medicationName;
       }
 
@@ -591,8 +603,11 @@ export class PrescriptionsService {
     for (const line of lines) {
       if (line.baseUnits <= 0) continue; // 0 qty means nothing to deduct
 
-      // Try local first
-      const localMed = await this.medicationModel.findById(line.medicationId).lean();
+      // Try local first (only for valid ObjectId medicationIds)
+      let localMed: any = null;
+      if (Types.ObjectId.isValid(line.medicationId)) {
+        localMed = await this.medicationModel.findById(line.medicationId).lean();
+      }
       if (localMed && !localMed.isCafSourced) {
         const updated = await this.medicationModel.findOneAndUpdate(
           { _id: line.medicationId, stockQuantity: { $gte: line.baseUnits } },
@@ -630,7 +645,10 @@ export class PrescriptionsService {
     const cafOnlyLines: typeof lines = [];
     for (const line of lines) {
       if (line.sellUnits <= 0) continue;
-      const localMed = await this.medicationModel.findById(line.medicationId).lean();
+      let localMed: any = null;
+      if (Types.ObjectId.isValid(line.medicationId)) {
+        localMed = await this.medicationModel.findById(line.medicationId).lean();
+      }
       if (!localMed || localMed.isCafSourced) {
         cafOnlyLines.push(line);
       }
@@ -776,7 +794,7 @@ export class PrescriptionsService {
     // Replace items if provided
     if (updateDto.items && updateDto.items.length > 0) {
       prescription.items = updateDto.items.map((item: any) => ({
-        medicationId: new Types.ObjectId(item.medicationId),
+        medicationId: item.medicationId,
         medicationName: item.medicationName,
         dosage: item.dosage,
         frequency: item.frequency,

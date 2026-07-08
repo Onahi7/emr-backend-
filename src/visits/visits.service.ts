@@ -81,17 +81,29 @@ export class VisitsService {
       (rapidTestsRequested?.includes('typhoid') ? await this.servicePricesService.getPrice(branchId, ServicePriceCodeEnum.RAPID_TYPHOID) : 0);
     const configuredConsultationFee = Math.round((configuredBaseFee + configuredRapidFee) * 100) / 100;
 
+    // Consultation fee waiver: if patient had a paid consultation within 30 days, waive the fee
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentPaidVisit = await this.visitModel.findOne({
+      patientId: new Types.ObjectId(patientId),
+      consultationPaid: true,
+      createdAt: { $gte: thirtyDaysAgo },
+    }).sort({ createdAt: -1 }).lean();
+
+    const consultationFeeWaived = !!recentPaidVisit;
+    const finalConsultationFee = consultationFeeWaived ? 0 : (configuredConsultationFee || consultationFee);
+
     const visitData: any = {
       visitNumber,
       patientId: new Types.ObjectId(patientId),
       doctorId: effectiveDoctorId ? new Types.ObjectId(effectiveDoctorId) : undefined,
       visitType: visitType || VisitTypeEnum.NEW,
-      consultationFee: configuredConsultationFee || consultationFee,
+      consultationFee: finalConsultationFee,
       chiefComplaint,
       notes,
       temperature: temperature || undefined,
-      status: VisitStatusEnum.WAITING_PAYMENT,
-      consultationPaid: false,
+      status: consultationFeeWaived ? VisitStatusEnum.AWAITING_TRIAGE : VisitStatusEnum.WAITING_PAYMENT,
+      consultationPaid: consultationFeeWaived,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
       serviceType,
       specialistId: specialistId ? new Types.ObjectId(specialistId) : undefined,
@@ -117,11 +129,40 @@ export class VisitsService {
         await savedVisit.save();
       }
     }
-    this.logger.log(`Visit created: ${savedVisit.visitNumber}`);
+    this.logger.log(`Visit created: ${savedVisit.visitNumber}${consultationFeeWaived ? ' (fee waived — recent paid visit within 30 days)' : ''}`);
+
+    // If fee was waived, auto-create queue entry (skipping the WAITING_PAYMENT step)
+    if (consultationFeeWaived) {
+      try {
+        const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        const queueCount = await this.queueModel.countDocuments({
+          createdAt: {
+            $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+            $lt: new Date(new Date().setHours(23, 59, 59, 999)),
+          },
+        });
+        const lastQueue = await this.queueModel.findOne().sort({ queueOrder: -1 }).exec();
+        const queueOrder = lastQueue ? lastQueue.queueOrder + 1 : 1;
+        await this.queueModel.create({
+          queueNumber: `Q-${dateStr}-${String(queueCount + 1).padStart(4, '0')}`,
+          patientId: savedVisit.patientId,
+          visitId: savedVisit._id,
+          status: QueueStatusEnum.WITH_NURSE,
+          priority: PriorityLevelEnum.NORMAL,
+          queueOrder,
+        });
+        savedVisit.checkedInAt = new Date();
+        await savedVisit.save();
+      } catch (e) {
+        this.logger.warn(`Failed to auto-create queue entry for waived visit ${savedVisit.visitNumber}: ${e}`);
+      }
+    }
 
     this.realtimeGateway.emitToAll('visit:created', savedVisit);
 
-    return savedVisit;
+    // Attach waiver flag so the frontend can display it
+    const result = savedVisit.toObject();
+    return { ...result, consultationFeeWaived } as any;
   }
 
   async findAll(query: any = {}, branchId?: string): Promise<Visit[]> {
@@ -226,7 +267,9 @@ export class VisitsService {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const doctorObjectId = new Types.ObjectId(doctorId);
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = branchId
+      ? { $or: [{ branchId }, { branchId: { $exists: false } }, { branchId: null }] }
+      : {};
 
     const openEncounterStatuses = [
       VisitStatusEnum.IN_CONSULTATION,
@@ -369,7 +412,9 @@ export class VisitsService {
     const todayFilter: any = { createdAt: { $gte: today, $lt: tomorrow } };
     if (branchId) todayFilter.branchId = branchId;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = branchId
+      ? { $or: [{ branchId }, { branchId: { $exists: false } }, { branchId: null }] }
+      : {};
 
     const [
       pendingConsultationPayments,
@@ -1057,7 +1102,9 @@ export class VisitsService {
     daysBack?: number,
   ): Promise<{ patients: any[]; total: number; page: number; limit: number }> {
     const doctorObjectId = new Types.ObjectId(doctorId);
-    const branchFilter = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
+    const branchFilter = branchId
+      ? { $or: [{ branchId: new Types.ObjectId(branchId) }, { branchId: { $exists: false } }, { branchId: null }] }
+      : {};
 
     const matchStage: any = { doctorId: doctorObjectId, ...branchFilter };
     if (daysBack && daysBack > 0) {

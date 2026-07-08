@@ -53,7 +53,7 @@ export class Prescription extends Document {
   @Prop({
     type: [
       {
-        medicationId: { type: Types.ObjectId, ref: 'Medication', required: true },
+        medicationId: { type: String, ref: 'Medication', required: true },
         medicationName: { type: String, required: true },
         // === Structured regimen (NEW — replaces free-text dosage/frequency/duration) ===
         /** Strength per dose — e.g. "500mg", "1 tablet", "2 ampules" */
@@ -89,7 +89,7 @@ export class Prescription extends Document {
         /** Per-item line total at dispense time (sell units × price per sell unit) */
         lineTotalAtDispense: { type: Number },
         /** Was this a substitute? If so, the original medicationId the doctor ordered */
-        substituteForId: { type: Types.ObjectId, ref: 'Medication' },
+        substituteForId: { type: String, ref: 'Medication' },
         substituteForName: { type: String },
         // === Doctor's notes (kept) ===
         // Doctor's patient-facing directions — printed on the dispensing label
@@ -104,7 +104,7 @@ export class Prescription extends Document {
     required: true,
   })
   items: Array<{
-    medicationId: Types.ObjectId;
+    medicationId: string;
     medicationName: string;
     strengthPerDose: string;
     dosesPerDay: number;
@@ -121,7 +121,7 @@ export class Prescription extends Document {
     dispensedSellUnits?: number;
     priceAtDispense?: number;
     lineTotalAtDispense?: number;
-    substituteForId?: Types.ObjectId;
+    substituteForId?: string;
     substituteForName?: string;
     instructions?: string;
     pharmacistNote?: string;

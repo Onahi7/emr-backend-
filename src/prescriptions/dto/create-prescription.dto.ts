@@ -14,7 +14,7 @@ import { Type } from 'class-transformer';
 import { RouteOfAdministrationEnum } from '../../database/schemas/prescription.schema';
 
 export class PrescriptionItemDto {
-  @IsMongoId()
+  @IsString()
   @IsNotEmpty()
   medicationId: string;
 

@@ -20,7 +20,7 @@ export class TreatmentPlanItemDto {
 
   // Drug/IV fields
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   medicationId?: string;
 
   @IsOptional()

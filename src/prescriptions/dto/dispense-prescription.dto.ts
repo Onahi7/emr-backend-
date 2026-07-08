@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsIn, IsArray, ValidateNested, IsMongoId, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsString, IsIn, IsArray, ValidateNested, IsNumber, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -7,7 +7,7 @@ import { Type } from 'class-transformer';
  * "pack" (count sell units, e.g. 1 box of 30 tablets) mode.
  */
 export class DispenseItemDto {
-  @IsMongoId()
+  @IsString()
   medicationId: string;
 
   /**
@@ -34,11 +34,29 @@ export class DispenseItemDto {
   sellUnits: number;
 
   /**
+   * Manual reception costing for catalogs that do not yet have clean base units.
+   * Example: doctor writes "BD 5/7"; receptionist charges 1 "card" at Le 20.
+   */
+  @IsOptional()
+  @IsString()
+  manualSellUnitLabel?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  manualPricePerSellUnit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  manualBaseUnitsPerSellUnit?: number;
+
+  /**
    * Optional substitute medication. If set, the original prescribed medication is
    * not dispensed — the substitute is. Both are recorded on the prescription item.
    */
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   substituteMedicationId?: string;
 
   @IsOptional()
