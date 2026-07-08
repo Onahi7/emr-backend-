@@ -506,6 +506,7 @@ export class PrescriptionsService {
         quantityPerPack: number;
         barcode?: string;
       };
+      skipInventory?: boolean;
       // Substitute tracking
       isSubstitute: boolean;
     };
@@ -514,17 +515,19 @@ export class PrescriptionsService {
     let actualTotal = 0;
 
     for (const item of prescription.items) {
+      const itemMedicationId = item.medicationId?.toString?.() || item.medicationName;
       // Find the receptionist's dispense record for this item
-      const override = dto?.items?.find((d) => d.medicationId === item.medicationId.toString());
+      const override = dto?.items?.find((d) => d.medicationId === itemMedicationId);
 
       const dispenseMode = override?.dispenseMode || 'individual';
       const packSizeIndex = override?.packSizeIndex;
 
       // Resolve the actual medication (substitute-aware)
       const actualMedicationId = override?.substituteMedicationId || item.medicationId;
-      const medication = await this.resolveMedicationForDispense(actualMedicationId);
+      const medication = actualMedicationId ? await this.resolveMedicationForDispense(actualMedicationId) : null;
       const medicationName = medication?.name || item.medicationName;
       const isSubstitute = !!override?.substituteMedicationId;
+      const skipInventory = !actualMedicationId || !Types.ObjectId.isValid(actualMedicationId) && !medication;
 
       let sellUnits: number;
       let baseUnits: number;
@@ -578,7 +581,7 @@ export class PrescriptionsService {
       item.priceAtDispense = pricePerSellUnit;
       item.lineTotalAtDispense = lineTotal;
       if (isSubstitute) {
-        item.substituteForId = item.medicationId;
+        item.substituteForId = item.medicationId || itemMedicationId;
         item.substituteForName = item.medicationName;
         item.medicationId = actualMedicationId.toString();
         item.medicationName = medicationName;
@@ -590,11 +593,12 @@ export class PrescriptionsService {
         packSizeIndex,
         sellUnits,
         baseUnits,
-        medicationId: actualMedicationId,
+        medicationId: actualMedicationId || itemMedicationId,
         medicationName,
         pricePerSellUnit,
         lineTotal,
         cafPackSize,
+        skipInventory,
         isSubstitute,
       });
     }
@@ -602,6 +606,7 @@ export class PrescriptionsService {
     // === Stock deduction (local + CAF) ===
     for (const line of lines) {
       if (line.baseUnits <= 0) continue; // 0 qty means nothing to deduct
+      if (line.skipInventory) continue; // Manual legacy item with no catalog medication ID.
 
       // Try local first (only for valid ObjectId medicationIds)
       let localMed: any = null;
@@ -645,6 +650,7 @@ export class PrescriptionsService {
     const cafOnlyLines: typeof lines = [];
     for (const line of lines) {
       if (line.sellUnits <= 0) continue;
+      if (line.skipInventory) continue;
       let localMed: any = null;
       if (Types.ObjectId.isValid(line.medicationId)) {
         localMed = await this.medicationModel.findById(line.medicationId).lean();
