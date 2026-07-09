@@ -64,6 +64,19 @@ export class OrdersService {
     return value && Types.ObjectId.isValid(value) ? new Types.ObjectId(value) : value;
   }
 
+  private branchScopedFilter(branchId?: string) {
+    if (!branchId) return {};
+    const normalizedBranchId = this.normalizeObjectId(branchId);
+    return {
+      $or: [
+        { branchId: normalizedBranchId },
+        { branchId: branchId },
+        { branchId: { $exists: false } },
+        { branchId: null },
+      ],
+    };
+  }
+
   private getEffectiveLinkedTests(testCode: string, configuredLinkedTests?: string[]): string[] {
     const linked = new Set((configuredLinkedTests || []).map((code) => code.toUpperCase()));
 
@@ -477,9 +490,7 @@ export class OrdersService {
       query.orderNumber = { $regex: search, $options: 'i' };
     }
 
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const [data, total] = await Promise.all([
       this.orderModel
@@ -518,9 +529,7 @@ export class OrdersService {
     }
 
     const filter: any = { _id: id };
-    if (branchId) {
-      filter.branchId = branchId;
-    }
+    Object.assign(filter, this.branchScopedFilter(branchId));
 
     const order = await this.orderModel
       .findOne(filter)
@@ -550,9 +559,7 @@ export class OrdersService {
    */
   async findByOrderNumber(orderNumber: string, branchId?: string): Promise<Order> {
     const filter: any = { orderNumber };
-    if (branchId) {
-      filter.branchId = branchId;
-    }
+    Object.assign(filter, this.branchScopedFilter(branchId));
 
     const order = await this.orderModel
       .findOne(filter)
@@ -834,9 +841,7 @@ export class OrdersService {
    */
   async getPendingCollection(branchId?: string): Promise<Order[]> {
     const query: any = { status: OrderStatusEnum.PENDING_COLLECTION };
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const orders = await this.orderModel
       .find(query)
@@ -873,9 +878,7 @@ export class OrdersService {
         $in: [OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING],
       },
     };
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const orders = await this.orderModel
       .find(query)
@@ -1107,9 +1110,7 @@ export class OrdersService {
       paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
       status: { $ne: OrderStatusEnum.CANCELLED },
     };
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const orders = await this.orderModel
       .find(query)
@@ -1153,9 +1154,7 @@ export class OrdersService {
       paymentStatus: { $in: [PaymentStatusEnum.PENDING, PaymentStatusEnum.PARTIAL] },
       status: { $ne: OrderStatusEnum.CANCELLED },
     };
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const [orders, treatmentPlans] = await Promise.all([
       this.orderModel
@@ -1500,9 +1499,7 @@ export class OrdersService {
       }
     }
 
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const [data, total] = await Promise.all([
       this.orderModel
@@ -1542,9 +1539,7 @@ export class OrdersService {
       query.orderType = { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] };
     }
 
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const orders = await this.orderModel
       .find(query)
@@ -1805,9 +1800,7 @@ export class OrdersService {
       orderType: OrderTypeEnum.LAB,
       status: { $in: [OrderStatusEnum.PENDING_COLLECTION, OrderStatusEnum.COLLECTED, OrderStatusEnum.PROCESSING] },
     };
-    if (branchId) {
-      query.branchId = branchId;
-    }
+    Object.assign(query, this.branchScopedFilter(branchId));
 
     const orders = await this.orderModel
       .find(query)
