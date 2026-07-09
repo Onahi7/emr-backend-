@@ -47,14 +47,34 @@ export class DoctorsService {
     return doctor.save();
   }
 
-  async findAll(search?: string, activeOnly: boolean = true) {
+  async findAll(search?: string, activeOnly: boolean = true, branchId?: string) {
     const filter: any = {};
     if (activeOnly) filter.isActive = true;
     if (search) {
       filter.fullName = { $regex: search, $options: 'i' };
     }
 
-    return this.doctorModel.find(filter).sort({ fullName: 1 }).lean();
+    const doctors = await this.doctorModel.find(filter).sort({ fullName: 1 }).lean();
+    if (!branchId) return doctors;
+
+    const ProfileModel = this.doctorModel.db.model('Profile');
+    const linkedUserIds = doctors
+      .map((doctor: any) => doctor.userId)
+      .filter(Boolean);
+    const profiles = linkedUserIds.length
+      ? await ProfileModel.find({ _id: { $in: linkedUserIds } }).select('_id branchId branchIds').lean()
+      : [];
+    const profileById = new Map(profiles.map((profile: any) => [profile._id.toString(), profile]));
+
+    return doctors.filter((doctor: any) => {
+      if (!doctor.userId) return true;
+      const profile = profileById.get(doctor.userId.toString());
+      if (!profile) return true;
+      return (
+        profile.branchId?.toString() === branchId ||
+        (Array.isArray(profile.branchIds) && profile.branchIds.some((id: any) => id?.toString() === branchId))
+      );
+    });
   }
 
   async findSpecialists(specialty?: string) {
