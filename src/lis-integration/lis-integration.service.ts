@@ -310,14 +310,10 @@ export class LisIntegrationService {
     if (refreshed?.lisSyncStatus !== 'synced') return;
 
     try {
-      const syncPaymentAmounts = this.configService.get<boolean>('lis.syncPaymentAmounts') === true;
-      const lisAmount = syncPaymentAmounts ? amount : 0;
       await client.post(`/external-api/test-requests/${encodeURIComponent(externalRequestId)}/payment`, {
-        amount: lisAmount,
+        amount: 0,
         paymentMethod: this.mapPaymentMethod(paymentMethod),
-        notes: syncPaymentAmounts
-          ? `Paid in EMR for ${order.orderNumber}${paymentMethod === PaymentMethodEnum.WALLET ? ' via wallet' : ''}`
-          : `Payment collected in EMR for ${order.orderNumber}; financial amount retained in EMR`,
+        notes: `Payment collected in EMR for ${order.orderNumber}; LIS notification only, no LIS cash movement. EMR amount: Le ${Number(amount || 0).toLocaleString()}`,
       });
       await this.orderModel.findByIdAndUpdate(orderId, {
         $set: {
