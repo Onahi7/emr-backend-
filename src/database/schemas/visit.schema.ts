@@ -236,6 +236,24 @@ export class Visit extends Document {
   @Prop()
   roomType?: string; // "consultation", "treatment", "procedure", "emergency"
 
+  // Insurance snapshot from patient at time of visit
+  @Prop({ type: {
+    programCode: String,
+    subEntityCode: String,
+    memberNumber: String,
+    memberName: String,
+    responsiblePerson: String,
+    responsiblePhone: String,
+  }})
+  insurance?: {
+    programCode?: string;
+    subEntityCode?: string;
+    memberNumber?: string;
+    memberName?: string;
+    responsiblePerson?: string;
+    responsiblePhone?: string;
+  };
+
   createdAt: Date;
   updatedAt: Date;
 }

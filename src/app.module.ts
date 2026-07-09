@@ -43,6 +43,7 @@ import { CafIntegrationModule } from './caf-integration/caf-integration.module';
 import { BranchesModule } from './branches/branches.module';
 import { TreatmentPlansModule } from './treatment-plans/treatment-plans.module';
 import { ServicePricesModule } from './service-prices/service-prices.module';
+import { InsuranceModule } from './insurance/insurance.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -97,6 +98,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
     BranchesModule,
     TreatmentPlansModule,
     ServicePricesModule,
+    InsuranceModule,
   ],
   controllers: [AppController],
   providers: [

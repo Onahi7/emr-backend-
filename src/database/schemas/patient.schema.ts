@@ -131,18 +131,36 @@ export class Patient extends Document {
   @Prop()
   emergencyContactPhone?: string;
 
-  // Insurance / corporate billing
-  @Prop()
-  insuranceProvider?: string;
-
-  @Prop()
-  insurancePolicyNumber?: string;
-
+  // Legacy corporate billing (kept for backward compat)
   @Prop()
   corporateEmployer?: string;
 
   @Prop()
   corporateStaffId?: string;
+
+  // Structured insurance
+  @Prop({ type: {
+    programCode: String,
+    subEntityCode: String,
+    memberNumber: String,
+    memberName: String,
+    responsiblePerson: String,
+    responsiblePhone: String,
+    responsibleAddress: String,
+    authorizerName: String,
+    authorizerPhone: String,
+  }})
+  insurance?: {
+    programCode?: string;
+    subEntityCode?: string;
+    memberNumber?: string;
+    memberName?: string;
+    responsiblePerson?: string;
+    responsiblePhone?: string;
+    responsibleAddress?: string;
+    authorizerName?: string;
+    authorizerPhone?: string;
+  };
 
   @Prop({ default: true })
   isActive: boolean;

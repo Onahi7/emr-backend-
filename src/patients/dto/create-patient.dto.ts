@@ -116,15 +116,7 @@ export class CreatePatientDto {
   @IsOptional()
   emergencyContactPhone?: string;
 
-  // Insurance / corporate
-  @IsString()
-  @IsOptional()
-  insuranceProvider?: string;
-
-  @IsString()
-  @IsOptional()
-  insurancePolicyNumber?: string;
-
+  // Legacy corporate
   @IsString()
   @IsOptional()
   corporateEmployer?: string;
@@ -132,4 +124,18 @@ export class CreatePatientDto {
   @IsString()
   @IsOptional()
   corporateStaffId?: string;
+
+  // Structured insurance
+  @IsOptional()
+  insurance?: {
+    programCode?: string;
+    subEntityCode?: string;
+    memberNumber?: string;
+    memberName?: string;
+    responsiblePerson?: string;
+    responsiblePhone?: string;
+    responsibleAddress?: string;
+    authorizerName?: string;
+    authorizerPhone?: string;
+  };
 }

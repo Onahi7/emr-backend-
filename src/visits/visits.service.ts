@@ -111,6 +111,20 @@ export class VisitsService {
       rapidTestsRequested: rapidTestsRequested || [],
       rapidTestResults: [],
     };
+
+    // Snapshot patient insurance onto visit
+    const patientObj = patient.toObject ? patient.toObject() : patient;
+    if (patientObj.insurance && patientObj.insurance.programCode) {
+      visitData.insurance = {
+        programCode: patientObj.insurance.programCode,
+        subEntityCode: patientObj.insurance.subEntityCode,
+        memberNumber: patientObj.insurance.memberNumber,
+        memberName: patientObj.insurance.memberName,
+        responsiblePerson: patientObj.insurance.responsiblePerson,
+        responsiblePhone: patientObj.insurance.responsiblePhone,
+      };
+    }
+
     if (branchId) visitData.branchId = branchId;
 
     const visit = new this.visitModel(visitData);

@@ -36,3 +36,4 @@ export * from './panel-interpretation.schema';
 export * from './stock-movement.schema';
 export * from './supplier.schema';
 export * from './treatment-plan.schema';
+export * from './insurance.schema';
