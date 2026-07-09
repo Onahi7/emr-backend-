@@ -190,7 +190,6 @@ export class LisIntegrationService {
     const buildPayload = (patient: any) => ({
       externalRequestId,
       sourceSystem: branchConfig.sourceSystem,
-      sourceBranchCode: branchConfig.branchCode,
       sourceFacilityName: branchConfig.facilityName,
       sourceFacilityLocation: branchConfig.facilityLocation,
       patient,
@@ -206,12 +205,14 @@ export class LisIntegrationService {
 
     const saveSynced = async (response: any) => {
       await this.orderModel.findByIdAndUpdate(order._id, {
-        lisExternalRequestId: externalRequestId,
-        lisOrderId: response.data?.orderId,
-        lisOrderNumber: response.data?.orderNumber,
-        lisSyncStatus: 'synced',
-        lisSyncError: undefined,
-        lisSyncedAt: new Date(),
+        $set: {
+          lisExternalRequestId: externalRequestId,
+          lisOrderId: response.data?.orderId,
+          lisOrderNumber: response.data?.orderNumber,
+          lisSyncStatus: 'synced',
+          lisSyncedAt: new Date(),
+        },
+        $unset: { lisSyncError: '' },
       });
     };
 
@@ -319,9 +320,11 @@ export class LisIntegrationService {
           : `Payment collected in EMR for ${order.orderNumber}; financial amount retained in EMR`,
       });
       await this.orderModel.findByIdAndUpdate(orderId, {
-        lisPaymentSyncStatus: 'synced',
-        lisPaymentSyncError: undefined,
-        lisPaymentSyncedAt: new Date(),
+        $set: {
+          lisPaymentSyncStatus: 'synced',
+          lisPaymentSyncedAt: new Date(),
+        },
+        $unset: { lisPaymentSyncError: '' },
       });
       this.logger.log(`LIS payment synced for ${order.orderNumber}`);
     } catch (error: any) {
