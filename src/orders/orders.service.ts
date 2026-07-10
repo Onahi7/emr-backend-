@@ -415,7 +415,7 @@ export class OrdersService {
       for (const p of createOrderDto.initialPayments) {
         if (p.amount > 0) {
           await this.paymentModel.create({
-            branchId,
+            branchId: branchId ? new Types.ObjectId(branchId) : undefined,
             orderId: savedOrder._id,
             paymentType: this.getPaymentTypeForOrder(orderType),
             amount: Math.round(p.amount * 100) / 100,
@@ -427,7 +427,7 @@ export class OrdersService {
       }
     } else if (createOrderDto.paymentMethod && amountPaid > 0) {
       await this.paymentModel.create({
-        branchId,
+        branchId: branchId ? new Types.ObjectId(branchId) : undefined,
         orderId: savedOrder._id,
         paymentType: this.getPaymentTypeForOrder(orderType),
         amount: amountPaid,
@@ -1365,7 +1365,7 @@ export class OrdersService {
 
     // Create payment record
     const payment = await this.paymentModel.create({
-      branchId,
+      branchId: branchId ? new Types.ObjectId(branchId) : undefined,
       orderId: order._id,
       paymentType: this.getPaymentTypeForOrder(order.orderType),
       amount: addPaymentDto.amount,
@@ -1623,7 +1623,7 @@ export class OrdersService {
 
     // Create payment record
     await this.paymentModel.create({
-      branchId,
+      branchId: branchId ? new Types.ObjectId(branchId) : undefined,
       visitId: order.visitId || undefined,
       orderId: order._id,
       patientId: order.patientId?._id || order.patientId,
