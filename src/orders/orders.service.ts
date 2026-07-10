@@ -1624,7 +1624,9 @@ export class OrdersService {
     // Create payment record
     await this.paymentModel.create({
       branchId,
+      visitId: order.visitId || undefined,
       orderId: order._id,
+      patientId: order.patientId?._id || order.patientId,
       paymentType: this.getPaymentTypeForOrder(order.orderType),
       amount: order.total,
       paymentMethod,
