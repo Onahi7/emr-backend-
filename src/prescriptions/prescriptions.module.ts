@@ -12,11 +12,13 @@ import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { Admission, AdmissionSchema } from '../database/schemas/admission.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CafIntegrationModule } from '../caf-integration/caf-integration.module';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   imports: [
     RealtimeModule,
     CafIntegrationModule,
+    OrdersModule,
     MongooseModule.forFeature([
       { name: Prescription.name, schema: PrescriptionSchema },
       { name: Medication.name, schema: MedicationSchema },

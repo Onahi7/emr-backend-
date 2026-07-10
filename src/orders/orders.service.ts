@@ -28,6 +28,10 @@ import { AddPaymentDto } from './dto/add-payment.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { LisIntegrationService } from '../lis-integration/lis-integration.service';
+import { Interval } from '@nestjs/schedule';
+import { IntegrationJobsService } from '../integration-jobs/integration-jobs.service';
+import { IntegrationJobType } from '../database/schemas/integration-job.schema';
+import { branchFilter, requireBranchId, withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class OrdersService {
@@ -65,16 +69,7 @@ export class OrdersService {
   }
 
   private branchScopedFilter(branchId?: string) {
-    if (!branchId) return {};
-    const normalizedBranchId = this.normalizeObjectId(branchId);
-    return {
-      $or: [
-        { branchId: normalizedBranchId },
-        { branchId: branchId },
-        { branchId: { $exists: false } },
-        { branchId: null },
-      ],
-    };
+    return branchFilter(branchId);
   }
 
   private getEffectiveLinkedTests(testCode: string, configuredLinkedTests?: string[]): string[] {
@@ -99,7 +94,57 @@ export class OrdersService {
     @InjectModel(TreatmentPlan.name) private treatmentPlanModel: Model<TreatmentPlan>,
     private realtimeGateway: RealtimeGateway,
     private lisIntegrationService: LisIntegrationService,
+    private integrationJobs: IntegrationJobsService,
   ) {}
+
+  private async enqueueLisJob(
+    type: IntegrationJobType,
+    order: Order,
+    payload: Record<string, any> = {},
+  ) {
+    const branchId = requireBranchId(order.branchId);
+    return this.integrationJobs.enqueue({
+      branchId,
+      type,
+      aggregateId: order._id.toString(),
+      idempotencyKey: `${type}:${order._id.toString()}:${type === IntegrationJobType.LIS_PAYMENT_SYNC ? order.amountPaid : 'v1'}`,
+      payload: { orderId: order._id.toString(), branchId, ...payload },
+    });
+  }
+
+  private async executeLisJob(job: any) {
+    const started = await this.integrationJobs.start(job._id.toString());
+    try {
+      if (started.type === IntegrationJobType.LIS_ORDER_SYNC) {
+        await this.lisIntegrationService.syncOrderToLis(started.payload.orderId, started.payload.branchId);
+      } else if (started.type === IntegrationJobType.LIS_PAYMENT_SYNC) {
+        await this.lisIntegrationService.syncPaymentToLis(
+          started.payload.orderId,
+          started.payload.amount,
+          started.payload.paymentMethod,
+          started.payload.branchId,
+        );
+      } else if (started.type === IntegrationJobType.LIS_RESULT_IMPORT) {
+        await this.lisIntegrationService.fetchAndStoreResults(started.payload.orderId, started.payload.branchId);
+      }
+      await this.integrationJobs.complete(started._id.toString());
+    } catch (error) {
+      await this.integrationJobs.fail(started._id.toString(), error);
+      throw error;
+    }
+  }
+
+  @Interval(30_000)
+  async processIntegrationJobs() {
+    const jobs = await this.integrationJobs.findReady([
+      IntegrationJobType.LIS_ORDER_SYNC,
+      IntegrationJobType.LIS_PAYMENT_SYNC,
+      IntegrationJobType.LIS_RESULT_IMPORT,
+    ]);
+    for (const job of jobs) {
+      await this.executeLisJob(job).catch(error => this.logger.warn(`Integration job ${job._id.toString()} failed: ${error?.message || error}`));
+    }
+  }
 
   /**
    * Generate unique order number in format: ORD-YYYYMMDD-XXXX
@@ -258,10 +303,15 @@ export class OrdersService {
   }
 
   async create(createOrderDto: CreateOrderDto, userId?: string, branchId?: string, reqUserRole?: string | string[]): Promise<Order> {
+    const requiredBranchId = requireBranchId(branchId);
     // Validate patient ID
     if (!Types.ObjectId.isValid(createOrderDto.patientId)) {
       throw new BadRequestException('Invalid patient ID');
     }
+    const patientExists = await this.orderModel.db.model('Patient').exists(
+      withBranch({ _id: new Types.ObjectId(createOrderDto.patientId) }, requiredBranchId),
+    );
+    if (!patientExists) throw new BadRequestException('Patient not found in the selected branch');
 
     const orderType = createOrderDto.orderType || OrderTypeEnum.LAB;
     // Clinical orders may be created without a visit when a doctor searches a patient
@@ -277,7 +327,7 @@ export class OrdersService {
       }
       const visit = await this.orderModel.db
         .collection('visits')
-        .findOne({ _id: new Types.ObjectId(createOrderDto.visitId) });
+        .findOne(withBranch({ _id: new Types.ObjectId(createOrderDto.visitId) }, requiredBranchId));
       if (!visit) {
         throw new BadRequestException('Visit not found');
       }
@@ -328,7 +378,7 @@ export class OrdersService {
       if (!Types.ObjectId.isValid(createOrderDto.doctorId)) {
         throw new BadRequestException('Invalid doctor ID');
       }
-      const doctor = await this.doctorModel.findById(createOrderDto.doctorId).lean();
+      const doctor = await this.doctorModel.findOne(withBranch({ _id: createOrderDto.doctorId }, requiredBranchId)).lean();
       if (!doctor) throw new BadRequestException('Doctor not found');
       doctorObjectId = new Types.ObjectId(createOrderDto.doctorId);
       referredByDoctor = doctor.fullName;
@@ -415,7 +465,7 @@ export class OrdersService {
       for (const p of createOrderDto.initialPayments) {
         if (p.amount > 0) {
           await this.paymentModel.create({
-            branchId: branchId ? new Types.ObjectId(branchId) : undefined,
+            branchId: new Types.ObjectId(requiredBranchId),
             orderId: savedOrder._id,
             paymentType: this.getPaymentTypeForOrder(orderType),
             amount: Math.round(p.amount * 100) / 100,
@@ -427,7 +477,7 @@ export class OrdersService {
       }
     } else if (createOrderDto.paymentMethod && amountPaid > 0) {
       await this.paymentModel.create({
-        branchId: branchId ? new Types.ObjectId(branchId) : undefined,
+        branchId: new Types.ObjectId(requiredBranchId),
         orderId: savedOrder._id,
         paymentType: this.getPaymentTypeForOrder(orderType),
         amount: amountPaid,
@@ -439,7 +489,7 @@ export class OrdersService {
 
     this.logger.log(`Order created: ${savedOrder.orderNumber}`);
 
-    const populatedOrder = await this.findOne(savedOrder._id.toString(), branchId);
+    const populatedOrder = await this.findOne(savedOrder._id.toString(), requiredBranchId);
 
     // Sync visit status if this order belongs to a visit
     if (savedOrder.visitId) {
@@ -450,17 +500,13 @@ export class OrdersService {
     this.realtimeGateway.notifyOrderCreated(populatedOrder);
 
     if (savedOrder.orderType === OrderTypeEnum.LAB) {
-      if (savedOrder.paymentStatus === PaymentStatusEnum.PAID) {
-        this.lisIntegrationService.syncPaymentToLis(
-          savedOrder._id.toString(),
-          savedOrder.amountPaid || savedOrder.total,
-          savedOrder.paymentMethod || PaymentMethodEnum.CASH,
-          branchId,
-        ).catch(err => this.logger.error(`LIS payment sync failed for ${savedOrder.orderNumber}: ${err?.message}`));
-      } else {
-        this.lisIntegrationService.syncOrderToLis(savedOrder._id.toString(), branchId)
-          .catch(err => this.logger.error(`LIS order sync failed for ${savedOrder.orderNumber}: ${err?.message}`));
-      }
+      const job = savedOrder.paymentStatus === PaymentStatusEnum.PAID
+        ? await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, savedOrder, {
+            amount: savedOrder.amountPaid || savedOrder.total,
+            paymentMethod: savedOrder.paymentMethod || PaymentMethodEnum.CASH,
+          })
+        : await this.enqueueLisJob(IntegrationJobType.LIS_ORDER_SYNC, savedOrder);
+      void this.executeLisJob(job).catch(err => this.logger.warn(`LIS job queued for retry: ${err?.message}`));
     }
 
     return populatedOrder;
@@ -1401,12 +1447,11 @@ export class OrdersService {
     }
 
     if (order.orderType === OrderTypeEnum.LAB && order.paymentStatus === PaymentStatusEnum.PAID) {
-      this.lisIntegrationService.syncPaymentToLis(
-        order._id.toString(),
-        order.amountPaid,
-        addPaymentDto.paymentMethod,
-        branchId,
-      ).catch(err => this.logger.error(`LIS payment sync failed for ${order.orderNumber}: ${err?.message}`));
+      const job = await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, order, {
+        amount: order.amountPaid,
+        paymentMethod: addPaymentDto.paymentMethod,
+      });
+      void this.executeLisJob(job).catch(err => this.logger.warn(`LIS payment job queued for retry: ${err?.message}`));
     }
 
     return { order: populatedOrder, payment };
@@ -1425,6 +1470,59 @@ export class OrdersService {
       .populate('receivedBy', 'fullName email')
       .sort({ createdAt: 1 })
       .exec();
+  }
+
+  async settleOrderBalance(
+    id: string,
+    options: {
+      branchId: string;
+      paymentMethod: string;
+      userId?: string;
+      recordPayment?: boolean;
+      notes?: string;
+    },
+  ): Promise<Order> {
+    const branchId = requireBranchId(options.branchId);
+    const order = await this.orderModel.findOne(withBranch({ _id: id }, branchId)).exec();
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === OrderStatusEnum.CANCELLED) throw new BadRequestException('Cannot settle a cancelled order');
+    if (order.paymentStatus === PaymentStatusEnum.PAID) return this.findOne(id, branchId);
+
+    const remaining = Math.round((order.total - order.amountPaid) * 100) / 100;
+    if (options.recordPayment !== false) {
+      const result = await this.addPayment(id, {
+        amount: remaining,
+        paymentMethod: options.paymentMethod as any,
+        notes: options.notes,
+      }, options.userId, branchId);
+      return result.order;
+    }
+
+    order.amountPaid = order.total;
+    order.balance = 0;
+    order.paymentStatus = PaymentStatusEnum.PAID;
+    order.paymentMethod = options.paymentMethod as any;
+    if (order.status === OrderStatusEnum.AWAITING_PAYMENT) {
+      order.status = this.getPaidStatusForOrder(order.orderType);
+    }
+    await order.save();
+    if (order.visitId) await this.syncVisitStatus(order.visitId as Types.ObjectId);
+    if (order.visitId) await this.syncVisitStatus(order.visitId as Types.ObjectId);
+    const populated = await this.findOne(id, branchId);
+    this.realtimeGateway.notifyOrderUpdated(populated);
+    if (order.orderType === OrderTypeEnum.LAB) {
+      const job = await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, order, {
+        amount: order.total,
+        paymentMethod: options.paymentMethod,
+      });
+      void this.executeLisJob(job).catch(err => this.logger.warn(`LIS payment job queued for retry: ${err?.message}`));
+    }
+    return populated;
+  }
+
+  async recalculateVisitStatus(visitId?: string | Types.ObjectId | null): Promise<void> {
+    if (!visitId) return;
+    await this.syncVisitStatus(new Types.ObjectId(visitId.toString()));
   }
 
   async remove(id: string, branchId?: string): Promise<void> {
@@ -1598,62 +1696,12 @@ export class OrdersService {
       throw new BadRequestException('Order is not awaiting payment');
     }
 
-    if (paymentMethod === PaymentMethodEnum.WALLET) {
-      const result = await this.addPayment(
-        id,
-        {
-          amount: order.total,
-          paymentMethod: PaymentMethodEnum.WALLET,
-          notes: `Wallet payment for ${order.orderType} order ${order.orderNumber}`,
-        },
-        userId,
-        branchId,
-      );
-      return result.order;
-    }
-
-    order.status = this.getPaidStatusForOrder(order.orderType);
-
-    order.paymentStatus = PaymentStatusEnum.PAID;
-    order.amountPaid = order.total;
-    order.balance = 0;
-    order.paymentMethod = paymentMethod as any;
-
-    await order.save();
-
-    // Create payment record
-    await this.paymentModel.create({
-      branchId: branchId ? new Types.ObjectId(branchId) : undefined,
-      visitId: order.visitId || undefined,
-      orderId: order._id,
-      patientId: order.patientId?._id || order.patientId,
-      paymentType: this.getPaymentTypeForOrder(order.orderType),
-      amount: order.total,
-      paymentMethod,
-      receivedBy: userId ? new Types.ObjectId(userId) : undefined,
+    const result = await this.addPayment(id, {
+      amount: Math.round((order.total - order.amountPaid) * 100) / 100,
+      paymentMethod: paymentMethod as any,
       notes: `Payment for ${order.orderType} order ${order.orderNumber}`,
-    });
-
-    this.logger.log(`Order ${order.orderNumber} marked as paid`);
-
-    // Sync visit status if this order belongs to a visit
-    if (order.visitId) {
-      await this.syncVisitStatus(order.visitId as Types.ObjectId);
-    }
-
-    const populatedOrder = await this.findOne(id, branchId);
-    this.realtimeGateway.notifyOrderUpdated(populatedOrder);
-
-    if (order.orderType === OrderTypeEnum.LAB) {
-      this.lisIntegrationService.syncPaymentToLis(
-        order._id.toString(),
-        order.total,
-        paymentMethod,
-        branchId,
-      ).catch(err => this.logger.error(`LIS payment sync failed for ${order.orderNumber}: ${err?.message}`));
-    }
-
-    return populatedOrder;
+    }, userId, branchId);
+    return result.order;
   }
 
   async syncToLis(id: string, branchId?: string): Promise<Order> {
@@ -1762,8 +1810,10 @@ export class OrdersService {
    * Sync visit status based on all orders for that visit
    */
   private async syncVisitStatus(visitId: Types.ObjectId): Promise<void> {
-    const orders = await this.orderModel.find({ visitId }).lean();
-    if (orders.length === 0) return;
+    const [orders, prescriptions] = await Promise.all([
+      this.orderModel.find({ visitId }).lean(),
+      this.orderModel.db.model('Prescription').find({ visitId }).select('status isPaid').lean(),
+    ]);
 
     const visit = await this.visitModel.findById(visitId);
     if (!visit) return;
@@ -1777,10 +1827,18 @@ export class OrdersService {
     const hasPendingPharmacy = orders.some(o => o.orderType === OrderTypeEnum.PHARMACY && o.status === OrderStatusEnum.PAID);
     const hasCompletedPharmacy = orders.some(o => o.orderType === OrderTypeEnum.PHARMACY && o.status === OrderStatusEnum.COMPLETED);
     const allOrdersCompleted = orders.every(o => o.status === OrderStatusEnum.COMPLETED || o.status === OrderStatusEnum.CANCELLED);
+    const activePrescriptions = prescriptions.filter((p: any) => !['cancelled', 'completed'].includes(p.status));
+    const hasUnpaidPrescription = activePrescriptions.some((p: any) => !p.isPaid);
+    const hasPaidPendingPrescription = activePrescriptions.some((p: any) => p.isPaid && p.status === 'pending');
+    const hasDispensedPrescription = prescriptions.some((p: any) => ['dispensed', 'administering', 'completed'].includes(p.status));
 
     let newStatus: VisitStatusEnum | null = null;
 
-    if (allOrdersCompleted && orders.length > 0) {
+    if (hasUnpaidPrescription) {
+      newStatus = VisitStatusEnum.AWAITING_PHARMACY;
+    } else if (hasPaidPendingPrescription) {
+      newStatus = VisitStatusEnum.AWAITING_DISPENSING;
+    } else if (allOrdersCompleted && orders.length > 0) {
       newStatus = hasCompletedLab ? VisitStatusEnum.RESULTS_READY : VisitStatusEnum.AWAITING_DOCTOR_REVIEW;
     } else if (hasUnpaidLab) {
       newStatus = VisitStatusEnum.AWAITING_LAB;
@@ -1796,6 +1854,10 @@ export class OrdersService {
       newStatus = VisitStatusEnum.RESULTS_READY;
     } else if (hasPendingPharmacy) {
       newStatus = VisitStatusEnum.AWAITING_DISPENSING;
+    } else if (hasDispensedPrescription || prescriptions.length > 0) {
+      newStatus = VisitStatusEnum.AWAITING_DOCTOR_REVIEW;
+    } else if (orders.length === 0 && [VisitStatusEnum.AWAITING_PHARMACY, VisitStatusEnum.AWAITING_DISPENSING].includes(visit.status)) {
+      newStatus = VisitStatusEnum.AWAITING_DOCTOR_REVIEW;
     }
 
     if (newStatus && newStatus !== visit.status) {

@@ -12,9 +12,11 @@ import { InsuranceClaimsService } from './insurance-claims.service';
 import { InsuranceClaimsController } from './insurance-claims.controller';
 import { InsuranceBlocksService } from './insurance-blocks.service';
 import { InsuranceBlocksController } from './insurance-blocks.controller';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   imports: [
+    OrdersModule,
     MongooseModule.forFeature([
       { name: InsuranceProgram.name, schema: InsuranceProgramSchema },
       { name: InsuranceSubEntity.name, schema: InsuranceSubEntitySchema },

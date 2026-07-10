@@ -7,6 +7,8 @@ import { Order, OrderStatusEnum, PaymentStatusEnum } from '../database/schemas/o
 import { Payment, PaymentTypeEnum } from '../database/schemas/payment.schema';
 import { CreateInsuranceClaimDto, UpdateClaimStatusDto, AddClaimItemDto } from './dto/create-insurance-claim.dto';
 import { InsuranceBlock, InsuranceBlockDocument } from '../database/schemas/insurance-block.schema';
+import { withBranch, requireBranchId } from '../common/utils/branch-scope';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class InsuranceClaimsService {
@@ -18,6 +20,7 @@ export class InsuranceClaimsService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(InsuranceBlock.name) private blockModel: Model<InsuranceBlockDocument>,
+    private ordersService: OrdersService,
   ) {}
 
   private async findActiveInsuranceBlock(patientId?: any, memberNumber?: string, programCode?: string) {
@@ -47,8 +50,9 @@ export class InsuranceClaimsService {
     }
   }
 
-  async create(dto: CreateInsuranceClaimDto, createdBy?: string): Promise<InsuranceClaim> {
-    const visit = await this.visitModel.findById(dto.visitId);
+  async create(dto: CreateInsuranceClaimDto, createdBy?: string, branchId?: string): Promise<InsuranceClaim> {
+    const requiredBranchId = requireBranchId(branchId);
+    const visit = await this.visitModel.findOne(withBranch({ _id: dto.visitId }, requiredBranchId));
     if (!visit) throw new NotFoundException('Visit not found');
     this.assertNotBlocked(await this.findActiveInsuranceBlock(dto.patientId, dto.memberNumber, dto.programCode));
 
@@ -65,7 +69,7 @@ export class InsuranceClaimsService {
     const claim = await this.claimModel.create({
       visitId: new Types.ObjectId(dto.visitId),
       patientId: new Types.ObjectId(dto.patientId),
-      branchId: dto.branchId ? new Types.ObjectId(dto.branchId) : visit.branchId,
+      branchId: new Types.ObjectId(requiredBranchId),
       programCode: dto.programCode.toUpperCase(),
       subEntityCode: dto.subEntityCode,
       memberNumber: dto.memberNumber,
@@ -83,18 +87,18 @@ export class InsuranceClaimsService {
     return claim;
   }
 
-  async findAll(query: any = {}): Promise<InsuranceClaim[]> {
+  async findAll(query: any = {}, branchId?: string): Promise<InsuranceClaim[]> {
     return this.claimModel
-      .find(query)
+      .find(withBranch(query, branchId))
       .populate('visitId', 'visitNumber status createdAt')
       .populate('patientId', 'patientId firstName lastName')
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  async findById(id: string): Promise<InsuranceClaim> {
+  async findById(id: string, branchId?: string): Promise<InsuranceClaim> {
     const claim = await this.claimModel
-      .findById(id)
+      .findOne(withBranch({ _id: id }, branchId))
       .populate('visitId')
       .populate('patientId')
       .populate('createdBy', 'fullName');
@@ -102,20 +106,20 @@ export class InsuranceClaimsService {
     return claim;
   }
 
-  async findByVisit(visitId: string): Promise<InsuranceClaim[]> {
-    return this.claimModel.find({ visitId: new Types.ObjectId(visitId) }).lean();
+  async findByVisit(visitId: string, branchId?: string): Promise<InsuranceClaim[]> {
+    return this.claimModel.find(withBranch({ visitId: new Types.ObjectId(visitId) }, branchId)).lean();
   }
 
-  async findByPatient(patientId: string): Promise<InsuranceClaim[]> {
+  async findByPatient(patientId: string, branchId?: string): Promise<InsuranceClaim[]> {
     return this.claimModel
-      .find({ patientId: new Types.ObjectId(patientId) })
+      .find(withBranch({ patientId: new Types.ObjectId(patientId) }, branchId))
       .populate('visitId', 'visitNumber createdAt')
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  async addItem(id: string, dto: AddClaimItemDto): Promise<InsuranceClaim> {
-    const claim = await this.claimModel.findById(id);
+  async addItem(id: string, dto: AddClaimItemDto, branchId?: string): Promise<InsuranceClaim> {
+    const claim = await this.claimModel.findOne(withBranch({ _id: id }, branchId));
     if (!claim) throw new NotFoundException('Insurance claim not found');
     if (claim.status !== ClaimStatusEnum.DRAFT) {
       throw new BadRequestException('Can only add items to draft claims');
@@ -135,8 +139,8 @@ export class InsuranceClaimsService {
     return claim.save();
   }
 
-  async removeItem(id: string, itemIndex: number): Promise<InsuranceClaim> {
-    const claim = await this.claimModel.findById(id);
+  async removeItem(id: string, itemIndex: number, branchId?: string): Promise<InsuranceClaim> {
+    const claim = await this.claimModel.findOne(withBranch({ _id: id }, branchId));
     if (!claim) throw new NotFoundException('Insurance claim not found');
     if (claim.status !== ClaimStatusEnum.DRAFT) {
       throw new BadRequestException('Can only remove items from draft claims');
@@ -153,8 +157,8 @@ export class InsuranceClaimsService {
     return claim.save();
   }
 
-  async updateItemCoverage(id: string, itemIndex: number, coveredByInsurance: boolean): Promise<InsuranceClaim> {
-    const claim = await this.claimModel.findById(id);
+  async updateItemCoverage(id: string, itemIndex: number, coveredByInsurance: boolean, branchId?: string): Promise<InsuranceClaim> {
+    const claim = await this.claimModel.findOne(withBranch({ _id: id }, branchId));
     if (!claim) throw new NotFoundException('Insurance claim not found');
     if (claim.status !== ClaimStatusEnum.DRAFT) {
       throw new BadRequestException('Can only update draft claims');
@@ -170,8 +174,8 @@ export class InsuranceClaimsService {
     return claim.save();
   }
 
-  async updateStatus(id: string, dto: UpdateClaimStatusDto): Promise<InsuranceClaim> {
-    const claim = await this.claimModel.findById(id);
+  async updateStatus(id: string, dto: UpdateClaimStatusDto, branchId?: string): Promise<InsuranceClaim> {
+    const claim = await this.claimModel.findOne(withBranch({ _id: id }, branchId));
     if (!claim) throw new NotFoundException('Insurance claim not found');
 
     const validTransitions: Record<string, string[]> = {
@@ -234,8 +238,9 @@ export class InsuranceClaimsService {
     };
   }
 
-  async markOrderAsInsuranceCovered(orderId: string, createdBy?: string): Promise<{ claim: InsuranceClaim; order: any }> {
-    const order = await this.orderModel.findById(orderId).populate('visitId');
+  async markOrderAsInsuranceCovered(orderId: string, createdBy?: string, branchId?: string): Promise<{ claim: InsuranceClaim; order: any }> {
+    const requiredBranchId = requireBranchId(branchId);
+    const order = await this.orderModel.findOne(withBranch({ _id: orderId }, requiredBranchId)).populate('visitId');
     if (!order) throw new NotFoundException('Order not found');
 
     const visit = (order as any).visitId;
@@ -277,10 +282,11 @@ export class InsuranceClaimsService {
       throw new BadRequestException('Order has no remaining balance to bill to insurance');
     }
 
-    // Find or create approved claim for this visit (auto-approved on creation)
+    // Create a submitted claim. Coverage is operationally authorized, while
+    // insurer approval/payment remains visible in the claim lifecycle.
     let claim = await this.claimModel.findOne({
       visitId: visit._id,
-      status: ClaimStatusEnum.APPROVED,
+      status: { $in: [ClaimStatusEnum.SUBMITTED, ClaimStatusEnum.APPROVED] },
     });
 
     const description = (order as any).orderType === 'lab'
@@ -309,8 +315,8 @@ export class InsuranceClaimsService {
         memberNumber: visit.insurance.memberNumber,
         memberName: visit.insurance.memberName,
         items: [item],
-        status: ClaimStatusEnum.APPROVED,
-        approvedAmount: amountToClaim,
+        status: ClaimStatusEnum.SUBMITTED,
+        submittedAt: new Date(),
         createdBy: createdBy ? new Types.ObjectId(createdBy) : undefined,
       });
     }
@@ -318,32 +324,16 @@ export class InsuranceClaimsService {
     claim.totalAmount = claim.items.reduce((sum, i) => sum + i.totalAmount, 0);
     claim.claimedAmount = claim.items.filter(i => i.coveredByInsurance).reduce((sum, i) => sum + i.totalAmount, 0);
     claim.patientAmount = claim.totalAmount - claim.claimedAmount;
-    claim.approvedAmount = claim.claimedAmount;
     await claim.save();
 
-    // Mark order as insurance-covered (paid via insurance)
-    (order as any).paymentStatus = PaymentStatusEnum.PAID;
-    (order as any).amountPaid = orderTotal;
-    (order as any).balance = 0;
-    (order as any).status = (order as any).orderType === 'lab'
-      ? OrderStatusEnum.PENDING_COLLECTION
-      : OrderStatusEnum.PAID;
-    await order.save();
-
-    // Create a 0-amount payment record for audit trail
-    await this.paymentModel.create({
-      visitId: visit._id,
-      orderId: order._id,
-      patientId: (order as any).patientId?._id || (order as any).patientId,
-      paymentType: (order as any).orderType === 'lab' ? PaymentTypeEnum.LAB_ORDER : PaymentTypeEnum.PHARMACY_ORDER,
-      amount: 0,
+    const settledOrder = await this.ordersService.settleOrderBalance(orderId, {
+      branchId: requiredBranchId,
       paymentMethod: 'insurance',
-      receivedBy: createdBy ? new Types.ObjectId(createdBy) : undefined,
+      userId: createdBy,
       notes: `Insurance-covered: ${description} (claim ${claim._id})`,
-      branchId: visit.branchId,
     });
 
     this.logger.log(`Order ${orderId} marked as insurance-covered under claim ${claim._id}`);
-    return { claim, order };
+    return { claim, order: settledOrder };
   }
 }

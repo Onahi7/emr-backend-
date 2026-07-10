@@ -14,8 +14,8 @@ export class DoctorsController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async create(@Body() dto: CreateDoctorDto) {
-    return this.doctorsService.create(dto);
+  async create(@Body() dto: CreateDoctorDto, @Request() req: any) {
+    return this.doctorsService.create(dto, req.user?.branchId);
   }
 
   @Get()
@@ -31,19 +31,19 @@ export class DoctorsController {
 
   @Get('specialists')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.RECEPTIONIST)
-  async findSpecialists(@Query('specialty') specialty?: string) {
-    return this.doctorsService.findSpecialists(specialty);
+  async findSpecialists(@Query('specialty') specialty: string | undefined, @Request() req: any) {
+    return this.doctorsService.findSpecialists(specialty, req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.LAB_TECH, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  async findOne(@Param('id') id: string) {
-    return this.doctorsService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    return this.doctorsService.findOne(id, req.user?.branchId);
   }
 
   @Patch(':id')
   @Roles(UserRoleEnum.ADMIN)
-  async update(@Param('id') id: string, @Body() dto: UpdateDoctorDto) {
-    return this.doctorsService.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateDoctorDto, @Request() req: any) {
+    return this.doctorsService.update(id, dto, req.user?.branchId);
   }
 }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { InsuranceBlock, InsuranceBlockDocument, BlockReasonEnum, BLOCK_REASON_LABELS } from '../database/schemas/insurance-block.schema';
+import { requireBranchId, withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class InsuranceBlocksService {
@@ -21,14 +22,15 @@ export class InsuranceBlocksService {
     reasonDetail?: string;
     effectiveDate?: string;
     notes?: string;
-  }, addedBy?: string): Promise<InsuranceBlock> {
+  }, addedBy?: string, branchId?: string): Promise<InsuranceBlock> {
+    const requiredBranchId = requireBranchId(branchId);
     // Check for existing active block on same patient/program
     if (dto.patientId) {
-      const existing = await this.blockModel.findOne({
+      const existing = await this.blockModel.findOne(withBranch({
         patientId: new Types.ObjectId(dto.patientId),
         programCode: dto.programCode,
         isActive: true,
-      });
+      }, requiredBranchId));
       if (existing) {
         throw new BadRequestException('Patient already has an active block for this insurance program');
       }
@@ -36,17 +38,18 @@ export class InsuranceBlocksService {
 
     // Also check by member number
     if (dto.memberNumber) {
-      const existingByMember = await this.blockModel.findOne({
+      const existingByMember = await this.blockModel.findOne(withBranch({
         memberNumber: dto.memberNumber,
         programCode: dto.programCode,
         isActive: true,
-      });
+      }, requiredBranchId));
       if (existingByMember) {
         throw new BadRequestException('Member number already has an active block for this insurance program');
       }
     }
 
     return this.blockModel.create({
+      branchId: requiredBranchId,
       patientId: dto.patientId ? new Types.ObjectId(dto.patientId) : undefined,
       patientName: dto.patientName,
       memberNumber: dto.memberNumber,
@@ -68,6 +71,7 @@ export class InsuranceBlocksService {
     branchId?: string;
   }): Promise<InsuranceBlock[]> {
     const query: any = {};
+    Object.assign(query, withBranch({}, filters?.branchId));
 
     if (filters?.programCode) query.programCode = filters.programCode;
     if (filters?.isActive !== undefined) query.isActive = filters.isActive;
@@ -87,9 +91,9 @@ export class InsuranceBlocksService {
       .exec();
   }
 
-  async findById(id: string): Promise<InsuranceBlock> {
+  async findById(id: string, branchId?: string): Promise<InsuranceBlock> {
     const block = await this.blockModel
-      .findById(id)
+      .findOne(withBranch({ _id: id }, branchId))
       .populate('patientId', 'patientId firstName lastName phone insurance')
       .populate('addedBy', 'fullName')
       .lean()
@@ -98,13 +102,13 @@ export class InsuranceBlocksService {
     return block;
   }
 
-  async checkBlocked(patientId?: string, memberNumber?: string, programCode?: string): Promise<{
+  async checkBlocked(patientId?: string, memberNumber?: string, programCode?: string, branchId?: string): Promise<{
     blocked: boolean;
     block?: InsuranceBlock;
     reason?: string;
     reasonLabel?: string;
   }> {
-    const query: any = { isActive: true };
+    const query: any = withBranch({ isActive: true }, branchId);
     if (programCode) query.programCode = programCode;
 
     if (patientId) {
@@ -126,9 +130,9 @@ export class InsuranceBlocksService {
     };
   }
 
-  async deactivate(id: string): Promise<InsuranceBlock> {
-    const block = await this.blockModel.findByIdAndUpdate(
-      id,
+  async deactivate(id: string, branchId?: string): Promise<InsuranceBlock> {
+    const block = await this.blockModel.findOneAndUpdate(
+      withBranch({ _id: id }, branchId),
       { isActive: false },
       { new: true },
     ).lean().exec();
@@ -137,9 +141,9 @@ export class InsuranceBlocksService {
     return block;
   }
 
-  async reactivate(id: string): Promise<InsuranceBlock> {
-    const block = await this.blockModel.findByIdAndUpdate(
-      id,
+  async reactivate(id: string, branchId?: string): Promise<InsuranceBlock> {
+    const block = await this.blockModel.findOneAndUpdate(
+      withBranch({ _id: id }, branchId),
       { isActive: true },
       { new: true },
     ).lean().exec();
@@ -148,23 +152,24 @@ export class InsuranceBlocksService {
     return block;
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.blockModel.findByIdAndDelete(id).exec();
+  async remove(id: string, branchId?: string): Promise<void> {
+    const result = await this.blockModel.findOneAndDelete(withBranch({ _id: id }, branchId)).exec();
     if (!result) throw new NotFoundException('Block record not found');
     this.logger.log(`Block ${id} permanently deleted`);
   }
 
-  async getStats(): Promise<any> {
+  async getStats(branchId?: string): Promise<any> {
+    const scope = withBranch({}, branchId);
     const [activeCount, totalCount, byProgram, byReason] = await Promise.all([
-      this.blockModel.countDocuments({ isActive: true }),
-      this.blockModel.countDocuments(),
+      this.blockModel.countDocuments({ ...scope, isActive: true }),
+      this.blockModel.countDocuments(scope),
       this.blockModel.aggregate([
-        { $match: { isActive: true } },
+        { $match: { ...scope, isActive: true } },
         { $group: { _id: '$programCode', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       this.blockModel.aggregate([
-        { $match: { isActive: true } },
+        { $match: { ...scope, isActive: true } },
         { $group: { _id: '$reason', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),

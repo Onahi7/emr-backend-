@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Doctor } from '../database/schemas/doctor.schema';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
+import { requireBranchId, withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class DoctorsService {
@@ -28,13 +29,14 @@ export class DoctorsService {
     return new Types.ObjectId(userId);
   }
 
-  async create(createDoctorDto: CreateDoctorDto) {
+  async create(createDoctorDto: CreateDoctorDto, branchId?: string) {
+    const requiredBranchId = requireBranchId(branchId);
     const name = createDoctorDto.fullName.trim();
     if (!name) throw new BadRequestException('Doctor name is required');
 
-    const existing = await this.doctorModel.findOne({
+    const existing = await this.doctorModel.findOne(withBranch({
       fullName: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
-    });
+    }, requiredBranchId));
     if (existing) return existing;
 
     const userObjectId = await this.validateUserId(createDoctorDto.userId);
@@ -43,57 +45,40 @@ export class DoctorsService {
       ...createDoctorDto,
       fullName: name,
       userId: userObjectId,
+      branchId: requiredBranchId,
     });
     return doctor.save();
   }
 
   async findAll(search?: string, activeOnly: boolean = true, branchId?: string) {
-    const filter: any = {};
+    const requiredBranchId = requireBranchId(branchId);
+    const filter: any = { branchId: requiredBranchId };
     if (activeOnly) filter.isActive = true;
     if (search) {
       filter.fullName = { $regex: search, $options: 'i' };
     }
 
     const doctors = await this.doctorModel.find(filter).sort({ fullName: 1 }).lean();
-    if (!branchId) return doctors;
-
-    const ProfileModel = this.doctorModel.db.model('Profile');
-    const linkedUserIds = doctors
-      .map((doctor: any) => doctor.userId)
-      .filter(Boolean);
-    const profiles = linkedUserIds.length
-      ? await ProfileModel.find({ _id: { $in: linkedUserIds } }).select('_id branchId branchIds').lean()
-      : [];
-    const profileById = new Map(profiles.map((profile: any) => [profile._id.toString(), profile]));
-
-    return doctors.filter((doctor: any) => {
-      if (!doctor.userId) return true;
-      const profile = profileById.get(doctor.userId.toString());
-      if (!profile) return true;
-      return (
-        profile.branchId?.toString() === branchId ||
-        (Array.isArray(profile.branchIds) && profile.branchIds.some((id: any) => id?.toString() === branchId))
-      );
-    });
+    return doctors;
   }
 
-  async findSpecialists(specialty?: string) {
-    const filter: any = { isActive: true, doctorType: 'specialist' };
+  async findSpecialists(specialty?: string, branchId?: string) {
+    const filter: any = withBranch({ isActive: true, doctorType: 'specialist' }, branchId);
     if (specialty) filter.specialty = specialty;
     return this.doctorModel.find(filter).sort({ fullName: 1 }).lean();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, branchId?: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException('Doctor not found');
     }
 
-    const doctor = await this.doctorModel.findById(id).lean();
+    const doctor = await this.doctorModel.findOne(withBranch({ _id: id }, branchId)).lean();
     if (!doctor) throw new NotFoundException('Doctor not found');
     return doctor;
   }
 
-  async update(id: string, updateDoctorDto: UpdateDoctorDto) {
+  async update(id: string, updateDoctorDto: UpdateDoctorDto, branchId?: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException('Doctor not found');
     }
@@ -123,7 +108,7 @@ export class DoctorsService {
       }
     }
 
-    const doctor = await this.doctorModel.findByIdAndUpdate(id, patch, { new: true }).lean();
+    const doctor = await this.doctorModel.findOneAndUpdate(withBranch({ _id: id }, branchId), patch, { new: true }).lean();
     if (!doctor) throw new NotFoundException('Doctor not found');
     return doctor;
   }

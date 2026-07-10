@@ -49,6 +49,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.interceptor';
+import { IntegrationJobsModule } from './integration-jobs/integration-jobs.module';
 
 @Module({
   imports: [
@@ -99,6 +100,7 @@ import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.int
     TreatmentPlansModule,
     ServicePricesModule,
     InsuranceModule,
+    IntegrationJobsModule,
   ],
   controllers: [AppController],
   providers: [

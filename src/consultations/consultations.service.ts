@@ -6,6 +6,7 @@ import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { Patient } from '../database/schemas/patient.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
+import { withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class ConsultationsService {
@@ -18,17 +19,17 @@ export class ConsultationsService {
   async create(createConsultationDto: CreateConsultationDto, branchId?: string): Promise<Consultation> {
     const { patientId, doctorId, consultationType, consultationFee, chiefComplaint, nurseId } = createConsultationDto;
 
-    const patient = await this.patientModel.findById(patientId);
+    const patient = await this.patientModel.findOne(withBranch({ _id: new Types.ObjectId(patientId) }, branchId));
     if (!patient) {
-      throw new NotFoundException('Patient not found');
+      throw new NotFoundException('Patient not found in this branch');
     }
 
     if (!Types.ObjectId.isValid(doctorId)) {
       throw new BadRequestException('Invalid doctor ID');
     }
-    const doctor = await this.doctorModel.findById(doctorId);
+    const doctor = await this.doctorModel.findOne(withBranch({ _id: new Types.ObjectId(doctorId) }, branchId));
     if (!doctor) {
-      throw new NotFoundException('Doctor not found');
+      throw new NotFoundException('Doctor not found in this branch');
     }
 
     const today = new Date();

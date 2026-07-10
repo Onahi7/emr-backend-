@@ -11,6 +11,7 @@ import { IdSequence } from '../database/schemas/id-sequence.schema';
 import { SoapNote, SoapNoteTypeEnum } from '../database/schemas/soap-note.schema';
 import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { withBranch } from '../common/utils/branch-scope';
 import { ServicePriceCodeEnum } from '../database/schemas/service-price.schema';
 import { ServicePricesService } from '../service-prices/service-prices.service';
 
@@ -75,8 +76,8 @@ export class AdmissionsService {
     return saved;
   }
 
-  async findAll(status?: AdmissionStatusEnum, wardType?: string, nurseId?: string) {
-    const query: any = {};
+  async findAll(status?: AdmissionStatusEnum, wardType?: string, nurseId?: string, branchId?: string) {
+    const query: any = withBranch({}, branchId);
     if (status) query.status = status;
     if (wardType) query.wardType = wardType;
     if (nurseId) query.primaryNurseId = new Types.ObjectId(nurseId);
@@ -90,21 +91,21 @@ export class AdmissionsService {
       .exec();
   }
 
-  async findActive() {
-    return this.findAll(AdmissionStatusEnum.ADMITTED);
+  async findActive(branchId?: string) {
+    return this.findAll(AdmissionStatusEnum.ADMITTED, undefined, undefined, branchId);
   }
 
-  async findByPatient(patientId: string) {
+  async findByPatient(patientId: string, branchId?: string) {
     return this.admissionModel
-      .find({ patientId: new Types.ObjectId(patientId) })
+      .find(withBranch({ patientId: new Types.ObjectId(patientId) }, branchId))
       .populate('doctorId', 'fullName department')
       .sort({ admittedAt: -1 })
       .exec();
   }
 
-  async findOne(id: string): Promise<Admission> {
+  async findOne(id: string, branchId?: string): Promise<Admission> {
     const admission = await this.admissionModel
-      .findById(id)
+      .findOne(withBranch({ _id: id }, branchId))
       .populate('patientId')
       .populate('doctorId')
       .populate('primaryNurseId', 'fullName')
@@ -146,8 +147,8 @@ export class AdmissionsService {
     } as any;
   }
 
-  async update(id: string, data: any): Promise<Admission> {
-    const admission = await this.admissionModel.findByIdAndUpdate(id, data, { new: true });
+  async update(id: string, data: any, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOneAndUpdate(withBranch({ _id: id }, branchId), data, { new: true });
     if (!admission) throw new NotFoundException('Admission not found');
     this.realtimeGateway.emitToAll('admission:updated', admission);
     return admission;
@@ -160,8 +161,8 @@ export class AdmissionsService {
   }
 
   // ---------- Vitals ----------
-  async recordVitals(id: string, vitals: any, recordedBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async recordVitals(id: string, vitals: any, recordedBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -177,8 +178,8 @@ export class AdmissionsService {
   }
 
   // ---------- Medications ----------
-  async recordMedication(id: string, med: any, administeredBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async recordMedication(id: string, med: any, administeredBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -200,8 +201,9 @@ export class AdmissionsService {
     id: string,
     entry: { direction: FluidDirectionEnum; fluidType: string; volumeMl: number; route?: string; notes?: string },
     recordedBy?: string,
+    branchId?: string,
   ): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -218,8 +220,8 @@ export class AdmissionsService {
     return saved;
   }
 
-  async getFluidBalance(id: string, startDate?: string, endDate?: string) {
-    const admission = await this.admissionModel.findById(id).select('fluidBalance admissionNumber');
+  async getFluidBalance(id: string, startDate?: string, endDate?: string, branchId?: string) {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId)).select('fluidBalance admissionNumber');
     if (!admission) throw new NotFoundException('Admission not found');
 
     let entries = admission.fluidBalance;
@@ -248,8 +250,8 @@ export class AdmissionsService {
   }
 
   // ---------- Nursing notes (SOAP) ----------
-  async addNursingNote(id: string, note: any, authoredBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async addNursingNote(id: string, note: any, authoredBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -276,8 +278,8 @@ export class AdmissionsService {
   }
 
   // ---------- Shift handover ----------
-  async addShiftHandover(id: string, handover: any, handedOverBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async addShiftHandover(id: string, handover: any, handedOverBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -299,8 +301,8 @@ export class AdmissionsService {
   }
 
   // ---------- Care plan ----------
-  async addCarePlanItem(id: string, item: any, createdBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async addCarePlanItem(id: string, item: any, createdBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -316,8 +318,8 @@ export class AdmissionsService {
     return saved;
   }
 
-  async resolveCarePlanItem(id: string, itemIndex: number, evaluation?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async resolveCarePlanItem(id: string, itemIndex: number, evaluation?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     if (!admission.carePlan[itemIndex]) throw new NotFoundException('Care plan item not found');
 
@@ -331,8 +333,8 @@ export class AdmissionsService {
   }
 
   // ---------- Incidents ----------
-  async reportIncident(id: string, incident: any, reportedBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async reportIncident(id: string, incident: any, reportedBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
 
     admission.incidents.push({
@@ -353,8 +355,8 @@ export class AdmissionsService {
     days: number;
     ratePerHour?: number;
     notes?: string;
-  }, startedBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  }, startedBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -386,8 +388,8 @@ export class AdmissionsService {
     return saved;
   }
 
-  async stopOxygenTherapy(id: string, therapyIndex: number, stoppedBy?: string): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+  async stopOxygenTherapy(id: string, therapyIndex: number, stoppedBy?: string, branchId?: string): Promise<Admission> {
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     if (!Number.isInteger(therapyIndex) || therapyIndex < 0) throw new BadRequestException('Invalid oxygen therapy index');
     if (!admission.oxygenTherapy?.[therapyIndex]) throw new NotFoundException('Oxygen therapy entry not found');
@@ -420,8 +422,9 @@ export class AdmissionsService {
     id: string,
     data: { wardType?: string; bedNumber?: string; notes?: string },
     transferredBy?: string,
+    branchId?: string,
   ): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     this.ensureActive(admission);
 
@@ -444,8 +447,9 @@ export class AdmissionsService {
     id: string,
     data: { dischargeNotes?: string; dischargeDiagnosis?: string; dischargeInstructions?: string },
     dischargedBy?: string,
+    branchId?: string,
   ): Promise<Admission> {
-    const admission = await this.admissionModel.findById(id);
+    const admission = await this.admissionModel.findOne(withBranch({ _id: id }, branchId));
     if (!admission) throw new NotFoundException('Admission not found');
     if (admission.status !== AdmissionStatusEnum.ADMITTED) {
       throw new BadRequestException('Admission is not active');
@@ -474,21 +478,22 @@ export class AdmissionsService {
   }
 
   // ---------- Stats / Dashboard ----------
-  async getStats() {
+  async getStats(branchId?: string) {
+    const scope = withBranch({}, branchId);
     const [activeTotal, byWard, todayAdmissions, todayDischarges, dueMedsCount] = await Promise.all([
-      this.admissionModel.countDocuments({ status: AdmissionStatusEnum.ADMITTED }),
+      this.admissionModel.countDocuments({ ...scope, status: AdmissionStatusEnum.ADMITTED }),
       this.admissionModel.aggregate([
-        { $match: { status: AdmissionStatusEnum.ADMITTED } },
+        { $match: { ...scope, status: AdmissionStatusEnum.ADMITTED } },
         { $group: { _id: '$wardType', count: { $sum: 1 } } },
       ]),
       this.admissionModel.countDocuments({
-        admittedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        ...scope, admittedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
       }),
       this.admissionModel.countDocuments({
-        dischargedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        ...scope, dischargedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
       }),
       this.admissionModel.countDocuments({
-        status: AdmissionStatusEnum.ADMITTED,
+        ...scope, status: AdmissionStatusEnum.ADMITTED,
         'medicationLog.0': { $exists: true },
       }),
     ]);
@@ -502,10 +507,10 @@ export class AdmissionsService {
     };
   }
 
-  async getNurseDashboard(nurseId?: string) {
+  async getNurseDashboard(nurseId?: string, branchId?: string) {
     const [activeAdmissions, stats] = await Promise.all([
-      this.findAll(AdmissionStatusEnum.ADMITTED, undefined, nurseId),
-      this.getStats(),
+      this.findAll(AdmissionStatusEnum.ADMITTED, undefined, nurseId, branchId),
+      this.getStats(branchId),
     ]);
 
     return {

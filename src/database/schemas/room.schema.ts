@@ -19,7 +19,10 @@ export enum RoomTypeEnum {
 
 @Schema({ timestamps: true, collection: 'rooms' })
 export class Room extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branchId: Types.ObjectId;
+
+  @Prop({ required: true })
   name: string;
 
   @Prop({ required: true, enum: Object.values(RoomTypeEnum) })
@@ -49,5 +52,6 @@ export class Room extends Document {
 
 export const RoomSchema = SchemaFactory.createForClass(Room);
 
-RoomSchema.index({ roomType: 1, status: 1 });
-RoomSchema.index({ status: 1 });
+RoomSchema.index({ branchId: 1, name: 1 }, { unique: true });
+RoomSchema.index({ branchId: 1, roomType: 1, status: 1 });
+RoomSchema.index({ branchId: 1, status: 1 });

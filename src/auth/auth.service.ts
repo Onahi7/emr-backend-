@@ -46,9 +46,11 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  private async getDoctorIdForUser(userId: string): Promise<string | undefined> {
+  private async getDoctorIdForUser(userId: string, branchId?: string): Promise<string | undefined> {
     try {
-      const doctor = await this.doctorModel.findOne({ userId: new Types.ObjectId(userId), isActive: true }).select('_id').lean().exec();
+      const query: any = { userId: new Types.ObjectId(userId), isActive: true };
+      if (branchId) query.branchId = new Types.ObjectId(branchId);
+      const doctor = await this.doctorModel.findOne(query).select('_id').lean().exec();
       return doctor?._id?.toString();
     } catch {
       return undefined;
@@ -153,7 +155,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const doctorId = await this.getDoctorIdForUser(user.id);
+    const doctorId = await this.getDoctorIdForUser(user.id, user.branchId?.toString());
     const userWithDoctor = { ...user, doctorId };
 
     const accessToken = await this.generateAccessToken(userWithDoctor, user.branchId);
@@ -186,7 +188,7 @@ export class AuthService {
       const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
       const roles = userRoles.map((ur) => ur.role);
 
-      const doctorId = await this.getDoctorIdForUser(user._id.toString());
+      const doctorId = await this.getDoctorIdForUser(user._id.toString(), user.branchId?.toString());
 
       const userData = {
         id: user._id.toString(),
@@ -269,7 +271,7 @@ export class AuthService {
       throw new ForbiddenException('You are not assigned to this branch');
     }
 
-    const doctorId = await this.getDoctorIdForUser(user._id.toString());
+    const doctorId = await this.getDoctorIdForUser(user._id.toString(), branchId);
 
     const userObj = {
       id: user._id.toString(),

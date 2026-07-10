@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Logger, Request } from '@nestjs/common';
 import { MedicationsService } from './medications.service';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
@@ -18,7 +18,7 @@ export class MedicationsController {
     private readonly cafIntegrationService: CafIntegrationService,
   ) {}
 
-  private normalizeCafMedication(p: any) {
+  private normalizeCafMedication(p: any, branchId?: string) {
     const stockQuantity =
       Number(p.quantityAvailable ?? p.stockAvailable ?? p.stock ?? p.calculatedStock ?? p.availableStock ?? p.stockQuantity ?? 0) || 0;
     const defaultPack = p.packSizes?.[0];
@@ -55,7 +55,7 @@ export class MedicationsController {
       isCafSourced: true,
       cafProductId: p._id,
       __cafProduct: true,
-      __cafBranchId: this.cafIntegrationService.getBranchId(),
+      __cafBranchId: branchId,
     };
   }
 
@@ -67,7 +67,8 @@ export class MedicationsController {
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  async findAll(@Query('category') category?: MedicationCategoryEnum, @Query('lowStock') lowStock?: boolean) {
+  async findAll(@Query('category') category: MedicationCategoryEnum | undefined, @Query('lowStock') lowStock: boolean | undefined, @Request() req: any) {
+    const branchId = req.user?.branchId;
     if (lowStock) {
       return this.medicationsService.findLowStock();
     }
@@ -75,16 +76,17 @@ export class MedicationsController {
     const localMeds = await this.medicationsService.findAll(query);
 
     // Merge CAF products when configured
-    if (this.cafIntegrationService.isConfigured()) {
+    if (await this.cafIntegrationService.isConfiguredForBranch(branchId)) {
       try {
         const cafParams: any = { page: 1, limit: 500 };
         if (category) cafParams.category = category;
+        cafParams.branchId = branchId;
         let cafProducts = await this.cafIntegrationService.getProducts(cafParams);
         if (!cafProducts || cafProducts.length === 0) {
           this.logger.warn('CAF getProducts returned 0 results, trying search fallback');
-          cafProducts = await this.cafIntegrationService.searchProducts('a');
+          cafProducts = await this.cafIntegrationService.searchProducts('a', branchId);
         }
-        const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p));
+        const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p, branchId));
         this.logger.log(`Loaded ${cafMeds.length} CAF products`);
         return [...cafMeds, ...localMeds];
       } catch (error: any) {
@@ -96,14 +98,15 @@ export class MedicationsController {
 
   @Get('search')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  async search(@Query('q') searchTerm: string) {
+  async search(@Query('q') searchTerm: string, @Request() req: any) {
+    const branchId = req.user?.branchId;
     const localResults = await this.medicationsService.search(searchTerm);
 
-    if (this.cafIntegrationService.isConfigured()) {
+    if (await this.cafIntegrationService.isConfiguredForBranch(branchId)) {
       try {
-        const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm);
+        const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm, branchId);
         if (cafProducts.length > 0) {
-          const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p));
+          const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p, branchId));
           this.logger.log(`Search merged ${cafMeds.length} CAF + ${localResults.length} local results for "${searchTerm}"`);
           return [...cafMeds, ...localResults];
         }
@@ -119,8 +122,9 @@ export class MedicationsController {
   async listCafProducts(
     @Query('search') search?: string,
     @Query('category') category?: string,
+    @Request() req?: any,
   ) {
-    return this.cafIntegrationService.getProducts({ search, category });
+    return this.cafIntegrationService.getProducts({ search, category, branchId: req.user?.branchId });
   }
 
   @Get('caf-status')
@@ -155,13 +159,13 @@ export class MedicationsController {
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @Request() req: any) {
     try {
       return await this.medicationsService.findById(id);
     } catch (error) {
-      if (this.cafIntegrationService.isConfigured()) {
-        const product = await this.cafIntegrationService.getProductById(id);
-        if (product) return this.normalizeCafMedication(product);
+      if (await this.cafIntegrationService.isConfiguredForBranch(req.user?.branchId)) {
+        const product = await this.cafIntegrationService.getProductById(id, req.user?.branchId);
+        if (product) return this.normalizeCafMedication(product, req.user?.branchId);
       }
       throw error;
     }

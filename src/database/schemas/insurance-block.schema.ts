@@ -21,6 +21,9 @@ export const BLOCK_REASON_LABELS: Record<string, string> = {
 
 @Schema({ timestamps: true })
 export class InsuranceBlock extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branchId: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: 'Patient' })
   patientId: Types.ObjectId;
 
@@ -57,7 +60,7 @@ export class InsuranceBlock extends Document {
 
 export const InsuranceBlockSchema = SchemaFactory.createForClass(InsuranceBlock);
 
-InsuranceBlockSchema.index({ patientId: 1 });
-InsuranceBlockSchema.index({ memberNumber: 1, programCode: 1 });
-InsuranceBlockSchema.index({ programCode: 1, isActive: 1 });
+InsuranceBlockSchema.index({ branchId: 1, patientId: 1 });
+InsuranceBlockSchema.index({ branchId: 1, memberNumber: 1, programCode: 1 });
+InsuranceBlockSchema.index({ branchId: 1, programCode: 1, isActive: 1 });
 InsuranceBlockSchema.index({ patientName: 'text', memberNumber: 'text' });

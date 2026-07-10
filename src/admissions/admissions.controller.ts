@@ -35,66 +35,67 @@ export class AdmissionsController {
     @Query('status') status?: AdmissionStatusEnum,
     @Query('wardType') wardType?: string,
     @Query('nurseId') nurseId?: string,
+    @Request() req?: any,
   ) {
-    return this.admissionsService.findAll(status, wardType, nurseId);
+    return this.admissionsService.findAll(status, wardType, nurseId, req.user?.branchId);
   }
 
   @Get('active')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findActive() {
-    return this.admissionsService.findActive();
+  findActive(@Request() req: any) {
+    return this.admissionsService.findActive(req.user?.branchId);
   }
 
   @Get('dashboard')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   getDashboard(@Request() req: any, @Query('mine') mine?: string) {
     const nurseId = mine === 'true' ? req.user?.userId : undefined;
-    return this.admissionsService.getNurseDashboard(nurseId);
+    return this.admissionsService.getNurseDashboard(nurseId, req.user?.branchId);
   }
 
   @Get('stats')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  getStats() {
-    return this.admissionsService.getStats();
+  getStats(@Request() req: any) {
+    return this.admissionsService.getStats(req.user?.branchId);
   }
 
   @Get('patient/:patientId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findByPatient(@Param('patientId') patientId: string) {
-    return this.admissionsService.findByPatient(patientId);
+  findByPatient(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.admissionsService.findByPatient(patientId, req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string) {
-    return this.admissionsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.admissionsService.findOne(id, req.user?.branchId);
   }
 
   @Patch(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.admissionsService.update(id, data);
+  update(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+    return this.admissionsService.update(id, data, req.user?.branchId);
   }
 
   // ---------- Vitals ----------
   @Post(':id/vitals')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   recordVitals(@Param('id') id: string, @Body() vitals: any, @Request() req: any) {
-    return this.admissionsService.recordVitals(id, vitals, req.user?.userId);
+    return this.admissionsService.recordVitals(id, vitals, req.user?.userId, req.user?.branchId);
   }
 
   // ---------- Medications ----------
   @Post(':id/medications')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   recordMedication(@Param('id') id: string, @Body() med: any, @Request() req: any) {
-    return this.admissionsService.recordMedication(id, med, req.user?.userId);
+    return this.admissionsService.recordMedication(id, med, req.user?.userId, req.user?.branchId);
   }
 
   // ---------- Fluids ----------
   @Post(':id/fluids')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   recordFluid(@Param('id') id: string, @Body() entry: any, @Request() req: any) {
-    return this.admissionsService.recordFluid(id, entry, req.user?.userId);
+    return this.admissionsService.recordFluid(id, entry, req.user?.userId, req.user?.branchId);
   }
 
   @Get(':id/fluid-balance')
@@ -103,29 +104,30 @@ export class AdmissionsController {
     @Param('id') id: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.admissionsService.getFluidBalance(id, startDate, endDate);
+    return this.admissionsService.getFluidBalance(id, startDate, endDate, req.user?.branchId);
   }
 
   // ---------- Nursing notes (SOAP) ----------
   @Post(':id/nursing-notes')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   addNursingNote(@Param('id') id: string, @Body() note: any, @Request() req: any) {
-    return this.admissionsService.addNursingNote(id, note, req.user?.userId);
+    return this.admissionsService.addNursingNote(id, note, req.user?.userId, req.user?.branchId);
   }
 
   // ---------- Shift handover ----------
   @Post(':id/shift-handovers')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   addShiftHandover(@Param('id') id: string, @Body() handover: any, @Request() req: any) {
-    return this.admissionsService.addShiftHandover(id, handover, req.user?.userId);
+    return this.admissionsService.addShiftHandover(id, handover, req.user?.userId, req.user?.branchId);
   }
 
   // ---------- Care plan ----------
   @Post(':id/care-plan')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
   addCarePlanItem(@Param('id') id: string, @Body() item: any, @Request() req: any) {
-    return this.admissionsService.addCarePlanItem(id, item, req.user?.userId);
+    return this.admissionsService.addCarePlanItem(id, item, req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/care-plan/:index/resolve')
@@ -134,15 +136,16 @@ export class AdmissionsController {
     @Param('id') id: string,
     @Param('index') index: string,
     @Body() body: { evaluation?: string },
+    @Request() req: any,
   ) {
-    return this.admissionsService.resolveCarePlanItem(id, parseInt(index, 10), body.evaluation);
+    return this.admissionsService.resolveCarePlanItem(id, parseInt(index, 10), body.evaluation, req.user?.branchId);
   }
 
   // ---------- Incidents ----------
   @Post(':id/incidents')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
   reportIncident(@Param('id') id: string, @Body() incident: any, @Request() req: any) {
-    return this.admissionsService.reportIncident(id, incident, req.user?.userId);
+    return this.admissionsService.reportIncident(id, incident, req.user?.userId, req.user?.branchId);
   }
 
   // ---------- Oxygen therapy ----------
@@ -153,7 +156,7 @@ export class AdmissionsController {
     @Body() data: { litersPerMinute: number; hoursPerDay: number; days: number; ratePerHour?: number; notes?: string },
     @Request() req: any,
   ) {
-    return this.admissionsService.startOxygenTherapy(id, data, req.user?.userId);
+    return this.admissionsService.startOxygenTherapy(id, data, req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/oxygen/:index/stop')
@@ -163,13 +166,13 @@ export class AdmissionsController {
     @Param('index') index: string,
     @Request() req: any,
   ) {
-    return this.admissionsService.stopOxygenTherapy(id, parseInt(index, 10), req.user?.userId);
+    return this.admissionsService.stopOxygenTherapy(id, parseInt(index, 10), req.user?.userId, req.user?.branchId);
   }
 
   @Get(':id/oxygen-cost')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  async getOxygenCost(@Param('id') id: string) {
-    const admission = await this.admissionsService.findOne(id);
+  async getOxygenCost(@Param('id') id: string, @Request() req: any) {
+    const admission = await this.admissionsService.findOne(id, req.user?.branchId);
     return this.admissionsService.getOxygenCostSummary(admission);
   }
 
@@ -181,7 +184,7 @@ export class AdmissionsController {
     @Body() data: { wardType?: string; bedNumber?: string; notes?: string },
     @Request() req: any,
   ) {
-    return this.admissionsService.transfer(id, data, req.user?.userId);
+    return this.admissionsService.transfer(id, data, req.user?.userId, req.user?.branchId);
   }
 
   @Patch(':id/discharge')
@@ -191,6 +194,6 @@ export class AdmissionsController {
     @Body() data: { dischargeNotes?: string; dischargeDiagnosis?: string; dischargeInstructions?: string },
     @Request() req: any,
   ) {
-    return this.admissionsService.discharge(id, data, req.user?.userId);
+    return this.admissionsService.discharge(id, data, req.user?.userId, req.user?.branchId);
   }
 }

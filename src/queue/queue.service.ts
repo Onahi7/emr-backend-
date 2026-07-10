@@ -5,6 +5,7 @@ import { Queue, QueueStatusEnum, PriorityLevelEnum } from '../database/schemas/q
 import { CreateQueueDto } from './dto/create-queue.dto';
 import { Patient } from '../database/schemas/patient.schema';
 import { Consultation } from '../database/schemas/consultation.schema';
+import { branchFilter, requireBranchId, withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class QueueService {
@@ -15,10 +16,11 @@ export class QueueService {
   ) {}
 
   async addToQueue(createQueueDto: CreateQueueDto, branchId?: string): Promise<Queue> {
+    const requiredBranchId = requireBranchId(branchId);
     const { patientId, visitId, consultationId, priority, notes } = createQueueDto;
 
     // Verify patient exists
-    const patient = await this.patientModel.findById(patientId);
+    const patient = await this.patientModel.findOne(withBranch({ _id: patientId }, requiredBranchId));
     if (!patient) {
       throw new NotFoundException('Patient not found');
     }
@@ -32,12 +34,12 @@ export class QueueService {
         $lt: new Date(today.setHours(23, 59, 59, 999)),
       },
     };
-    if (branchId) countQuery.branchId = branchId;
+    countQuery.branchId = requiredBranchId;
     const count = await this.queueModel.countDocuments(countQuery);
     const queueNumber = `Q-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 
     // Get the last queue order
-    const lastQueueQuery: any = branchId ? { branchId } : {};
+    const lastQueueQuery: any = branchFilter(requiredBranchId);
     const lastQueue = await this.queueModel.findOne(lastQueueQuery).sort({ queueOrder: -1 }).exec();
     const queueOrder = lastQueue ? lastQueue.queueOrder + 1 : 1;
 
@@ -51,7 +53,7 @@ export class QueueService {
       queueOrder,
       notes,
     };
-    if (branchId) queueData.branchId = branchId;
+    queueData.branchId = requiredBranchId;
 
     const queueEntry = new this.queueModel(queueData);
 
@@ -59,8 +61,7 @@ export class QueueService {
   }
 
   async getQueue(status?: QueueStatusEnum, branchId?: string): Promise<Queue[]> {
-    const query: any = status ? { status } : { status: { $ne: QueueStatusEnum.COMPLETED } };
-    if (branchId) query.branchId = branchId;
+    const query: any = withBranch(status ? { status } : { status: { $ne: QueueStatusEnum.COMPLETED } }, branchId);
 
     return this.queueModel
       .find(query)
@@ -71,8 +72,7 @@ export class QueueService {
   }
 
   async findById(id: string, branchId?: string): Promise<Queue> {
-    const query: any = { _id: id };
-    if (branchId) query.branchId = branchId;
+    const query: any = withBranch({ _id: id }, branchId);
 
     const queueEntry = await this.queueModel
       .findOne(query)
@@ -86,8 +86,7 @@ export class QueueService {
   }
 
   async updateStatus(id: string, status: QueueStatusEnum, userId?: string, branchId?: string): Promise<Queue> {
-    const query: any = { _id: id };
-    if (branchId) query.branchId = branchId;
+    const query: any = withBranch({ _id: id }, branchId);
 
     const queueEntry = await this.queueModel.findOne(query);
     if (!queueEntry) {
@@ -112,8 +111,7 @@ export class QueueService {
   }
 
   async removeFromQueue(id: string, reason: string, cancelledBy: string, branchId?: string): Promise<Queue> {
-    const query: any = { _id: id };
-    if (branchId) query.branchId = branchId;
+    const query: any = withBranch({ _id: id }, branchId);
 
     const queueEntry = await this.queueModel.findOne(query);
     if (!queueEntry) {
@@ -128,8 +126,7 @@ export class QueueService {
 
   async reorderQueue(queueIds: string[], branchId?: string): Promise<void> {
     for (let i = 0; i < queueIds.length; i++) {
-      const query: any = { _id: queueIds[i] };
-      if (branchId) query.branchId = branchId;
+      const query: any = withBranch({ _id: queueIds[i] }, branchId);
       await this.queueModel.findOneAndUpdate(query, { queueOrder: i + 1 });
     }
   }

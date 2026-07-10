@@ -66,6 +66,10 @@ export class CafIntegrationService implements OnModuleInit {
     return !!(this.baseUrl && this.username && this.password && this.branchId);
   }
 
+  async isConfiguredForBranch(branchId?: string): Promise<boolean> {
+    return Boolean(await this.resolveConfig(branchId));
+  }
+
   private async resolveConfig(branchId?: string): Promise<CafResolvedConfig | null> {
     const branch = branchId
       ? await this.branchModel.findById(branchId).lean().exec().catch(() => null)
@@ -376,13 +380,13 @@ export class CafIntegrationService implements OnModuleInit {
     }
   }
 
-  async getProductById(productId: string): Promise<CafProduct | null> {
-    const initialConfig = await this.resolveConfig();
+  async getProductById(productId: string, branchId?: string): Promise<CafProduct | null> {
+    const initialConfig = await this.resolveConfig(branchId);
     if (!initialConfig) return null;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const auth = await this.ensureAuthenticated(attempt > 0);
+        const auth = await this.ensureAuthenticated(attempt > 0, branchId);
         const { data } = await firstValueFrom(
           this.httpService.get(`${auth.config.baseUrl}/products/${productId}`, {
             headers: this.headers(auth.accessToken),
@@ -514,6 +518,7 @@ export class CafIntegrationService implements OnModuleInit {
     paymentMethod?: string;
     notes?: string;
     branchId?: string;
+    idempotencyKey: string;
   }): Promise<{ saleId: string; receiptNumber: string }> {
     const auth = await this.ensureAuthenticated(false, params.branchId);
     const effectiveBranchId = auth.config.branchId;
@@ -544,7 +549,7 @@ export class CafIntegrationService implements OnModuleInit {
         {
           headers: {
             ...this.headers(auth.accessToken),
-            'X-Idempotency-Key': this.idempotencyKey('emr-checkout'),
+            'X-Idempotency-Key': params.idempotencyKey,
           },
         },
       ),

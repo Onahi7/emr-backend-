@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { QueueService } from './queue.service';
 import { CreateQueueDto } from './dto/create-queue.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -14,14 +14,14 @@ export class QueueController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  addToQueue(@Body() createQueueDto: CreateQueueDto, @Query('branchId') branchId?: string) {
-    return this.queueService.addToQueue(createQueueDto, branchId);
+  addToQueue(@Body() createQueueDto: CreateQueueDto, @Request() req: any) {
+    return this.queueService.addToQueue(createQueueDto, req.user?.branchId);
   }
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  getQueue(@Query('status') status?: QueueStatusEnum, @Query('branchId') branchId?: string) {
-    return this.queueService.getQueue(status, branchId);
+  getQueue(@Query('status') status: QueueStatusEnum | undefined, @Request() req: any) {
+    return this.queueService.getQueue(status, req.user?.branchId);
   }
 
   /**
@@ -30,14 +30,14 @@ export class QueueController {
    */
   @Patch('reorder')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.NURSE)
-  reorderQueue(@Body() body: { queueIds: string[] }, @Query('branchId') branchId?: string) {
-    return this.queueService.reorderQueue(body.queueIds, branchId);
+  reorderQueue(@Body() body: { queueIds: string[] }, @Request() req: any) {
+    return this.queueService.reorderQueue(body.queueIds, req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  findOne(@Param('id') id: string, @Query('branchId') branchId?: string) {
-    return this.queueService.findById(id, branchId);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.queueService.findById(id, req.user?.branchId);
   }
 
   @Patch(':id/status')
@@ -45,9 +45,9 @@ export class QueueController {
   updateStatus(
     @Param('id') id: string,
     @Body() body: { status: QueueStatusEnum; userId?: string },
-    @Query('branchId') branchId?: string,
+    @Request() req: any,
   ) {
-    return this.queueService.updateStatus(id, body.status, body.userId, branchId);
+    return this.queueService.updateStatus(id, body.status, body.userId, req.user?.branchId);
   }
 
   @Patch(':id/remove')
@@ -55,8 +55,8 @@ export class QueueController {
   removeFromQueue(
     @Param('id') id: string,
     @Body() body: { reason: string; cancelledBy: string },
-    @Query('branchId') branchId?: string,
+    @Request() req: any,
   ) {
-    return this.queueService.removeFromQueue(id, body.reason, body.cancelledBy, branchId);
+    return this.queueService.removeFromQueue(id, body.reason, body.cancelledBy, req.user?.branchId);
   }
 }

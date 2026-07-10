@@ -12,7 +12,7 @@ export class InsuranceBlocksController {
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   create(@Body() dto: any, @Req() req: any) {
-    return this.service.create(dto, req.user?.id);
+    return this.service.create(dto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
@@ -21,20 +21,20 @@ export class InsuranceBlocksController {
     @Query('programCode') programCode?: string,
     @Query('isActive') isActive?: string,
     @Query('search') search?: string,
-    @Query('branchId') branchId?: string,
+    @Req() req?: any,
   ) {
     return this.service.findAll({
       programCode,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
       search,
-      branchId,
+      branchId: req.user?.branchId,
     });
   }
 
   @Get('stats')
   @Roles(UserRoleEnum.ADMIN)
-  getStats() {
-    return this.service.getStats();
+  getStats(@Req() req: any) {
+    return this.service.getStats(req.user?.branchId);
   }
 
   @Get('check')
@@ -43,31 +43,32 @@ export class InsuranceBlocksController {
     @Query('patientId') patientId?: string,
     @Query('memberNumber') memberNumber?: string,
     @Query('programCode') programCode?: string,
+    @Req() req?: any,
   ) {
-    return this.service.checkBlocked(patientId, memberNumber, programCode);
+    return this.service.checkBlocked(patientId, memberNumber, programCode, req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  findById(@Param('id') id: string) {
-    return this.service.findById(id);
+  findById(@Param('id') id: string, @Req() req: any) {
+    return this.service.findById(id, req.user?.branchId);
   }
 
   @Patch(':id/deactivate')
   @Roles(UserRoleEnum.ADMIN)
-  deactivate(@Param('id') id: string) {
-    return this.service.deactivate(id);
+  deactivate(@Param('id') id: string, @Req() req: any) {
+    return this.service.deactivate(id, req.user?.branchId);
   }
 
   @Patch(':id/reactivate')
   @Roles(UserRoleEnum.ADMIN)
-  reactivate(@Param('id') id: string) {
-    return this.service.reactivate(id);
+  reactivate(@Param('id') id: string, @Req() req: any) {
+    return this.service.reactivate(id, req.user?.branchId);
   }
 
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.service.remove(id, req.user?.branchId);
   }
 }

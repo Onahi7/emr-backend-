@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
-  UseGuards, HttpCode, HttpStatus,
+  UseGuards, HttpCode, HttpStatus, Request,
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -17,63 +17,65 @@ export class RoomsController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN)
-  async create(@Body() createRoomDto: CreateRoomDto) {
-    return this.roomsService.create(createRoomDto);
+  async create(@Body() createRoomDto: CreateRoomDto, @Request() req: any) {
+    return this.roomsService.create(createRoomDto, req.user?.branchId);
   }
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async findAll(
-    @Query('roomType') roomType?: string,
-    @Query('status') status?: string,
+    @Query('roomType') roomType: string | undefined,
+    @Query('status') status: string | undefined,
+    @Request() req: any,
   ) {
-    return this.roomsService.findAll(roomType, status);
+    return this.roomsService.findAll(roomType, status, req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  async findOne(@Param('id') id: string) {
-    return this.roomsService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    return this.roomsService.findOne(id, req.user?.branchId);
   }
 
   @Patch(':id')
   @Roles(UserRoleEnum.ADMIN)
-  async update(@Param('id') id: string, @Body() updateRoomDto: UpdateRoomDto) {
-    return this.roomsService.update(id, updateRoomDto);
+  async update(@Param('id') id: string, @Body() updateRoomDto: UpdateRoomDto, @Request() req: any) {
+    return this.roomsService.update(id, updateRoomDto, req.user?.branchId);
   }
 
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    await this.roomsService.remove(id);
+  async remove(@Param('id') id: string, @Request() req: any) {
+    await this.roomsService.remove(id, req.user?.branchId);
   }
 
   @Post(':id/assign/:visitId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  async assignRoom(@Param('visitId') visitId: string, @Param('id') roomId: string) {
-    return this.roomsService.assignRoom(visitId, roomId);
+  async assignRoom(@Param('visitId') visitId: string, @Param('id') roomId: string, @Request() req: any) {
+    return this.roomsService.assignRoom(visitId, roomId, req.user?.branchId);
   }
 
   @Post(':id/release')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE)
-  async releaseRoom(@Param('id') id: string) {
-    return this.roomsService.releaseRoom(id);
+  async releaseRoom(@Param('id') id: string, @Request() req: any) {
+    return this.roomsService.releaseRoom(id, req.user?.branchId);
   }
 
   @Post('auto-assign/:visitId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async autoAssignRoom(
     @Param('visitId') visitId: string,
-    @Query('preferredType') preferredType?: string,
+    @Query('preferredType') preferredType: string | undefined,
+    @Request() req: any,
   ) {
-    return this.roomsService.autoAssignRoom(visitId, preferredType);
+    return this.roomsService.autoAssignRoom(visitId, preferredType, req.user?.branchId);
   }
 
   @Post('seed')
   @Roles(UserRoleEnum.ADMIN)
-  async seed() {
-    const count = await this.roomsService.seedDefaultRooms();
+  async seed(@Request() req: any) {
+    const count = await this.roomsService.seedDefaultRooms(req.user?.branchId);
     return { message: `${count} rooms ready` };
   }
 }

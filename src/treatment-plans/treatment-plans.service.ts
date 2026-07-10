@@ -14,6 +14,7 @@ import { OrdersService } from '../orders/orders.service';
 import { CreateTreatmentPlanDto } from './dto/create-treatment-plan.dto';
 import { PayTreatmentPlanDto } from './dto/pay-treatment-plan.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { withBranch, requireBranchId } from '../common/utils/branch-scope';
 import { PriorityEnum } from '../database/schemas/order.schema';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 
@@ -189,12 +190,12 @@ export class TreatmentPlansService {
 
     const saved = await plan.save();
     this.logger.log(`Treatment plan created: ${saved.planNumber}`);
-    return this.findById(saved._id.toString());
+    return this.findById(saved._id.toString(), branchId);
   }
 
-  async findById(id: string): Promise<TreatmentPlan> {
+  async findById(id: string, branchId?: string): Promise<TreatmentPlan> {
     const plan = await this.treatmentPlanModel
-      .findById(id)
+      .findOne(withBranch({ _id: id }, branchId))
       .populate('patientId', 'patientId firstName lastName phone age gender')
       .populate('visitId', 'visitNumber status')
       .populate('createdBy', 'fullName role')
@@ -242,8 +243,8 @@ export class TreatmentPlansService {
     return this.findAll({ status: TreatmentPlanStatusEnum.SENT_TO_RECEPTION }, branchId);
   }
 
-  async sendToReception(id: string): Promise<TreatmentPlan> {
-    const plan = await this.treatmentPlanModel.findById(id);
+  async sendToReception(id: string, branchId?: string): Promise<TreatmentPlan> {
+    const plan = await this.treatmentPlanModel.findOne(withBranch({ _id: id }, branchId));
     if (!plan) throw new NotFoundException('Treatment plan not found');
     if (plan.status !== TreatmentPlanStatusEnum.DRAFT) {
       throw new BadRequestException('Only draft plans can be sent to reception');
@@ -252,11 +253,11 @@ export class TreatmentPlansService {
     plan.sentToReceptionAt = new Date();
     await plan.save();
     this.realtimeGateway.emitToAll('treatment-plan:sent', { planId: plan._id, planNumber: plan.planNumber });
-    return this.findById(id);
+    return this.findById(id, branchId);
   }
 
-  async markPrinted(id: string, userId: string): Promise<TreatmentPlan> {
-    const plan = await this.treatmentPlanModel.findById(id);
+  async markPrinted(id: string, userId: string, branchId?: string): Promise<TreatmentPlan> {
+    const plan = await this.treatmentPlanModel.findOne(withBranch({ _id: id }, branchId));
     if (!plan) throw new NotFoundException('Treatment plan not found');
     if (plan.status !== TreatmentPlanStatusEnum.SENT_TO_RECEPTION && plan.status !== TreatmentPlanStatusEnum.PAID) {
       throw new BadRequestException('Only sent or paid plans can be marked as printed');
@@ -264,7 +265,7 @@ export class TreatmentPlansService {
     plan.printedAt = new Date();
     plan.printedBy = new Types.ObjectId(userId);
     await plan.save();
-    return this.findById(id);
+    return this.findById(id, branchId);
   }
 
   private static readonly VALID_TRANSITIONS: Record<TreatmentPlanStatusEnum, TreatmentPlanStatusEnum[]> = {
@@ -275,8 +276,8 @@ export class TreatmentPlansService {
     [TreatmentPlanStatusEnum.CANCELLED]: [],
   };
 
-  async updateStatus(id: string, status: TreatmentPlanStatusEnum): Promise<TreatmentPlan> {
-    const plan = await this.treatmentPlanModel.findById(id);
+  async updateStatus(id: string, status: TreatmentPlanStatusEnum, branchId?: string): Promise<TreatmentPlan> {
+    const plan = await this.treatmentPlanModel.findOne(withBranch({ _id: id }, branchId));
     if (!plan) throw new NotFoundException('Treatment plan not found');
     const allowed = TreatmentPlansService.VALID_TRANSITIONS[plan.status] || [];
     if (!allowed.includes(status)) {
@@ -284,11 +285,11 @@ export class TreatmentPlansService {
     }
     plan.status = status;
     await plan.save();
-    return this.findById(id);
+    return this.findById(id, branchId);
   }
 
-  async cancel(id: string, userId: string): Promise<TreatmentPlan> {
-    const plan = await this.treatmentPlanModel.findById(id);
+  async cancel(id: string, userId: string, branchId?: string): Promise<TreatmentPlan> {
+    const plan = await this.treatmentPlanModel.findOne(withBranch({ _id: id }, branchId));
     if (!plan) throw new NotFoundException('Treatment plan not found');
     if (plan.status !== TreatmentPlanStatusEnum.DRAFT) {
       throw new BadRequestException('Only draft plans can be cancelled');
@@ -318,11 +319,13 @@ export class TreatmentPlansService {
       }
     }
 
-    return this.findById(id);
+    await this.ordersService.recalculateVisitStatus(plan.visitId);
+    return this.findById(id, branchId);
   }
 
   async pay(id: string, dto: PayTreatmentPlanDto, userId: string, branchId?: string): Promise<TreatmentPlan> {
-    const plan = await this.treatmentPlanModel.findById(id);
+    const requiredBranchId = requireBranchId(branchId);
+    const plan = await this.treatmentPlanModel.findOne(withBranch({ _id: id }, requiredBranchId));
     if (!plan) throw new NotFoundException('Treatment plan not found');
     if (plan.status === TreatmentPlanStatusEnum.CANCELLED) {
       throw new BadRequestException('Cannot pay for a cancelled plan');
@@ -410,16 +413,13 @@ export class TreatmentPlansService {
       }
       // Mark all child orders as paid
       for (const orderId of plan.orderIds) {
-        const order = await this.orderModel.findById(orderId);
-        if (order && order.paymentStatus !== PaymentStatusEnum.PAID) {
-          order.amountPaid = order.total;
-          order.balance = 0;
-          order.paymentStatus = PaymentStatusEnum.PAID;
-          if (order.status === OrderStatusEnum.AWAITING_PAYMENT) {
-            order.status = order.orderType === 'lab' ? OrderStatusEnum.PENDING_COLLECTION : OrderStatusEnum.PAID;
-          }
-          await order.save();
-        }
+        await this.ordersService.settleOrderBalance(orderId.toString(), {
+          branchId: requiredBranchId,
+          paymentMethod: 'treatment_plan',
+          userId,
+          recordPayment: false,
+          notes: `Settled by treatment plan ${plan.planNumber}`,
+        });
       }
       this.realtimeGateway.emitToAll('treatment-plan:paid', { planId: plan._id, planNumber: plan.planNumber });
     } else {
@@ -428,6 +428,6 @@ export class TreatmentPlansService {
 
     await plan.save();
     this.logger.log(`Treatment plan ${plan.planNumber} payment: Le ${totalPayment} (${payments.map(p => p.paymentMethod).join(' + ')}), remaining: Le ${plan.balance}`);
-    return this.findById(id);
+    return this.findById(id, requiredBranchId);
   }
 }

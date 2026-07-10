@@ -45,20 +45,20 @@ export class TreatmentPlansController {
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
-  findOne(@Param('id') id: string) {
-    return this.treatmentPlansService.findById(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.treatmentPlansService.findById(id, req.user?.branchId);
   }
 
   @Post(':id/send')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  sendToReception(@Param('id') id: string) {
-    return this.treatmentPlansService.sendToReception(id);
+  sendToReception(@Param('id') id: string, @Request() req: any) {
+    return this.treatmentPlansService.sendToReception(id, req.user?.branchId);
   }
 
   @Post(':id/print')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   markPrinted(@Param('id') id: string, @Request() req: any) {
-    return this.treatmentPlansService.markPrinted(id, req.user?.userId);
+    return this.treatmentPlansService.markPrinted(id, req.user?.userId, req.user?.branchId);
   }
 
   @Post(':id/pay')
@@ -69,13 +69,13 @@ export class TreatmentPlansController {
 
   @Patch(':id/status')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  updateStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.treatmentPlansService.updateStatus(id, status as any);
+  updateStatus(@Param('id') id: string, @Body('status') status: string, @Request() req: any) {
+    return this.treatmentPlansService.updateStatus(id, status as any, req.user?.branchId);
   }
 
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   cancel(@Param('id') id: string, @Request() req: any) {
-    return this.treatmentPlansService.cancel(id, req.user?.userId);
+    return this.treatmentPlansService.cancel(id, req.user?.userId, req.user?.branchId);
   }
 }

@@ -54,8 +54,8 @@ export class PrescriptionsController {
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST, UserRoleEnum.PHARMACIST)
-  findOne(@Param('id') id: string) {
-    return this.prescriptionsService.findById(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.prescriptionsService.findById(id, req.user?.branchId);
   }
 
   /**
@@ -67,8 +67,9 @@ export class PrescriptionsController {
   update(
     @Param('id') id: string,
     @Body() updatePrescriptionDto: UpdatePrescriptionDto,
+    @Request() req: any,
   ) {
-    return this.prescriptionsService.update(id, updatePrescriptionDto);
+    return this.prescriptionsService.update(id, updatePrescriptionDto, req.user?.branchId);
   }
 
   /**
@@ -82,7 +83,7 @@ export class PrescriptionsController {
     @Body() dto: DispensePrescriptionDto,
     @Request() req: any,
   ) {
-    return this.prescriptionsService.dispense(id, req.user?.userId, dto);
+    return this.prescriptionsService.dispense(id, req.user?.userId, dto, req.user?.branchId);
   }
 
   /**
@@ -98,14 +99,14 @@ export class PrescriptionsController {
   @Patch(':id/cancel')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   cancel(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
-    return this.prescriptionsService.cancel(id, body.reason, req.user?.userId);
+    return this.prescriptionsService.cancel(id, body.reason, req.user?.userId, req.user?.branchId);
   }
 
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    await this.prescriptionsService.remove(id);
+  async remove(@Param('id') id: string, @Request() req: any) {
+    await this.prescriptionsService.remove(id, req.user?.branchId);
   }
 
   /**
@@ -129,7 +130,7 @@ export class PrescriptionsController {
     @Body() dto: AdministerPrescriptionDto,
     @Request() req: any,
   ) {
-    return this.prescriptionsService.administer(id, dto, req.user?.userId, req.user?.fullName || 'Nurse');
+    return this.prescriptionsService.administer(id, dto, req.user?.userId, req.user?.fullName || 'Nurse', req.user?.branchId);
   }
 
   /**
@@ -138,7 +139,7 @@ export class PrescriptionsController {
    */
   @Post(':id/initialize-admin')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.RECEPTIONIST)
-  initializeAdmin(@Param('id') id: string) {
-    return this.prescriptionsService.initializeAdministration(id);
+  initializeAdmin(@Param('id') id: string, @Request() req: any) {
+    return this.prescriptionsService.initializeAdministration(id, req.user?.branchId);
   }
 }

@@ -28,6 +28,9 @@ export enum SpecialtyEnum {
 
 @Schema({ timestamps: true, collection: 'doctors' })
 export class Doctor extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branchId: Types.ObjectId;
+
   @Prop({ required: true, trim: true })
   fullName: string;
 
@@ -56,5 +59,5 @@ export class Doctor extends Document {
 }
 
 export const DoctorSchema = SchemaFactory.createForClass(Doctor);
-DoctorSchema.index({ fullName: 1 });
-DoctorSchema.index({ doctorType: 1, specialty: 1 });
+DoctorSchema.index({ branchId: 1, fullName: 1 });
+DoctorSchema.index({ branchId: 1, doctorType: 1, specialty: 1 });

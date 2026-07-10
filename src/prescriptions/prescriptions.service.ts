@@ -15,6 +15,10 @@ import { DispensePrescriptionDto } from './dto/dispense-prescription.dto';
 import { AdministerPrescriptionDto } from './dto/administer-prescription.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CafIntegrationService } from '../caf-integration/caf-integration.service';
+import { IntegrationJobsService } from '../integration-jobs/integration-jobs.service';
+import { IntegrationJobStatus, IntegrationJobType } from '../database/schemas/integration-job.schema';
+import { requireBranchId, withBranch } from '../common/utils/branch-scope';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -31,6 +35,8 @@ export class PrescriptionsService {
     @InjectModel(Admission.name) private admissionModel: Model<Admission>,
     private realtimeGateway: RealtimeGateway,
     private cafIntegrationService: CafIntegrationService,
+    private integrationJobs: IntegrationJobsService,
+    private ordersService: OrdersService,
   ) {}
 
   private hasClinicalPrescribingRole(roleOrRoles?: string | string[]): boolean {
@@ -87,7 +93,7 @@ export class PrescriptionsService {
    * Compute the prescription total at creation time using local medication prices.
    * Each item's total = quantity × unitPrice. Falls back to packSizes if unitPrice is 0.
    */
-  private async computePrescriptionTotal(items: any[]): Promise<number> {
+  private async computePrescriptionTotal(items: any[], branchId?: string): Promise<number> {
     let total = 0;
     for (const item of items) {
       let price = 0;
@@ -107,10 +113,10 @@ export class PrescriptionsService {
           }
         }
       }
-      if (!price && this.cafIntegrationService.isConfigured()) {
+      if (!price && await this.cafIntegrationService.isConfiguredForBranch(branchId)) {
         // Fall back to CAF — fetch all CAF products and find a matching one
         try {
-          const cafProducts = await this.cafIntegrationService.getProducts({ page: 1, limit: 500 });
+          const cafProducts = await this.cafIntegrationService.getProducts({ page: 1, limit: 500, branchId });
           const cafMed = cafProducts.find((p) => p._id === item.medicationId.toString());
           if (cafMed) {
             // Per-base-unit price (same logic as the medications controller uses)
@@ -215,15 +221,15 @@ export class PrescriptionsService {
     };
   }
 
-  private async resolveMedicationForDispense(medicationId: Types.ObjectId | string) {
+  private async resolveMedicationForDispense(medicationId: Types.ObjectId | string, branchId?: string) {
     // Guard: only attempt local lookup for valid ObjectId strings (CAF products have non-ObjectId IDs)
     if (Types.ObjectId.isValid(medicationId)) {
       const localMedication = await this.medicationModel.findById(medicationId).lean();
       if (localMedication) return localMedication as any;
     }
 
-    if (!this.cafIntegrationService.isConfigured()) return null;
-    const cafProduct = await this.cafIntegrationService.getProductById(medicationId.toString());
+    if (!await this.cafIntegrationService.isConfiguredForBranch(branchId)) return null;
+    const cafProduct = await this.cafIntegrationService.getProductById(medicationId.toString(), branchId);
     return cafProduct ? this.normalizeCafProductForDispense(cafProduct) : null;
   }
 
@@ -290,6 +296,7 @@ export class PrescriptionsService {
   }
 
   async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string, reqUserRole?: string | string[]): Promise<Prescription> {
+    const requiredBranchId = requireBranchId(branchId);
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
 
     // === Auto-compute quantity from structured regimen if not provided ===
@@ -307,10 +314,10 @@ export class PrescriptionsService {
     });
 
     // Auto-compute total from local prices if not provided
-    const computedTotal = totalAmount ?? (await this.computePrescriptionTotal(normalizedItems));
+    const computedTotal = totalAmount ?? (await this.computePrescriptionTotal(normalizedItems, requiredBranchId));
 
     // Verify patient exists
-    const patient = await this.patientModel.findById(patientId);
+    const patient = await this.patientModel.findOne(withBranch({ _id: patientId }, requiredBranchId));
     if (!patient) {
       throw new NotFoundException('Patient not found');
     }
@@ -327,7 +334,7 @@ export class PrescriptionsService {
     }
 
     if (visitId) {
-      const visit = await this.visitModel.findById(visitId);
+      const visit = await this.visitModel.findOne(withBranch({ _id: visitId }, requiredBranchId));
       if (!visit) {
         throw new NotFoundException('Visit not found');
       }
@@ -351,8 +358,8 @@ export class PrescriptionsService {
         medication = await this.medicationModel.findById(item.medicationId).lean();
       }
       if (!medication) {
-        if (this.cafIntegrationService.isConfigured()) {
-          const cafStock = await this.cafIntegrationService.getProductStock(item.medicationId);
+        if (await this.cafIntegrationService.isConfiguredForBranch(requiredBranchId)) {
+          const cafStock = await this.cafIntegrationService.getProductStock(item.medicationId, requiredBranchId);
           if (cafStock < item.quantity) {
             throw new BadRequestException(
               `Insufficient CAF stock for ${item.medicationName}. Available: ${cafStock}, Required: ${item.quantity}`,
@@ -415,12 +422,12 @@ export class PrescriptionsService {
       notes,
       isPaid: false,
       totalAmount: computedTotal,
-      branchId,
+      branchId: requiredBranchId,
     });
 
     const savedPrescription = await prescription.save();
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_PHARMACY);
-    const populatedPrescription = await this.findById(savedPrescription._id.toString());
+    const populatedPrescription = await this.findById(savedPrescription._id.toString(), requiredBranchId);
     this.realtimeGateway.emitToAll('prescription:created', populatedPrescription);
     return populatedPrescription;
   }
@@ -436,9 +443,9 @@ export class PrescriptionsService {
       .exec();
   }
 
-  async findById(id: string): Promise<Prescription> {
+  async findById(id: string, branchId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionModel
-      .findById(id)
+      .findOne(withBranch({ _id: id }, branchId))
       .populate('patientId')
       .populate('prescribedBy', 'fullName email department')
       .populate('doctorId')
@@ -486,8 +493,10 @@ export class PrescriptionsService {
     id: string,
     dispensedBy: string,
     dto?: DispensePrescriptionDto,
+    branchId?: string,
   ): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findById(id);
+    const requiredBranchId = requireBranchId(branchId);
+    const prescription = await this.prescriptionModel.findOne(withBranch({ _id: id }, requiredBranchId));
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
@@ -536,7 +545,7 @@ export class PrescriptionsService {
 
       // Resolve the actual medication (substitute-aware)
       const actualMedicationId = override?.substituteMedicationId || item.medicationId;
-      const medication = actualMedicationId ? await this.resolveMedicationForDispense(actualMedicationId) : null;
+      const medication = actualMedicationId ? await this.resolveMedicationForDispense(actualMedicationId, requiredBranchId) : null;
       const medicationName = medication?.name || item.medicationName;
       const isSubstitute = !!override?.substituteMedicationId;
       const skipInventory = !actualMedicationId || !Types.ObjectId.isValid(actualMedicationId) && !medication;
@@ -615,6 +624,19 @@ export class PrescriptionsService {
       });
     }
 
+    // Track local mutations so an external or persistence failure can be compensated.
+    const localDeductions: Array<{ medicationId: any; quantity: number; movementId: any }> = [];
+    const rollbackLocalDeductions = async () => {
+      for (const deduction of [...localDeductions].reverse()) {
+        await this.medicationModel.updateOne(
+          { _id: deduction.medicationId },
+          { $inc: { stockQuantity: deduction.quantity } },
+        ).exec();
+        await this.stockMovementModel.deleteOne({ _id: deduction.movementId }).exec();
+      }
+      localDeductions.length = 0;
+    };
+
     // === Stock deduction (local + CAF) ===
     for (const line of lines) {
       if (line.baseUnits <= 0) continue; // 0 qty means nothing to deduct
@@ -636,7 +658,7 @@ export class PrescriptionsService {
             `Insufficient stock for ${line.medicationName}. Available: ${localMed.stockQuantity} ${localMed.baseUnit}, Required: ${line.baseUnits}`,
           );
         }
-        await this.stockMovementModel.create({
+        const movement = await this.stockMovementModel.create({
           medicationId: line.medicationId,
           movementType: StockMovementTypeEnum.DISPENSE,
           quantity: -line.baseUnits,
@@ -646,9 +668,10 @@ export class PrescriptionsService {
           notes: `Dispensed for ${prescription.prescriptionNumber}${line.isSubstitute ? ' (substitute)' : ''}`,
           performedBy: new Types.ObjectId(dispensedBy),
         });
+        localDeductions.push({ medicationId: line.medicationId, quantity: line.baseUnits, movementId: movement._id });
       } else {
         // CAF-sourced or local-not-found — deduct via CAF checkout
-        if (!this.cafIntegrationService.isConfigured()) {
+        if (!await this.cafIntegrationService.isConfiguredForBranch(requiredBranchId)) {
           throw new BadRequestException(
             `Cannot dispense ${line.medicationName} — no local stock and CAF is not configured.`,
           );
@@ -675,8 +698,8 @@ export class PrescriptionsService {
     let cafSaleId: string | undefined;
     let cafReceiptNumber: string | undefined;
 
-    if (cafOnlyLines.length > 0 && this.cafIntegrationService.isConfigured()) {
-      const shiftId = await this.cafIntegrationService.ensureOpenShift();
+    if (cafOnlyLines.length > 0 && await this.cafIntegrationService.isConfiguredForBranch(requiredBranchId)) {
+      const shiftId = await this.cafIntegrationService.ensureOpenShift(requiredBranchId);
       const patient = prescription.patientId
         ? await this.patientModel.findById(prescription.patientId).lean()
         : null;
@@ -684,22 +707,44 @@ export class PrescriptionsService {
         ? `${(patient as any).firstName || ''} ${(patient as any).lastName || ''}`.trim() || 'EMR Patient'
         : 'EMR Patient';
 
-      const result = await this.cafIntegrationService.dispensePrescription({
-        shiftId,
-        items: cafOnlyLines.map((l) => ({
-          productId: l.medicationId.toString(),
-          quantity: l.sellUnits,
-          quantityInBaseUnits: l.baseUnits,
-          ...(l.cafPackSize ? { packSize: l.cafPackSize } : {}),
-        })),
-        patientName,
-        prescriptionRef: prescription.prescriptionNumber,
-        paymentMethod: dto?.paymentMethod || 'cash',
-        notes: dto?.dispensingNotes,
+      const idempotencyKey = `caf-checkout:prescription:${prescription._id.toString()}:dispense-v1`;
+      const job = await this.integrationJobs.enqueue({
+        branchId: requiredBranchId,
+        type: IntegrationJobType.CAF_CHECKOUT,
+        aggregateId: prescription._id.toString(),
+        idempotencyKey,
+        payload: { prescriptionId: prescription._id.toString(), branchId: requiredBranchId },
       });
-
-      cafSaleId = result.saleId;
-      cafReceiptNumber = result.receiptNumber;
+      try {
+        if (job.status === IntegrationJobStatus.COMPLETED && job.result) {
+          cafSaleId = job.result.saleId;
+          cafReceiptNumber = job.result.receiptNumber;
+        } else {
+          await this.integrationJobs.start(job._id.toString());
+          const result = await this.cafIntegrationService.dispensePrescription({
+            shiftId,
+            items: cafOnlyLines.map((l) => ({
+              productId: l.medicationId.toString(),
+              quantity: l.sellUnits,
+              quantityInBaseUnits: l.baseUnits,
+              ...(l.cafPackSize ? { packSize: l.cafPackSize } : {}),
+            })),
+            patientName,
+            prescriptionRef: prescription.prescriptionNumber,
+            paymentMethod: dto?.paymentMethod || 'cash',
+            notes: dto?.dispensingNotes,
+            branchId: requiredBranchId,
+            idempotencyKey,
+          });
+          await this.integrationJobs.complete(job._id.toString(), result);
+          cafSaleId = result.saleId;
+          cafReceiptNumber = result.receiptNumber;
+        }
+      } catch (error) {
+        await this.integrationJobs.fail(job._id.toString(), error);
+        await rollbackLocalDeductions();
+        throw error;
+      }
     }
 
     // === Mark prescription dispensed ===
@@ -716,39 +761,45 @@ export class PrescriptionsService {
     if (cafReceiptNumber) prescription.cafReceiptNumber = cafReceiptNumber;
     if (cafOnlyLines.length > 0) prescription.hasCafItems = true;
 
-    const savedPrescription = await prescription.save();
+    let savedPrescription: Prescription;
+    try {
+      savedPrescription = await prescription.save();
 
-    const existingPayment = await this.paymentModel.findOne({
-      prescriptionId: savedPrescription._id,
-      paymentType: PaymentTypeEnum.PRESCRIPTION,
-      isRefunded: { $ne: true },
-    });
-
-    if (existingPayment) {
-      existingPayment.amount = actualTotal;
-      existingPayment.paymentMethod = dto?.paymentMethod || existingPayment.paymentMethod || 'cash';
-      existingPayment.notes = `Prescription ${savedPrescription.prescriptionNumber} adjusted to actual dispensed total`;
-      await existingPayment.save();
-    } else {
-      await this.paymentModel.create({
-        branchId: savedPrescription.branchId,
-        paymentType: PaymentTypeEnum.PRESCRIPTION,
-        amount: actualTotal,
-        paymentMethod: dto?.paymentMethod || 'cash',
-        visitId: savedPrescription.visitId,
+      const existingPayment = await this.paymentModel.findOne({
         prescriptionId: savedPrescription._id,
-        receivedBy: dispensedBy ? new Types.ObjectId(dispensedBy) : undefined,
-        notes: `Prescription ${savedPrescription.prescriptionNumber} dispensed and paid`,
-        isRefunded: false,
+        paymentType: PaymentTypeEnum.PRESCRIPTION,
+        isRefunded: { $ne: true },
       });
+
+      if (existingPayment) {
+        existingPayment.amount = actualTotal;
+        existingPayment.paymentMethod = dto?.paymentMethod || existingPayment.paymentMethod || 'cash';
+        existingPayment.notes = `Prescription ${savedPrescription.prescriptionNumber} adjusted to actual dispensed total`;
+        await existingPayment.save();
+      } else {
+        await this.paymentModel.create({
+          branchId: savedPrescription.branchId,
+          paymentType: PaymentTypeEnum.PRESCRIPTION,
+          amount: actualTotal,
+          paymentMethod: dto?.paymentMethod || 'cash',
+          visitId: savedPrescription.visitId,
+          prescriptionId: savedPrescription._id,
+          receivedBy: dispensedBy ? new Types.ObjectId(dispensedBy) : undefined,
+          notes: `Prescription ${savedPrescription.prescriptionNumber} dispensed and paid`,
+          isRefunded: false,
+        });
+      }
+    } catch (error) {
+      await rollbackLocalDeductions();
+      throw error;
     }
 
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DOCTOR_REVIEW);
-    const populatedPrescription = await this.findById(savedPrescription._id.toString());
+    const populatedPrescription = await this.findById(savedPrescription._id.toString(), requiredBranchId);
 
     // Auto-initialize administration tracking
     try {
-      await this.initializeAdministration(savedPrescription._id.toString());
+      await this.initializeAdministration(savedPrescription._id.toString(), requiredBranchId);
     } catch (err) {
       this.logger.warn(`Failed to initialize administration tracking for ${prescription.prescriptionNumber}: ${err}`);
     }
@@ -784,7 +835,7 @@ export class PrescriptionsService {
     await payment.save();
 
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DISPENSING);
-    const populatedPrescription = await this.findById(savedPrescription._id.toString());
+    const populatedPrescription = await this.findById(savedPrescription._id.toString(), branchId);
     this.realtimeGateway.emitToAll('prescription:paid', populatedPrescription);
     return populatedPrescription;
   }
@@ -793,8 +844,8 @@ export class PrescriptionsService {
    * Update prescription — items, notes, totalAmount.
    * Only allowed while the prescription is pending and unpaid.
    */
-  async update(id: string, updateDto: any): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findById(id);
+  async update(id: string, updateDto: any, branchId?: string): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findOne(withBranch({ _id: id }, branchId));
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
@@ -834,17 +885,17 @@ export class PrescriptionsService {
       prescription.totalAmount = updateDto.totalAmount;
     } else if (updateDto.items) {
       // Recalculate from items if items changed but total not explicitly provided
-      prescription.totalAmount = await this.computePrescriptionTotal(prescription.items);
+      prescription.totalAmount = await this.computePrescriptionTotal(prescription.items, branchId);
     }
 
     const savedPrescription = await prescription.save();
-    const populatedPrescription = await this.findById(savedPrescription._id.toString());
+    const populatedPrescription = await this.findById(savedPrescription._id.toString(), branchId);
     this.realtimeGateway.emitToAll('prescription:updated', populatedPrescription);
     return populatedPrescription;
   }
 
-  async cancel(id: string, reason: string, cancelledBy: string): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findById(id);
+  async cancel(id: string, reason: string, cancelledBy: string, branchId?: string): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findOne(withBranch({ _id: id }, branchId));
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
@@ -853,16 +904,17 @@ export class PrescriptionsService {
     prescription.cancelledBy = new Types.ObjectId(cancelledBy);
     prescription.cancellationReason = reason;
     const savedPrescription = await prescription.save();
-    const populatedPrescription = await this.findById(savedPrescription._id.toString());
+    await this.ordersService.recalculateVisitStatus(savedPrescription.visitId);
+    const populatedPrescription = await this.findById(savedPrescription._id.toString(), branchId);
     this.realtimeGateway.emitToAll('prescription:cancelled', populatedPrescription);
     return populatedPrescription;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, branchId?: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Prescription with ID ${id} not found`);
     }
-    const result = await this.prescriptionModel.findByIdAndDelete(id).exec();
+    const result = await this.prescriptionModel.findOneAndDelete(withBranch({ _id: id }, branchId)).exec();
     if (!result) {
       throw new NotFoundException(`Prescription with ID ${id} not found`);
     }
@@ -877,8 +929,9 @@ export class PrescriptionsService {
     dto: AdministerPrescriptionDto,
     userId: string,
     userName: string,
+    branchId?: string,
   ): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findById(id);
+    const prescription = await this.prescriptionModel.findOne(withBranch({ _id: id }, branchId));
     if (!prescription) throw new NotFoundException('Prescription not found');
 
     if (prescription.status === PrescriptionStatusEnum.CANCELLED) {
@@ -978,7 +1031,7 @@ export class PrescriptionsService {
       totalDoses: saved.totalDoses,
     });
 
-    return this.findById(id);
+    return this.findById(id, branchId);
   }
 
   /**
@@ -1049,8 +1102,8 @@ export class PrescriptionsService {
    * Initialize administration tracking on a prescription after dispensing.
    * Sets totalDoses, requiresAdministration, and adminRoute.
    */
-  async initializeAdministration(id: string): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findById(id);
+  async initializeAdministration(id: string, branchId?: string): Promise<Prescription> {
+    const prescription = await this.prescriptionModel.findOne(withBranch({ _id: id }, branchId));
     if (!prescription) throw new NotFoundException('Prescription not found');
 
     const firstItem = prescription.items?.[0];
@@ -1071,6 +1124,6 @@ export class PrescriptionsService {
     prescription.nextDueAt = new Date();
 
     const saved = await prescription.save();
-    return this.findById(id);
+    return this.findById(id, branchId);
   }
 }

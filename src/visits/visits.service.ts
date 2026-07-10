@@ -16,6 +16,7 @@ import { OrderTypeEnum, PriorityEnum, OrderStatusEnum, PaymentStatusEnum } from 
 import { ServicePriceCodeEnum } from '../database/schemas/service-price.schema';
 import { ServicePricesService } from '../service-prices/service-prices.service';
 import { InsuranceBlock } from '../database/schemas/insurance-block.schema';
+import { requireBranchId, withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class VisitsService {
@@ -52,10 +53,11 @@ export class VisitsService {
     return `VIS-${datePart}-${paddedValue}`;
   }
 
-  private async findActiveInsuranceBlock(patientId?: string, memberNumber?: string, programCode?: string) {
+  private async findActiveInsuranceBlock(patientId?: string, memberNumber?: string, programCode?: string, branchId?: string) {
     if (!programCode || (!patientId && !memberNumber)) return null;
 
     const query: any = {
+      ...withBranch({}, branchId),
       isActive: true,
       programCode,
       $or: [],
@@ -73,15 +75,16 @@ export class VisitsService {
   }
 
   async create(createVisitDto: CreateVisitDto, branchId?: string): Promise<Visit> {
+    const requiredBranchId = requireBranchId(branchId);
     const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature, serviceType, specialistId, procedureType, rapidTestsRequested } = createVisitDto;
 
-    const patient = await this.patientModel.findById(patientId);
+    const patient = await this.patientModel.findOne(withBranch({ _id: patientId }, requiredBranchId));
     if (!patient) {
       throw new NotFoundException('Patient not found');
     }
 
     if (doctorId) {
-      const doctor = await this.doctorModel.findById(doctorId);
+      const doctor = await this.doctorModel.findOne(withBranch({ _id: doctorId }, requiredBranchId));
       if (!doctor) {
         throw new NotFoundException('Doctor not found');
       }
@@ -107,6 +110,7 @@ export class VisitsService {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentPaidVisit = await this.visitModel.findOne({
+      branchId: new Types.ObjectId(requiredBranchId),
       patientId: new Types.ObjectId(patientId),
       consultationPaid: true,
       createdAt: { $gte: thirtyDaysAgo },
@@ -122,6 +126,7 @@ export class VisitsService {
         patientId,
         (patientObj as any).insurance?.memberNumber,
         (patientObj as any).insurance?.programCode,
+        requiredBranchId,
       )
       : null;
 
@@ -134,6 +139,7 @@ export class VisitsService {
     const finalConsultationFee = (consultationFeeWaived || consultationCoveredByInsurance) ? 0 : (configuredConsultationFee || consultationFee);
 
     const visitData: any = {
+      branchId: new Types.ObjectId(requiredBranchId),
       visitNumber,
       patientId: new Types.ObjectId(patientId),
       doctorId: effectiveDoctorId ? new Types.ObjectId(effectiveDoctorId) : undefined,
@@ -164,15 +170,13 @@ export class VisitsService {
       };
     }
 
-    if (branchId) visitData.branchId = branchId;
-
     const visit = new this.visitModel(visitData);
 
     const savedVisit = await visit.save();
 
     if (savedVisit.visitType === VisitTypeEnum.EMERGENCY) {
       const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
-        { roomType: 'emergency', status: 'available' },
+        withBranch({ roomType: 'emergency', status: 'available' }, requiredBranchId),
         { status: 'occupied', currentVisitId: savedVisit._id, currentPatientName: savedVisit._id },
         { sort: { name: 1 } },
       ).exec();
@@ -189,14 +193,16 @@ export class VisitsService {
       try {
         const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
         const queueCount = await this.queueModel.countDocuments({
+          branchId: new Types.ObjectId(requiredBranchId),
           createdAt: {
             $gte: new Date(new Date().setHours(0, 0, 0, 0)),
             $lt: new Date(new Date().setHours(23, 59, 59, 999)),
           },
         });
-        const lastQueue = await this.queueModel.findOne().sort({ queueOrder: -1 }).exec();
+        const lastQueue = await this.queueModel.findOne({ branchId: new Types.ObjectId(requiredBranchId) }).sort({ queueOrder: -1 }).exec();
         const queueOrder = lastQueue ? lastQueue.queueOrder + 1 : 1;
         await this.queueModel.create({
+          branchId: new Types.ObjectId(requiredBranchId),
           queueNumber: `Q-${dateStr}-${String(queueCount + 1).padStart(4, '0')}`,
           patientId: savedVisit.patientId,
           visitId: savedVisit._id,
@@ -320,9 +326,7 @@ export class VisitsService {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const doctorObjectId = new Types.ObjectId(doctorId);
-    const branchFilter = branchId
-      ? { $or: [{ branchId }, { branchId: { $exists: false } }, { branchId: null }] }
-      : {};
+    const branchFilter = withBranch({}, branchId);
 
     const openEncounterStatuses = [
       VisitStatusEnum.IN_CONSULTATION,
@@ -465,9 +469,7 @@ export class VisitsService {
     const todayFilter: any = { createdAt: { $gte: today, $lt: tomorrow } };
     if (branchId) todayFilter.branchId = branchId;
 
-    const branchFilter = branchId
-      ? { $or: [{ branchId }, { branchId: { $exists: false } }, { branchId: null }] }
-      : {};
+    const branchFilter = withBranch({}, branchId);
 
     const [
       pendingConsultationPayments,
@@ -573,15 +575,17 @@ export class VisitsService {
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
       const queueCount = await this.queueModel.countDocuments({
+        branchId: new Types.ObjectId(requireBranchId(branchId)),
         createdAt: {
           $gte: new Date(new Date().setHours(0, 0, 0, 0)),
           $lt: new Date(new Date().setHours(23, 59, 59, 999)),
         },
       });
-      const lastQueue = await this.queueModel.findOne().sort({ queueOrder: -1 }).exec();
+      const lastQueue = await this.queueModel.findOne({ branchId: new Types.ObjectId(requireBranchId(branchId)) }).sort({ queueOrder: -1 }).exec();
       const queueOrder = lastQueue ? lastQueue.queueOrder + 1 : 1;
 
       await this.queueModel.create({
+        branchId: new Types.ObjectId(requireBranchId(branchId)),
         queueNumber: `Q-${dateStr}-${String(queueCount + 1).padStart(4, '0')}`,
         patientId: savedVisit.patientId,
         visitId: savedVisit._id,
@@ -632,7 +636,7 @@ export class VisitsService {
     if (!Types.ObjectId.isValid(data.doctorId)) {
       throw new BadRequestException('Invalid doctor ID');
     }
-    const doctor = await this.doctorModel.findById(data.doctorId);
+    const doctor = await this.doctorModel.findOne(withBranch({ _id: data.doctorId }, branchId));
     if (!doctor) throw new NotFoundException('Doctor not found');
 
     const { doctorId, ...vitalsAndTriage } = data;
@@ -732,7 +736,7 @@ export class VisitsService {
       );
     }
 
-    const doctor = await this.doctorModel.findById(doctorId);
+    const doctor = await this.doctorModel.findOne(withBranch({ _id: doctorId }, branchId));
     if (!doctor) throw new NotFoundException('Doctor not found');
 
     const previousDoctorId = visit.doctorId?.toString();
@@ -759,10 +763,7 @@ export class VisitsService {
   }
 
   async getAwaitingTriage(branchId?: string): Promise<Visit[]> {
-    const query: any = { status: VisitStatusEnum.AWAITING_TRIAGE };
-    if (branchId) {
-      query.$or = [{ branchId }, { branchId: { $exists: false } }, { branchId: null }];
-    }
+    const query: any = withBranch({ status: VisitStatusEnum.AWAITING_TRIAGE }, branchId);
     return this.visitModel
       .find(query)
       .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
@@ -819,6 +820,9 @@ export class VisitsService {
       throw new BadRequestException('Visit is not a referral');
     }
 
+    const specialist = await this.doctorModel.findOne(withBranch({ _id: new Types.ObjectId(specialistId) }, branchId));
+    if (!specialist) throw new NotFoundException('Specialist not found in this branch');
+
     visit.doctorId = new Types.ObjectId(specialistId);
     visit.status = VisitStatusEnum.IN_CONSULTATION;
     visit.consultationStartedAt = new Date();
@@ -841,7 +845,7 @@ export class VisitsService {
 
     if (!visit.room) {
       const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
-        { roomType: 'consultation', status: 'available' },
+        withBranch({ roomType: 'consultation', status: 'available' }, branchId),
         { status: 'occupied', currentVisitId: visit._id, currentPatientName: visit._id },
         { sort: { name: 1 } },
       ).exec();
@@ -1044,7 +1048,7 @@ export class VisitsService {
     if (visit.room) {
       const RoomModel = this.visitModel.db.model('Room');
       await RoomModel.findOneAndUpdate(
-        { name: visit.room },
+        withBranch({ name: visit.room }, branchId),
         { status: 'available', currentVisitId: null, currentPatientName: null },
       ).exec();
     }
@@ -1069,7 +1073,7 @@ export class VisitsService {
     if (visit.room) {
       const RoomModel = this.visitModel.db.model('Room');
       await RoomModel.findOneAndUpdate(
-        { name: visit.room },
+        withBranch({ name: visit.room }, branchId),
         { status: 'available', currentVisitId: null, currentPatientName: null },
       ).exec();
     }
@@ -1155,9 +1159,7 @@ export class VisitsService {
     daysBack?: number,
   ): Promise<{ patients: any[]; total: number; page: number; limit: number }> {
     const doctorObjectId = new Types.ObjectId(doctorId);
-    const branchFilter = branchId
-      ? { $or: [{ branchId: new Types.ObjectId(branchId) }, { branchId: { $exists: false } }, { branchId: null }] }
-      : {};
+    const branchFilter = withBranch({}, branchId);
 
     const matchStage: any = { doctorId: doctorObjectId, ...branchFilter };
     if (daysBack && daysBack > 0) {
