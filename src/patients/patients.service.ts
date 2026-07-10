@@ -150,7 +150,7 @@ export class PatientsService {
    */
   async findOne(id: string, branchId?: string): Promise<Patient> {
     // Accept either a Mongo _id (ObjectId) or a patientId string like PAT-YYYYMMDD-XXXX
-    const query: any = Types.ObjectId.isValid(id) ? { _id: id } : { patientId: id };
+    const query: any = Types.ObjectId.isValid(id) ? { _id: new Types.ObjectId(id) } : { patientId: id };
     if (branchId) {
       const branchObjId = new Types.ObjectId(branchId);
       query.$or = [{ branchId: branchObjId }, { branchId: branchId }];
