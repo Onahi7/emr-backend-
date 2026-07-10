@@ -15,6 +15,7 @@ import { OrdersService } from '../orders/orders.service';
 import { OrderTypeEnum, PriorityEnum, OrderStatusEnum, PaymentStatusEnum } from '../database/schemas/order.schema';
 import { ServicePriceCodeEnum } from '../database/schemas/service-price.schema';
 import { ServicePricesService } from '../service-prices/service-prices.service';
+import { InsuranceBlock } from '../database/schemas/insurance-block.schema';
 
 @Injectable()
 export class VisitsService {
@@ -27,6 +28,7 @@ export class VisitsService {
     @InjectModel(IdSequence.name) private idSequenceModel: Model<IdSequence>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Queue.name) private queueModel: Model<Queue>,
+    @InjectModel(InsuranceBlock.name) private insuranceBlockModel: Model<InsuranceBlock>,
     private realtimeGateway: RealtimeGateway,
     private ordersService: OrdersService,
     private servicePricesService: ServicePricesService,
@@ -48,6 +50,26 @@ export class VisitsService {
 
     const paddedValue = sequence.currentValue.toString().padStart(4, '0');
     return `VIS-${datePart}-${paddedValue}`;
+  }
+
+  private async findActiveInsuranceBlock(patientId?: string, memberNumber?: string, programCode?: string) {
+    if (!programCode || (!patientId && !memberNumber)) return null;
+
+    const query: any = {
+      isActive: true,
+      programCode,
+      $or: [],
+    };
+
+    if (patientId && Types.ObjectId.isValid(patientId)) {
+      query.$or.push({ patientId: new Types.ObjectId(patientId) });
+    }
+    if (memberNumber) {
+      query.$or.push({ memberNumber });
+    }
+
+    if (query.$or.length === 0) return null;
+    return this.insuranceBlockModel.findOne(query).lean().exec();
   }
 
   async create(createVisitDto: CreateVisitDto, branchId?: string): Promise<Visit> {
@@ -91,7 +113,25 @@ export class VisitsService {
     }).sort({ createdAt: -1 }).lean();
 
     const consultationFeeWaived = !!recentPaidVisit;
-    const finalConsultationFee = consultationFeeWaived ? 0 : (configuredConsultationFee || consultationFee);
+
+    // Insurance patients get free consultation (unless selfPayOverride is set)
+    const patientObj = patient.toObject ? patient.toObject() : patient;
+    const hasInsurance = !!(patientObj as any).insurance?.programCode;
+    const insuranceBlock = hasInsurance
+      ? await this.findActiveInsuranceBlock(
+        patientId,
+        (patientObj as any).insurance?.memberNumber,
+        (patientObj as any).insurance?.programCode,
+      )
+      : null;
+
+    if (insuranceBlock && !createVisitDto.selfPayOverride) {
+      throw new BadRequestException('Insurance coverage is blocked for this patient. Use self-pay override to register the visit.');
+    }
+
+    const consultationCoveredByInsurance = hasInsurance && !insuranceBlock && !consultationFeeWaived && !createVisitDto.selfPayOverride;
+
+    const finalConsultationFee = (consultationFeeWaived || consultationCoveredByInsurance) ? 0 : (configuredConsultationFee || consultationFee);
 
     const visitData: any = {
       visitNumber,
@@ -102,8 +142,8 @@ export class VisitsService {
       chiefComplaint,
       notes,
       temperature: temperature || undefined,
-      status: consultationFeeWaived ? VisitStatusEnum.AWAITING_TRIAGE : VisitStatusEnum.WAITING_PAYMENT,
-      consultationPaid: consultationFeeWaived,
+      status: (consultationFeeWaived || consultationCoveredByInsurance) ? VisitStatusEnum.AWAITING_TRIAGE : VisitStatusEnum.WAITING_PAYMENT,
+      consultationPaid: consultationFeeWaived || consultationCoveredByInsurance,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
       serviceType,
       specialistId: specialistId ? new Types.ObjectId(specialistId) : undefined,
@@ -113,8 +153,7 @@ export class VisitsService {
     };
 
     // Snapshot patient insurance onto visit
-    const patientObj = patient.toObject ? patient.toObject() : patient;
-    if (patientObj.insurance && patientObj.insurance.programCode) {
+    if (patientObj.insurance && patientObj.insurance.programCode && !createVisitDto.selfPayOverride) {
       visitData.insurance = {
         programCode: patientObj.insurance.programCode,
         subEntityCode: patientObj.insurance.subEntityCode,
@@ -143,10 +182,10 @@ export class VisitsService {
         await savedVisit.save();
       }
     }
-    this.logger.log(`Visit created: ${savedVisit.visitNumber}${consultationFeeWaived ? ' (fee waived — recent paid visit within 30 days)' : ''}`);
+    this.logger.log(`Visit created: ${savedVisit.visitNumber}${consultationFeeWaived ? ' (fee waived — recent paid visit within 30 days)' : ''}${consultationCoveredByInsurance ? ' (consultation covered by insurance)' : ''}`);
 
-    // If fee was waived, auto-create queue entry (skipping the WAITING_PAYMENT step)
-    if (consultationFeeWaived) {
+    // If fee was waived (or covered by insurance), auto-create queue entry (skipping the WAITING_PAYMENT step)
+    if (consultationFeeWaived || consultationCoveredByInsurance) {
       try {
         const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
         const queueCount = await this.queueModel.countDocuments({
@@ -174,9 +213,9 @@ export class VisitsService {
 
     this.realtimeGateway.emitToAll('visit:created', savedVisit);
 
-    // Attach waiver flag so the frontend can display it
+    // Attach waiver/insurance flags so the frontend can display them
     const result = savedVisit.toObject();
-    return { ...result, consultationFeeWaived } as any;
+    return { ...result, consultationFeeWaived, consultationCoveredByInsurance } as any;
   }
 
   async findAll(query: any = {}, branchId?: string): Promise<Visit[]> {

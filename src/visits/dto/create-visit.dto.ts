@@ -54,4 +54,8 @@ export class CreateVisitDto {
   @IsArray()
   @IsString({ each: true })
   rapidTestsRequested?: ('malaria' | 'typhoid')[];
+
+  /** When true, insurance is blocked for this patient — force self-pay */
+  @IsOptional()
+  selfPayOverride?: boolean;
 }

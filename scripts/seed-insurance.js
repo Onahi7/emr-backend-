@@ -1,12 +1,29 @@
 const { MongoClient, ObjectId } = require('mongodb');
+const dns = require('dns');
 
-const uri = 'mongodb+srv://mmmnigeriaschool12_db_user:Iamhardy_7*@cluster0.abdi7yt.mongodb.net/carefaamemr?retryWrites=true&w=majority&appName=Cluster0';
+const SRV_HOST = '_mongodb._tcp.cluster0.abdi7yt.mongodb.net';
+const DB_USER = 'mmmnigeriaschool12_db_user';
+const DB_PASS = 'Iamhardy_7*';
+
+// Force Google DNS for SRV resolution
+dns.setServers(['8.8.8.8']);
+
+async function buildUri() {
+  return new Promise((resolve, reject) => {
+    dns.resolveSrv(SRV_HOST, (err, addresses) => {
+      if (err) return reject(err);
+      const hosts = addresses.map(a => `${a.name}:${a.port}`).join(',');
+      const uri = `mongodb://${encodeURIComponent(DB_USER)}:${encodeURIComponent(DB_PASS)}@${hosts}/carefaamemr?retryWrites=true&w=majority&appName=Cluster0&authSource=admin&tls=true`;
+      resolve(uri);
+    });
+  });
+}
 
 // ─── PROGRAMS ───
 const programs = [
   {
     code: 'AIC',
-    name: 'African Insurance Company',
+    name: 'Aureol Insurance Company',
     contactPerson: '',
     contactPhone: '',
     contactEmail: '',
@@ -181,7 +198,8 @@ const subEntitiesByProgram = {
 // WAEC and RCB are standalone — no sub-entities
 
 async function seed() {
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000 });
+  const uri = await buildUri();
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 30000, connectTimeoutMS: 30000, tls: true });
   
   try {
     await client.connect();

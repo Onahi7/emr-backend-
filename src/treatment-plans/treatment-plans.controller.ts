@@ -16,7 +16,7 @@ export class TreatmentPlansController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   create(@Body() dto: CreateTreatmentPlanDto, @Request() req: any) {
     const user = req.user;
-    return this.treatmentPlansService.create(dto, user.userId, user.branchId, user.role);
+    return this.treatmentPlansService.create(dto, user.userId, user.branchId, user.role || user.roles);
   }
 
   @Get()

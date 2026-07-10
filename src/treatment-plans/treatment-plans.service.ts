@@ -35,6 +35,15 @@ export class TreatmentPlansService {
     private realtimeGateway: RealtimeGateway,
   ) {}
 
+  private hasClinicalPlanningRole(roleOrRoles?: string | string[]): boolean {
+    const roles = Array.isArray(roleOrRoles) ? roleOrRoles : roleOrRoles ? [roleOrRoles] : [];
+    return roles.some((role) => [
+      UserRoleEnum.DOCTOR,
+      UserRoleEnum.SPECIALIST,
+      UserRoleEnum.ADMIN,
+    ].includes(role as UserRoleEnum));
+  }
+
   private async generatePlanNumber(branchId?: string): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
@@ -46,7 +55,7 @@ export class TreatmentPlansService {
     return `TP-${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async create(dto: CreateTreatmentPlanDto, userId: string, branchId?: string, reqUserRole?: string): Promise<TreatmentPlan> {
+  async create(dto: CreateTreatmentPlanDto, userId: string, branchId?: string, reqUserRole?: string | string[]): Promise<TreatmentPlan> {
     // Validate patient
     const patient = await this.patientModel.findById(dto.patientId);
     if (!patient) throw new NotFoundException('Patient not found');
@@ -62,9 +71,12 @@ export class TreatmentPlansService {
       if (['completed', 'cancelled'].includes(visit.status)) {
         throw new BadRequestException(`Cannot create treatment plan for a visit with status "${visit.status}"`);
       }
-      // Only the treating doctor may add plans while a consultation is in progress
-      if (visit.status === 'in_consultation' && reqUserRole !== UserRoleEnum.DOCTOR && reqUserRole !== UserRoleEnum.SPECIALIST && reqUserRole !== UserRoleEnum.ADMIN) {
-        throw new BadRequestException('Cannot create treatment plan while the patient is in consultation');
+      // Clinical roles and the treating doctor may add plans while a consultation is in progress
+      if (visit.status === 'in_consultation') {
+        const isTreatingDoctor = userId && visit.doctorId && visit.doctorId.toString() === userId;
+        if (!isTreatingDoctor && !this.hasClinicalPlanningRole(reqUserRole)) {
+          throw new BadRequestException('Cannot create treatment plan while the patient is in consultation');
+        }
       }
     }
 

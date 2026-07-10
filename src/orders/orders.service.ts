@@ -248,7 +248,16 @@ export class OrdersService {
     return OrderStatusEnum.PAID;
   }
 
-  async create(createOrderDto: CreateOrderDto, userId?: string, branchId?: string, reqUserRole?: string): Promise<Order> {
+  private hasClinicalOrderingRole(roleOrRoles?: string | string[]): boolean {
+    const roles = Array.isArray(roleOrRoles) ? roleOrRoles : roleOrRoles ? [roleOrRoles] : [];
+    return roles.some((role) => [
+      UserRoleEnum.DOCTOR,
+      UserRoleEnum.SPECIALIST,
+      UserRoleEnum.ADMIN,
+    ].includes(role as UserRoleEnum));
+  }
+
+  async create(createOrderDto: CreateOrderDto, userId?: string, branchId?: string, reqUserRole?: string | string[]): Promise<Order> {
     // Validate patient ID
     if (!Types.ObjectId.isValid(createOrderDto.patientId)) {
       throw new BadRequestException('Invalid patient ID');
@@ -279,9 +288,12 @@ export class OrdersService {
       if (['completed', 'cancelled'].includes(visit.status)) {
         throw new BadRequestException(`Cannot create order for a visit with status "${visit.status}"`);
       }
-      // Only the treating doctor may order while a consultation is in progress
-      if (visit.status === 'in_consultation' && reqUserRole !== UserRoleEnum.DOCTOR && reqUserRole !== UserRoleEnum.SPECIALIST && reqUserRole !== UserRoleEnum.ADMIN) {
-        throw new BadRequestException('Cannot create order while the patient is in consultation');
+      // Clinical roles and the treating doctor may order while a consultation is in progress
+      if (visit.status === 'in_consultation') {
+        const isTreatingDoctor = userId && visit.doctorId && visit.doctorId.toString() === userId;
+        if (!isTreatingDoctor && !this.hasClinicalOrderingRole(reqUserRole)) {
+          throw new BadRequestException('Cannot create order while the patient is in consultation');
+        }
       }
     }
 
@@ -1546,6 +1558,7 @@ export class OrdersService {
       .populate('patientId', 'patientId firstName lastName age gender phone')
       .populate('doctorId', 'fullName')
       .populate('orderedBy', 'fullName')
+      .populate('visitId', 'visitNumber insurance status')
       .sort({ createdAt: 1 })
       .lean()
       .exec();

@@ -11,6 +11,7 @@ import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog
 import { Profile, ProfileSchema } from '../database/schemas/profile.schema';
 import { OrderTest, OrderTestSchema } from '../database/schemas/order-test.schema';
 import { PanelInterpretation, PanelInterpretationSchema } from '../database/schemas/panel-interpretation.schema';
+import { Branch, BranchSchema } from '../branches/branch.schema';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PanelInterpretation, PanelInterpretationSchema } from '../database/sche
       { name: Profile.name, schema: ProfileSchema },
       { name: OrderTest.name, schema: OrderTestSchema },
       { name: PanelInterpretation.name, schema: PanelInterpretationSchema },
+      { name: Branch.name, schema: BranchSchema },
     ]),
   ],
   controllers: [ReportsController],

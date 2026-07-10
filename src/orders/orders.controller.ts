@@ -32,7 +32,7 @@ export class OrdersController {
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   async create(@Body() createOrderDto: CreateOrderDto, @Request() req: any) {
-    return this.ordersService.create(createOrderDto, req.user?.userId, req.user?.branchId, req.user?.role);
+    return this.ordersService.create(createOrderDto, req.user?.userId, req.user?.branchId, req.user?.role || req.user?.roles);
   }
 
   @Get()

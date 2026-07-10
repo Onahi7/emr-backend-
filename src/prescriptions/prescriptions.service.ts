@@ -33,6 +33,15 @@ export class PrescriptionsService {
     private cafIntegrationService: CafIntegrationService,
   ) {}
 
+  private hasClinicalPrescribingRole(roleOrRoles?: string | string[]): boolean {
+    const roles = Array.isArray(roleOrRoles) ? roleOrRoles : roleOrRoles ? [roleOrRoles] : [];
+    return roles.some((role) => [
+      UserRoleEnum.DOCTOR,
+      UserRoleEnum.SPECIALIST,
+      UserRoleEnum.ADMIN,
+    ].includes(role as UserRoleEnum));
+  }
+
   private async moveVisitToStatus(visitId: Types.ObjectId | string | undefined, status: VisitStatusEnum): Promise<void> {
     if (!visitId) return;
     const visit = await this.visitModel.findById(visitId).lean();
@@ -280,7 +289,7 @@ export class PrescriptionsService {
     }
   }
 
-  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string, reqUserRole?: string): Promise<Prescription> {
+  async create(createPrescriptionDto: CreatePrescriptionDto, prescribedBy?: string, branchId?: string, reqUserRole?: string | string[]): Promise<Prescription> {
     const { patientId, consultationId, visitId, doctorId, items, notes, totalAmount } = createPrescriptionDto;
 
     // === Auto-compute quantity from structured regimen if not provided ===
@@ -326,9 +335,12 @@ export class PrescriptionsService {
       if (['completed', 'cancelled'].includes(visit.status)) {
         throw new BadRequestException(`Cannot create prescription for a visit with status "${visit.status}"`);
       }
-      // Only the treating doctor may prescribe while a consultation is in progress
-      if (visit.status === 'in_consultation' && reqUserRole !== UserRoleEnum.DOCTOR && reqUserRole !== UserRoleEnum.SPECIALIST && reqUserRole !== UserRoleEnum.ADMIN) {
-        throw new BadRequestException('Cannot create prescription while the patient is in consultation');
+      // Clinical roles and the treating doctor may prescribe while a consultation is in progress
+      if (visit.status === 'in_consultation') {
+        const isTreatingDoctor = prescribedBy && visit.doctorId && visit.doctorId.toString() === prescribedBy;
+        if (!isTreatingDoctor && !this.hasClinicalPrescribingRole(reqUserRole)) {
+          throw new BadRequestException('Cannot create prescription while the patient is in consultation');
+        }
       }
     }
 

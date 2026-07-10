@@ -20,6 +20,7 @@ import { PatientInfoDto } from './dto/patient-info.dto';
 import { OrderInfoDto } from './dto/order-info.dto';
 import { VerificationInfoDto } from './dto/verification-info.dto';
 import { LaboratoryInfoDto } from './dto/laboratory-info.dto';
+import { Branch } from '../branches/branch.schema';
 
 @Injectable()
 export class ReportsService {
@@ -129,6 +130,8 @@ export class ReportsService {
     private orderTestModel: Model<OrderTest>,
     @InjectModel(PanelInterpretation.name)
     private panelInterpretationModel: Model<PanelInterpretation>,
+    @InjectModel(Branch.name)
+    private branchModel: Model<Branch>,
     private configService: ConfigService,
   ) {}
 
@@ -710,14 +713,24 @@ export class ReportsService {
       verifiedAt: firstResult.verifiedAt,
     };
 
-    // Build laboratory info from configuration
+    // Reports must carry the branch that owns the order. Configuration is only
+    // a fallback for legacy orders that pre-date branch assignment.
+    const [branch, panelInterpretations] = await Promise.all([
+      order.branchId
+        ? this.branchModel.findById(order.branchId).lean().exec()
+        : Promise.resolve(null),
+      this.panelInterpretationModel
+        .find({ orderId: new Types.ObjectId(orderId) })
+        .exec(),
+    ]);
+
     const laboratoryInfo: LaboratoryInfoDto = {
-      name: this.configService.get<string>('LAB_NAME', 'Clinical Laboratory'),
-      logo: this.configService.get<string>('LAB_LOGO_URL'),
-      address: this.configService.get<string>('LAB_ADDRESS', '123 Medical Center Drive, City, Country'),
-      phone: this.configService.get<string>('LAB_PHONE', '+232-XX-XXXXXX'),
-      email: this.configService.get<string>('LAB_EMAIL', 'lab@example.com'),
-      website: this.configService.get<string>('LAB_WEBSITE'),
+      name: branch?.name || this.configService.get<string>('LAB_NAME', 'Clinical Laboratory'),
+      logo: branch?.logoUrl || this.configService.get<string>('LAB_LOGO_URL'),
+      address: branch?.address || this.configService.get<string>('LAB_ADDRESS', ''),
+      phone: branch?.phone || this.configService.get<string>('LAB_PHONE', ''),
+      email: branch?.email || this.configService.get<string>('LAB_EMAIL', ''),
+      website: branch?.website || this.configService.get<string>('LAB_WEBSITE'),
       licenseNumber: this.configService.get<string>('LAB_LICENSE_NUMBER'),
       accreditation: this.configService.get<string>('LAB_ACCREDITATION'),
     };
@@ -728,11 +741,6 @@ export class ReportsService {
       generatedAt: new Date(),
       generatedBy: userId || 'system',
     };
-
-    // Fetch panel interpretations for this order
-    const panelInterpretations = await this.panelInterpretationModel
-      .find({ orderId: new Types.ObjectId(orderId) })
-      .exec();
 
     // Return complete report DTO
     return {
