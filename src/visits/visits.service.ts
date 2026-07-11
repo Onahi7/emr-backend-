@@ -35,6 +35,15 @@ export class VisitsService {
     private servicePricesService: ServicePricesService,
   ) {}
 
+  private async isSystemDoctor(doctorId: string): Promise<boolean> {
+    try {
+      const doc = await this.doctorModel.findById(doctorId).select('isSystemDoctor').lean();
+      return !!(doc as any)?.isSystemDoctor;
+    } catch {
+      return false;
+    }
+  }
+
   private async generateVisitNumber(): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
@@ -327,6 +336,7 @@ export class VisitsService {
 
     const doctorObjectId = new Types.ObjectId(doctorId);
     const branchFilter = withBranch({}, branchId);
+    const systemDoctor = await this.isSystemDoctor(doctorId);
 
     const openEncounterStatuses = [
       VisitStatusEnum.IN_CONSULTATION,
@@ -338,6 +348,9 @@ export class VisitsService {
       VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
       VisitStatusEnum.ADMITTED,
     ];
+
+    // System doctors (admin doctor mode) see ALL patients in the branch, not just their own
+    const doctorFilter = systemDoctor ? {} : { doctorId: doctorObjectId };
 
     const [
       waitingQueue,
@@ -361,48 +374,48 @@ export class VisitsService {
           .sort({ triagedAt: 1, createdAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: { $in: openEncounterStatuses }, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: { $in: openEncounterStatuses }, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
           .sort({ updatedAt: -1, consultationStartedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_LAB, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.AWAITING_LAB, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_RESULTS, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.AWAITING_RESULTS, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_PHARMACY, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.AWAITING_PHARMACY, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_DISPENSING, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.AWAITING_DISPENSING, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.ADMITTED, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.ADMITTED, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
-          .find({ status: VisitStatusEnum.RESULTS_READY, doctorId: doctorObjectId, ...branchFilter })
+          .find({ status: VisitStatusEnum.RESULTS_READY, ...doctorFilter, ...branchFilter })
           .populate('patientId', 'patientId firstName lastName age gender phone')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({
-            referredToSpecialistId: doctorObjectId,
+            ...(systemDoctor ? {} : { referredToSpecialistId: doctorObjectId }),
             status: VisitStatusEnum.REFERRED,
             ...branchFilter,
           })
@@ -411,7 +424,7 @@ export class VisitsService {
           .sort({ referredAt: -1 })
           .exec(),
         this.visitModel.countDocuments({
-          doctorId: doctorObjectId,
+          ...doctorFilter,
           createdAt: { $gte: today, $lt: tomorrow },
           status: { $in: [...openEncounterStatuses, VisitStatusEnum.COMPLETED] },
           ...branchFilter,
@@ -422,7 +435,7 @@ export class VisitsService {
           ...branchFilter,
         }),
         this.visitModel.countDocuments({
-          doctorId: doctorObjectId,
+          ...doctorFilter,
           createdAt: { $gte: today, $lt: tomorrow },
           status: VisitStatusEnum.COMPLETED,
           ...branchFilter,
@@ -1160,8 +1173,9 @@ export class VisitsService {
   ): Promise<{ patients: any[]; total: number; page: number; limit: number }> {
     const doctorObjectId = new Types.ObjectId(doctorId);
     const branchFilter = withBranch({}, branchId);
+    const systemDoctor = await this.isSystemDoctor(doctorId);
 
-    const matchStage: any = { doctorId: doctorObjectId, ...branchFilter };
+    const matchStage: any = { ...(systemDoctor ? {} : { doctorId: doctorObjectId }), ...branchFilter };
     if (daysBack && daysBack > 0) {
       const since = new Date();
       since.setDate(since.getDate() - daysBack);
