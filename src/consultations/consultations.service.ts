@@ -75,7 +75,7 @@ export class ConsultationsService {
 
   async findById(id: string, branchId?: string): Promise<Consultation> {
     const consultation = await this.consultationModel
-      .findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) })
+      .findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) })
       .populate('patientId')
       .populate('doctorId')
       .populate('nurseId')
@@ -95,7 +95,7 @@ export class ConsultationsService {
   }
 
   async update(id: string, updateConsultationDto: UpdateConsultationDto, branchId?: string): Promise<Consultation> {
-    const consultation = await this.consultationModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
+    const consultation = await this.consultationModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
     if (!consultation) {
       throw new NotFoundException('Consultation not found');
     }
@@ -113,7 +113,7 @@ export class ConsultationsService {
   }
 
   async markAsPaid(id: string, branchId?: string): Promise<Consultation> {
-    const consultation = await this.consultationModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
+    const consultation = await this.consultationModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
     if (!consultation) {
       throw new NotFoundException('Consultation not found');
     }
@@ -122,7 +122,7 @@ export class ConsultationsService {
   }
 
   async cancel(id: string, reason: string, cancelledBy: string, branchId?: string): Promise<Consultation> {
-    const consultation = await this.consultationModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
+    const consultation = await this.consultationModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
     if (!consultation) {
       throw new NotFoundException('Consultation not found');
     }
