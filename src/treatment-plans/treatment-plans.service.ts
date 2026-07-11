@@ -178,7 +178,7 @@ export class TreatmentPlansService {
       visitId: dto.visitId ? new Types.ObjectId(dto.visitId) : undefined,
       createdBy: userObjId,
       createdByName: creatorName,
-      createdByRole: reqUserRole || 'doctor',
+      createdByRole: Array.isArray(reqUserRole) ? reqUserRole[0] : (reqUserRole || 'doctor'),
       status: TreatmentPlanStatusEnum.DRAFT,
       prescriptionIds,
       orderIds,
