@@ -618,7 +618,10 @@ export class ReportsService {
         normalizedReferenceRange,
       );
       // Use auto-generated interpretation, fall back to stored comments
-      const resolvedComments = autoInterpretation || result.comments;
+      const storedComments = result.comments === 'Imported from LIS'
+        ? undefined
+        : result.comments;
+      const resolvedComments = autoInterpretation || storedComments;
 
       // Auto-calculate flag for qualitative serology results if not already set
       let resolvedFlag = result.flag;

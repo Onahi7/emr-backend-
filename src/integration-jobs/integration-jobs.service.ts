@@ -83,7 +83,7 @@ export class IntegrationJobsService {
   }
 
   async retry(id: string, branchId?: string): Promise<IntegrationJob> {
-    const query: Record<string, any> = { _id: id };
+    const query: Record<string, any> = { _id: new Types.ObjectId(id) };
     if (branchId) query.branchId = new Types.ObjectId(requireBranchId(branchId));
     const job = await this.jobModel.findOneAndUpdate(
       query,

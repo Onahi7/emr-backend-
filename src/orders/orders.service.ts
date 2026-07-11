@@ -586,7 +586,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     Object.assign(filter, this.branchScopedFilter(branchId));
 
     const order = await this.orderModel
@@ -666,7 +666,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }
@@ -803,7 +803,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }
@@ -851,7 +851,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }
@@ -1348,7 +1348,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }
@@ -1529,7 +1529,7 @@ export class OrdersService {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }
@@ -1553,7 +1553,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }
@@ -1682,7 +1682,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    const filter: any = { _id: id };
+    const filter: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
       filter.branchId = branchId;
     }

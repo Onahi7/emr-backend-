@@ -99,8 +99,8 @@ export class AppointmentsService {
   }
 
   async findById(id: string, branchId?: string): Promise<Appointment> {
-    const query: any = { _id: id };
-    if (branchId) query.branchId = branchId;
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) query.branchId = new Types.ObjectId(branchId);
 
     const appointment = await this.appointmentModel
       .findOne(query)
@@ -112,8 +112,8 @@ export class AppointmentsService {
   }
 
   async update(id: string, dto: UpdateAppointmentDto, branchId?: string): Promise<Appointment> {
-    const query: any = { _id: id };
-    if (branchId) query.branchId = branchId;
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) query.branchId = new Types.ObjectId(branchId);
 
     const appointment = await this.appointmentModel.findOne(query);
     if (!appointment) throw new NotFoundException('Appointment not found');
@@ -135,8 +135,8 @@ export class AppointmentsService {
   }
 
   async checkIn(id: string, branchId?: string): Promise<Appointment> {
-    const query: any = { _id: id };
-    if (branchId) query.branchId = branchId;
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) query.branchId = new Types.ObjectId(branchId);
 
     const appointment = await this.appointmentModel.findOne(query);
     if (!appointment) throw new NotFoundException('Appointment not found');

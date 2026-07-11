@@ -213,7 +213,7 @@ export class ReconciliationService {
       throw new NotFoundException(`Reconciliation with ID ${id} not found`);
     }
 
-    const query: any = { _id: id };
+    const query: any = { _id: new Types.ObjectId(id) };
     if (branchId) query.branchId = branchId;
 
     const reconciliation = await this.reconciliationModel
@@ -230,7 +230,7 @@ export class ReconciliationService {
   }
 
   async review(id: string, reviewDto: ReviewReconciliationDto, userId: string, branchId?: string) {
-    const query: any = { _id: id };
+    const query: any = { _id: new Types.ObjectId(id) };
     if (branchId) query.branchId = branchId;
 
     const reconciliation = await this.reconciliationModel.findOne(query).exec();

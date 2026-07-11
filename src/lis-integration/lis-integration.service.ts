@@ -391,6 +391,7 @@ export class LisIntegrationService {
             testName: result.testName || catalogTest?.name || normalizedTestCode,
             panelCode: result.panelCode,
             panelName: result.panelName,
+            category: result.category || catalogTest?.category,
             subcategory: result.subcategory || catalogTest?.subcategory,
             value: String(result.value),
             unit: result.unit || catalogTest?.unit,
@@ -399,7 +400,9 @@ export class LisIntegrationService {
             status: result.status || ResultStatusEnum.VERIFIED,
             resultedAt: result.resultedAt ? new Date(result.resultedAt) : new Date(),
             verifiedAt: result.verifiedAt ? new Date(result.verifiedAt) : undefined,
-            comments: 'Imported from LIS',
+            // Preserve only clinical comments supplied by LIS. The report must
+            // not annotate each parameter with its integration source.
+            comments: result.comments || undefined,
           },
         },
         { upsert: true },

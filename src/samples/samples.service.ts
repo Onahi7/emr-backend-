@@ -174,7 +174,7 @@ export class SamplesService {
       throw new NotFoundException(`Sample with ID ${id} not found`);
     }
 
-    const query: any = { _id: id };
+    const query: any = { _id: new Types.ObjectId(id) };
     if (branchId) query.branchId = branchId;
 
     const sample = await this.sampleModel
@@ -222,7 +222,7 @@ export class SamplesService {
       throw new NotFoundException(`Sample with ID ${id} not found`);
     }
 
-    const query: any = { _id: id };
+    const query: any = { _id: new Types.ObjectId(id) };
     if (branchId) query.branchId = branchId;
 
     const sample = await this.sampleModel
@@ -254,7 +254,7 @@ export class SamplesService {
       throw new NotFoundException(`Sample with ID ${id} not found`);
     }
 
-    const query: any = { _id: id };
+    const query: any = { _id: new Types.ObjectId(id) };
     if (branchId) query.branchId = branchId;
 
     const sample = await this.sampleModel.findOne(query).exec();

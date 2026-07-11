@@ -69,7 +69,7 @@ export class ExpendituresService {
     }
 
     const expenditure = await this.expenditureModel
-      .findOne({ _id: id, ...(branchId ? { branchId } : {}) })
+      .findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) })
       .populate('recordedBy', 'fullName email')
       .populate('flaggedBy', 'fullName email')
       .exec();
@@ -82,7 +82,7 @@ export class ExpendituresService {
   }
 
   async update(id: string, updateData: Partial<CreateExpenditureDto>, branchId?: string) {
-    const expenditure = await this.expenditureModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) }).exec();
+    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -94,8 +94,8 @@ export class ExpendituresService {
   }
 
   async delete(id: string, branchId?: string) {
-    const filter: any = { _id: id };
-    if (branchId) filter.branchId = branchId;
+    const filter: any = { _id: new Types.ObjectId(id) };
+    if (branchId) filter.branchId = new Types.ObjectId(branchId);
     const result = await this.expenditureModel.findOneAndDelete(filter).exec();
     if (!result) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
@@ -104,7 +104,7 @@ export class ExpendituresService {
   }
 
   async flag(id: string, userId: string, reason: string, branchId?: string) {
-    const expenditure = await this.expenditureModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) }).exec();
+    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -120,7 +120,7 @@ export class ExpendituresService {
   }
 
   async unflag(id: string, branchId?: string) {
-    const expenditure = await this.expenditureModel.findOne({ _id: id, ...(branchId ? { branchId } : {}) }).exec();
+    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
