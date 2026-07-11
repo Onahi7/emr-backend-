@@ -12,8 +12,14 @@ export function requireBranchId(branchId?: string | Types.ObjectId | null): stri
   return value;
 }
 
-export function branchFilter(branchId?: string | Types.ObjectId | null): { branchId: Types.ObjectId } {
-  return { branchId: new Types.ObjectId(requireBranchId(branchId)) };
+export function branchFilter(branchId?: string | Types.ObjectId | null): { $or: Array<{ branchId: Types.ObjectId | string }> } {
+  const value = requireBranchId(branchId);
+  return { $or: [{ branchId: new Types.ObjectId(value) }, { branchId: value }] };
+}
+
+export function branchFilterOptional(branchId?: string | Types.ObjectId | null): { $or: Array<{ branchId: Types.ObjectId | string }> } | Record<string, never> {
+  if (!branchId?.toString().trim()) return {};
+  return branchFilter(branchId);
 }
 
 export function assertEntityBranch(
@@ -31,6 +37,6 @@ export function assertEntityBranch(
 export function withBranch<T extends Record<string, unknown>>(
   query: T,
   branchId?: string | Types.ObjectId | null,
-): T & { branchId: Types.ObjectId } {
+): T & { $or: Array<{ branchId: Types.ObjectId | string }> } {
   return { ...query, ...branchFilter(branchId) };
 }

@@ -17,7 +17,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CafIntegrationService } from '../caf-integration/caf-integration.service';
 import { IntegrationJobsService } from '../integration-jobs/integration-jobs.service';
 import { IntegrationJobStatus, IntegrationJobType } from '../database/schemas/integration-job.schema';
-import { requireBranchId, withBranch } from '../common/utils/branch-scope';
+import { branchFilterOptional, requireBranchId, withBranch } from '../common/utils/branch-scope';
 import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
@@ -810,7 +810,7 @@ export class PrescriptionsService {
 
 
   async markAsPaid(id: string, paymentMethod: string = 'cash', userId?: string, branchId?: string): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const prescription = await this.prescriptionModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) });
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }

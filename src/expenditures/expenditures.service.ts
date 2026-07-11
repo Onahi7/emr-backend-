@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Expenditure } from '../database/schemas/expenditure.schema';
+import { branchFilterOptional } from '../common/utils/branch-scope';
 import { CreateExpenditureDto } from './dto/create-expenditure.dto';
 
 @Injectable()
@@ -69,7 +70,7 @@ export class ExpendituresService {
     }
 
     const expenditure = await this.expenditureModel
-      .findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) })
+      .findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) })
       .populate('recordedBy', 'fullName email')
       .populate('flaggedBy', 'fullName email')
       .exec();
@@ -82,7 +83,7 @@ export class ExpendituresService {
   }
 
   async update(id: string, updateData: Partial<CreateExpenditureDto>, branchId?: string) {
-    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) }).exec();
+    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -104,7 +105,7 @@ export class ExpendituresService {
   }
 
   async flag(id: string, userId: string, reason: string, branchId?: string) {
-    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) }).exec();
+    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
@@ -120,7 +121,7 @@ export class ExpendituresService {
   }
 
   async unflag(id: string, branchId?: string) {
-    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) }).exec();
+    const expenditure = await this.expenditureModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) }).exec();
     if (!expenditure) {
       throw new NotFoundException(`Expenditure with ID ${id} not found`);
     }
