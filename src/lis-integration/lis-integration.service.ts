@@ -252,17 +252,39 @@ export class LisIntegrationService {
   }
 
   /**
+   * EMR test catalog → LIS code normalization map.
+   * Some EMR catalog entries use abbreviated codes that differ from the LIS orderable codes.
+   */
+  private static readonly EMR_TO_LIS_CODE_MAP: Record<string, string> = {
+    CBC: 'FBC',
+    MAL: 'MALARIA',
+    MALARIA_TEST: 'MALARIA',
+    RPR: 'VDRL',
+    HBSAG_Q: 'HBSAG',
+    HIV: 'RVS',
+    URINALYSIS: 'URINE',
+    STOOL: 'STOOLMICRO',
+    BLOOD_GLU: 'GLU',
+    RANDOM_GLUCOSE: 'RBS',
+    FASTING_GLU: 'GLU',
+    WIDAL_TY: 'WIDAL',
+  };
+
+  /**
    * Build LIS test payload:
+   * - Normalizes EMR codes to LIS codes via the mapping table.
    * - If order tests are panel components (have panelCode), send the parent panel code once.
    * - Include standalone tests that have no panelCode.
-   * This avoids sending analyzer component codes that partner LIS may not accept as orderable tests.
    */
   private buildLisTests(requestedCodes: string[], orderTests: any[]): Array<{ code: string }> {
+    const mapCode = (code: string) =>
+      LisIntegrationService.EMR_TO_LIS_CODE_MAP[code] || code;
+
     // Primary source of truth: explicit requested LIS codes captured at order creation.
     const explicit = Array.from(
       new Set(
         (requestedCodes || [])
-          .map((code) => (code || '').toString().trim().toUpperCase())
+          .map((code) => mapCode((code || '').toString().trim().toUpperCase()))
           .filter(Boolean),
       ),
     );
