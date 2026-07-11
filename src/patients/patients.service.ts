@@ -232,9 +232,9 @@ export class PatientsService {
     }
 
     try {
-      const query: any = { _id: id };
+      const query: any = { _id: new Types.ObjectId(id) };
       if (branchId) {
-        query.branchId = branchId;
+        query.branchId = new Types.ObjectId(branchId);
       }
 
       const patient = await this.patientModel
@@ -270,9 +270,9 @@ export class PatientsService {
       throw new NotFoundException(`Patient with ID ${id} not found`);
     }
 
-    const query: any = { _id: id };
+    const query: any = { _id: new Types.ObjectId(id) };
     if (branchId) {
-      query.branchId = branchId;
+      query.branchId = new Types.ObjectId(branchId);
     }
 
     const result = await this.patientModel.findOneAndDelete(query).exec();
@@ -298,9 +298,9 @@ export class PatientsService {
     }
 
     // Verify patient exists
-    const patientQuery: any = { _id: patientId };
+    const patientQuery: any = { _id: new Types.ObjectId(patientId) };
     if (branchId) {
-      patientQuery.branchId = branchId;
+      patientQuery.branchId = new Types.ObjectId(branchId);
     }
 
     const patient = await this.patientModel.findOne(patientQuery).exec();
@@ -351,9 +351,9 @@ export class PatientsService {
     }
 
     // Verify patient exists
-    const patientQuery: any = { _id: patientId };
+    const patientQuery: any = { _id: new Types.ObjectId(patientId) };
     if (branchId) {
-      patientQuery.branchId = branchId;
+      patientQuery.branchId = new Types.ObjectId(branchId);
     }
 
     const patient = await this.patientModel.findOne(patientQuery).exec();
@@ -400,9 +400,9 @@ export class PatientsService {
     }
 
     // Verify patient exists
-    const patientQuery: any = { _id: patientId };
+    const patientQuery: any = { _id: new Types.ObjectId(patientId) };
     if (branchId) {
-      patientQuery.branchId = branchId;
+      patientQuery.branchId = new Types.ObjectId(branchId);
     }
 
     const patient = await this.patientModel.findOne(patientQuery).exec();
@@ -445,9 +445,9 @@ export class PatientsService {
     }
 
     // Get patient
-    const patientQuery: any = { _id: patientId };
+    const patientQuery: any = { _id: new Types.ObjectId(patientId) };
     if (branchId) {
-      patientQuery.branchId = branchId;
+      patientQuery.branchId = new Types.ObjectId(branchId);
     }
 
     const patient = await this.patientModel
