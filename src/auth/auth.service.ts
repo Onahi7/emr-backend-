@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { Profile } from '../database/schemas/profile.schema';
 import { UserRole, UserRoleEnum } from '../database/schemas/user-role.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
+import { DoctorsService } from '../doctors/doctors.service';
 
 export interface JwtPayload {
   sub: string; // user ID
@@ -44,6 +45,7 @@ export class AuthService {
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private doctorsService: DoctorsService,
   ) {}
 
   private async getDoctorIdForUser(userId: string, branchId?: string): Promise<string | undefined> {
@@ -285,6 +287,74 @@ export class AuthService {
     const refreshToken = await this.generateRefreshToken(userObj, branchId);
 
     this.logger.log(`User ${user.email} selected branch ${branchId}${doctorId ? ` (doctorId: ${doctorId})` : ''}`);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: { ...userObj, branchId },
+    };
+  }
+
+  /**
+   * Enter doctor mode: find/create an Admin Doctor record for the branch,
+   * then generate a new JWT with that doctorId.
+   */
+  async enterDoctorMode(userId: string, branchId: string): Promise<AuthResponse> {
+    const user = await this.profileModel.findById(userId).exec();
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
+    const roles = userRoles.map((ur) => ur.role);
+    if (!roles.includes(UserRoleEnum.ADMIN)) {
+      throw new ForbiddenException('Only admins can enter doctor mode');
+    }
+
+    const adminDoctor = await this.doctorsService.findOrCreateAdminDoctor(branchId);
+
+    const userObj = {
+      id: user._id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+      roles,
+      doctorId: adminDoctor._id.toString(),
+    };
+
+    const accessToken = await this.generateAccessToken(userObj, branchId);
+    const refreshToken = await this.generateRefreshToken(userObj, branchId);
+
+    this.logger.log(`Admin ${user.email} entered doctor mode (doctorId: ${adminDoctor._id}, branch: ${branchId})`);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: { ...userObj, branchId },
+    };
+  }
+
+  /**
+   * Exit doctor mode: re-generate JWT without doctorId.
+   */
+  async exitDoctorMode(userId: string, currentBranchId?: string): Promise<AuthResponse> {
+    const user = await this.profileModel.findById(userId).exec();
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const userRoles = await this.userRoleModel.find({ userId: user._id }).exec();
+    const roles = userRoles.map((ur) => ur.role);
+
+    const branchId = currentBranchId || user.branchId?.toString() || undefined;
+
+    const userObj = {
+      id: user._id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+      roles,
+      doctorId: undefined as string | undefined,
+    };
+
+    const accessToken = await this.generateAccessToken(userObj, branchId);
+    const refreshToken = await this.generateRefreshToken(userObj, branchId);
+
+    this.logger.log(`Admin ${user.email} exited doctor mode`);
 
     return {
       accessToken,

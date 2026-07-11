@@ -13,6 +13,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Profile, ProfileSchema } from '../database/schemas/profile.schema';
 import { UserRole, UserRoleSchema } from '../database/schemas/user-role.schema';
 import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
+import { DoctorsModule } from '../doctors/doctors.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { Doctor, DoctorSchema } from '../database/schemas/doctor.schema';
       { name: UserRole.name, schema: UserRoleSchema },
       { name: Doctor.name, schema: DoctorSchema },
     ]),
+    DoctorsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, LocalStrategy, JwtAuthGuard, RefreshTokenGuard, RolesGuard],

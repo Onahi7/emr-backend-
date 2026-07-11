@@ -78,6 +78,31 @@ export class DoctorsService {
     return doctor;
   }
 
+  /**
+   * Find or create a system "Admin Doctor" record for the given branch.
+   * Used by the admin-doctor-mode feature to give admins a doctor identity.
+   */
+  async findOrCreateAdminDoctor(branchId: string): Promise<Doctor> {
+    const requiredBranchId = requireBranchId(branchId);
+    let admin = await this.doctorModel.findOne({
+      branchId: requiredBranchId,
+      isSystemDoctor: true,
+      isActive: true,
+    }).lean();
+    if (admin) return admin as Doctor;
+
+    const created = new this.doctorModel({
+      fullName: 'Admin Doctor',
+      doctorType: 'general',
+      specialty: 'general_practice',
+      isSystemDoctor: true,
+      branchId: requiredBranchId,
+      isActive: true,
+    });
+    const saved = await created.save();
+    return saved as Doctor;
+  }
+
   async update(id: string, updateDoctorDto: UpdateDoctorDto, branchId?: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException('Doctor not found');

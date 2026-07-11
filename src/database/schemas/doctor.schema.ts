@@ -52,6 +52,12 @@ export class Doctor extends Document {
   @Prop({ default: true })
   isActive: boolean;
 
+  /** Mark as a system-generated doctor record (e.g. "Admin Doctor" for admin-doctor mode).
+   *  System doctors are NOT linked to a user Profile via userId — they are found by
+   *  { branchId, isSystemDoctor: true } instead. */
+  @Prop({ default: false })
+  isSystemDoctor: boolean;
+
   /** Link to the user profile that can log in as this doctor.
    *  When set, the doctor's dashboard/queue will be identified by this Doctor record's _id. */
   @Prop({ type: Types.ObjectId, ref: 'Profile', index: true, unique: true, sparse: true })

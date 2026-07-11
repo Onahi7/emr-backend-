@@ -15,12 +15,16 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { Public } from './decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRoleEnum } from '../database/schemas/user-role.schema';
+import { RolesGuard } from '../common/guards/roles.guard';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: {
     userId: string;
     email: string;
     roles: string[];
+    branchId?: string;
   };
 }
 
@@ -101,5 +105,30 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getBranches(@Request() req: AuthenticatedRequest) {
     return this.authService.getUserBranches(req.user.userId);
+  }
+
+  @Post('enter-doctor-mode')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRoleEnum.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async enterDoctorMode(
+    @Request() req: AuthenticatedRequest,
+    @Body('branchId') branchId: string,
+  ): Promise<AuthResponse> {
+    const userId = req.user.userId;
+    this.logger.log(`Doctor mode entry for user: ${userId}, branch: ${branchId}`);
+    return this.authService.enterDoctorMode(userId, branchId);
+  }
+
+  @Post('exit-doctor-mode')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRoleEnum.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async exitDoctorMode(
+    @Request() req: AuthenticatedRequest,
+  ): Promise<AuthResponse> {
+    const userId = req.user.userId;
+    this.logger.log(`Doctor mode exit for user: ${userId}`);
+    return this.authService.exitDoctorMode(userId, req.user.branchId);
   }
 }
