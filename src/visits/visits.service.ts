@@ -246,7 +246,7 @@ export class VisitsService {
 
   async findById(id: string, branchId?: string): Promise<Visit> {
     const visit = await this.visitModel
-      .findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) })
+      .findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) })
       .populate('patientId')
       .populate('doctorId')
       .populate('registeredBy')
@@ -544,7 +544,7 @@ export class VisitsService {
   }
 
   async update(id: string, updateVisitDto: UpdateVisitDto, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -559,7 +559,7 @@ export class VisitsService {
   }
 
   async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -635,7 +635,7 @@ export class VisitsService {
     nurseId?: string,
     branchId?: string,
   ): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     if (visit.status !== VisitStatusEnum.AWAITING_TRIAGE) {
@@ -703,7 +703,7 @@ export class VisitsService {
     nurseId?: string,
     branchId?: string,
   ): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     if (data.testType === 'typhoid' && data.parasiteCount != null) {
@@ -740,7 +740,7 @@ export class VisitsService {
       throw new BadRequestException('Invalid doctor ID');
     }
 
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     if (visit.status !== VisitStatusEnum.IN_QUEUE) {
@@ -797,7 +797,7 @@ export class VisitsService {
     doctorId?: string,
     branchId?: string,
   ): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
 
     visit.referredToSpecialistId = new Types.ObjectId(data.specialistId);
@@ -827,7 +827,7 @@ export class VisitsService {
   }
 
   async acceptReferral(id: string, specialistId: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) throw new NotFoundException('Visit not found');
     if (visit.status !== VisitStatusEnum.REFERRED) {
       throw new BadRequestException('Visit is not a referral');
@@ -847,7 +847,7 @@ export class VisitsService {
   }
 
   async acceptPatient(id: string, doctorId: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -890,7 +890,7 @@ export class VisitsService {
   }
 
   async orderLab(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -909,7 +909,7 @@ export class VisitsService {
   }
 
   async prescribeMedication(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -928,7 +928,7 @@ export class VisitsService {
   }
 
   async markLabPaid(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -947,7 +947,7 @@ export class VisitsService {
   }
 
   async markPharmacyPaid(id: string, paymentMethod = 'cash', receivedBy?: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -975,7 +975,7 @@ export class VisitsService {
   }
 
   async markDispensed(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -994,7 +994,7 @@ export class VisitsService {
   }
 
   async resultsReleased(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -1013,7 +1013,7 @@ export class VisitsService {
   }
 
   async complete(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -1078,7 +1078,7 @@ export class VisitsService {
   }
 
   async cancel(id: string, reason: string, cancelledBy: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }

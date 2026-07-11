@@ -810,7 +810,7 @@ export class PrescriptionsService {
 
 
   async markAsPaid(id: string, paymentMethod: string = 'cash', userId?: string, branchId?: string): Promise<Prescription> {
-    const prescription = await this.prescriptionModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}) });
+    const prescription = await this.prescriptionModel.findOne({ _id: new Types.ObjectId(id), ...(branchId ? { branchId } : {}) });
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
     }
