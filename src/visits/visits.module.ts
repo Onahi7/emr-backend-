@@ -9,6 +9,7 @@ import { IdSequence, IdSequenceSchema } from '../database/schemas/id-sequence.sc
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { Queue, QueueSchema } from '../database/schemas/queue.schema';
 import { InsuranceBlock, InsuranceBlockSchema } from '../database/schemas/insurance-block.schema';
+import { SoapNote, SoapNoteSchema } from '../database/schemas/soap-note.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { OrdersModule } from '../orders/orders.module';
 import { ServicePricesModule } from '../service-prices/service-prices.module';
@@ -23,6 +24,7 @@ import { ServicePricesModule } from '../service-prices/service-prices.module';
       { name: Payment.name, schema: PaymentSchema },
       { name: Queue.name, schema: QueueSchema },
       { name: InsuranceBlock.name, schema: InsuranceBlockSchema },
+      { name: SoapNote.name, schema: SoapNoteSchema },
     ]),
     RealtimeModule,
     OrdersModule,

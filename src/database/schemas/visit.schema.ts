@@ -192,6 +192,12 @@ export class Visit extends Document {
   @Prop()
   triageNotes?: string;
 
+  @Prop({ enum: ['esi_1_emergency', 'esi_2_urgent', 'esi_3_urgent', 'esi_4_less_urgent', 'esi_5_non_urgent'] })
+  triageOverridePriority?: string;
+
+  @Prop()
+  doctorTriageNotes?: string;
+
   @Prop({ default: false })
   triageAlert?: boolean;
 

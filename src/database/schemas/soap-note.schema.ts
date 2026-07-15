@@ -10,6 +10,9 @@ export enum SoapNoteTypeEnum {
 
 @Schema({ timestamps: true, collection: 'soap_notes' })
 export class SoapNote extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: 'Patient', required: true })
   patientId: Types.ObjectId;
 
@@ -19,9 +22,15 @@ export class SoapNote extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Consultation' })
   consultationId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'SoapNote' })
+  addendumTo?: Types.ObjectId;
+
+  @Prop()
+  addendumText?: string;
+
   // The system user (doctor/specialist) who wrote this note.
   // Refs Profile — not the external doctors collection.
-  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  @Prop({ type: Types.ObjectId, ref: 'Doctor' })
   doctorId?: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(SoapNoteTypeEnum) })
@@ -61,6 +70,9 @@ export class SoapNote extends Document {
 
   // Assessment
   @Prop()
+  assessment?: string;
+
+  @Prop()
   diagnosis?: string;
 
   @Prop({ type: [String] })
@@ -83,6 +95,12 @@ export class SoapNote extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   nurseId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  createdBy?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  updatedBy?: Types.ObjectId;
+
   @Prop({ default: false })
   isSigned: boolean;
 
@@ -100,6 +118,9 @@ export const SoapNoteSchema = SchemaFactory.createForClass(SoapNote);
 
 // Indexes
 SoapNoteSchema.index({ patientId: 1, createdAt: -1 });
+SoapNoteSchema.index({ branchId: 1, patientId: 1, createdAt: -1 });
+SoapNoteSchema.index({ branchId: 1, visitId: 1, updatedAt: -1 });
+SoapNoteSchema.index({ branchId: 1, addendumTo: 1, createdAt: 1 });
 SoapNoteSchema.index({ consultationId: 1 });
 SoapNoteSchema.index({ doctorId: 1 });
 SoapNoteSchema.index({ createdAt: -1 });

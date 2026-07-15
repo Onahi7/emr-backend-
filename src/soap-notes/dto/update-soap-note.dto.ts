@@ -39,6 +39,10 @@ export class UpdateSoapNoteDto {
 
   @IsString()
   @IsOptional()
+  assessment?: string;
+
+  @IsString()
+  @IsOptional()
   diagnosis?: string;
 
   @IsOptional()

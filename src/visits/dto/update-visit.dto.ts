@@ -77,27 +77,6 @@ export class UpdateVisitDto {
   @IsNumber()
   oxygenSaturation?: number;
 
-  // SOAP Notes
-  @IsOptional()
-  @IsString()
-  subjectiveNotes?: string;
-
-  @IsOptional()
-  @IsString()
-  objectiveNotes?: string;
-
-  @IsOptional()
-  @IsString()
-  assessmentNotes?: string;
-
-  @IsOptional()
-  @IsString()
-  planNotes?: string;
-
-  @IsOptional()
-  @IsString()
-  diagnosis?: string;
-
   // Triage
   @IsOptional()
   @IsString()

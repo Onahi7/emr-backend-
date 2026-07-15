@@ -22,11 +22,16 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { VisitStatusEnum } from '../database/schemas/visit.schema';
+import { ClinicalVisitDraftDto, CompleteVisitDto } from './dto/clinical-visit-draft.dto';
 
 @Controller('visits')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class VisitsController {
   constructor(private readonly visitsService: VisitsService) {}
+
+  private clinicalActor(req: any) {
+    return { userId: req.user.userId, doctorId: req.user.doctorId, roles: req.user.roles };
+  }
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
@@ -146,9 +151,15 @@ export class VisitsController {
   }
 
   @Patch(':id')
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  @Roles(UserRoleEnum.ADMIN)
   update(@Param('id') id: string, @Body() updateVisitDto: UpdateVisitDto, @Request() req?: any) {
     return this.visitsService.update(id, updateVisitDto, req?.user?.branchId);
+  }
+
+  @Patch(':id/clinical-draft')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
+  updateClinicalDraft(@Param('id') id: string, @Body() dto: ClinicalVisitDraftDto, @Request() req: any) {
+    return this.visitsService.updateClinicalDraft(id, dto, this.clinicalActor(req), req.user.branchId);
   }
 
   @Patch(':id/mark-paid')
@@ -215,8 +226,8 @@ export class VisitsController {
 
   @Patch(':id/complete')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST)
-  complete(@Param('id') id: string, @Request() req?: any) {
-    return this.visitsService.complete(id, req?.user?.branchId);
+  complete(@Param('id') id: string, @Body() dto: CompleteVisitDto, @Request() req: any) {
+    return this.visitsService.complete(id, dto, this.clinicalActor(req), req.user.branchId);
   }
 
   @Patch(':id/triage')

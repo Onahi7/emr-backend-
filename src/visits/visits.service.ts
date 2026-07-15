@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { ConsultationCoverageTypeEnum, Visit, VisitStatusEnum, VisitTypeEnum } from '../database/schemas/visit.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
@@ -17,6 +17,15 @@ import { ServicePriceCodeEnum } from '../database/schemas/service-price.schema';
 import { ServicePricesService } from '../service-prices/service-prices.service';
 import { InsuranceBlock } from '../database/schemas/insurance-block.schema';
 import { requireBranchId, branchFilter, branchFilterOptional, withBranch } from '../common/utils/branch-scope';
+import { SoapNote, SoapNoteTypeEnum } from '../database/schemas/soap-note.schema';
+import { UserRoleEnum } from '../database/schemas/user-role.schema';
+import { ClinicalVisitDraftDto, CompleteVisitDto } from './dto/clinical-visit-draft.dto';
+
+interface ClinicalVisitActor {
+  userId: string;
+  doctorId?: string;
+  roles?: string[];
+}
 
 @Injectable()
 export class VisitsService {
@@ -30,6 +39,7 @@ export class VisitsService {
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Queue.name) private queueModel: Model<Queue>,
     @InjectModel(InsuranceBlock.name) private insuranceBlockModel: Model<InsuranceBlock>,
+    @InjectModel(SoapNote.name) private soapNoteModel: Model<SoapNote>,
     private realtimeGateway: RealtimeGateway,
     private ordersService: OrdersService,
     private servicePricesService: ServicePricesService,
@@ -60,6 +70,137 @@ export class VisitsService {
 
     const paddedValue = sequence.currentValue.toString().padStart(4, '0');
     return `VIS-${datePart}-${paddedValue}`;
+  }
+
+  private assertClinicalVisitAccess(visit: Visit, actor: ClinicalVisitActor): void {
+    if (!visit.consultationPaid) {
+      throw new ForbiddenException('Consultation payment or coverage is required before clinical documentation');
+    }
+    if ([VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) {
+      throw new ConflictException('Closed visits cannot be clinically edited');
+    }
+    if (actor.roles?.includes(UserRoleEnum.ADMIN)) return;
+    if (!actor.doctorId || !visit.doctorId || visit.doctorId.toString() !== actor.doctorId) {
+      throw new ForbiddenException('This visit belongs to another treating doctor');
+    }
+  }
+
+  private applyClinicalVisitFields(visit: Visit, dto: ClinicalVisitDraftDto): void {
+    const visitFields: Array<keyof ClinicalVisitDraftDto> = [
+      'chiefComplaint', 'temperature', 'bloodPressure', 'heartRate', 'respiratoryRate',
+      'weight', 'height', 'oxygenSaturation', 'triageOverridePriority',
+      'doctorTriageNotes', 'problemList',
+    ];
+    for (const field of visitFields) {
+      if (dto[field] !== undefined) (visit as any)[field] = dto[field];
+    }
+  }
+
+  private async persistCanonicalSoap(
+    visit: Visit,
+    dto: ClinicalVisitDraftDto,
+    branchId: string,
+    actor: ClinicalVisitActor,
+    session: ClientSession,
+    sign: boolean,
+  ): Promise<SoapNote> {
+    const note = await this.soapNoteModel
+      .findOne({ visitId: visit._id, addendumTo: { $exists: false } })
+      .sort({ updatedAt: -1 })
+      .session(session);
+
+    if (note?.branchId && note.branchId.toString() !== branchId) {
+      throw new ForbiddenException('SOAP note belongs to another branch');
+    }
+    if (note?.isSigned) {
+      throw new ConflictException('Signed SOAP notes are immutable; create an addendum instead');
+    }
+
+    const hasClinicalNarrative = [
+      dto.chiefComplaint,
+      dto.subjectiveNotes,
+      dto.objectiveNotes,
+      dto.assessmentNotes,
+      dto.planNotes,
+      dto.diagnosis,
+    ].some((value) => typeof value === 'string' && value.trim().length > 0);
+    if (sign && !note && !hasClinicalNarrative) {
+      throw new BadRequestException('A clinical note is required before completing the visit');
+    }
+
+    const vitalSigns = {
+      temperature: dto.temperature,
+      bloodPressure: dto.bloodPressure,
+      heartRate: dto.heartRate,
+      respiratoryRate: dto.respiratoryRate,
+      oxygenSaturation: dto.oxygenSaturation,
+      weight: dto.weight,
+      height: dto.height,
+    };
+    const patch: Record<string, any> = {
+      branchId: new Types.ObjectId(branchId),
+      patientId: visit.patientId,
+      visitId: visit._id,
+      doctorId: visit.doctorId || (actor.doctorId ? new Types.ObjectId(actor.doctorId) : undefined),
+      noteType: SoapNoteTypeEnum.CONSULTATION,
+      updatedBy: new Types.ObjectId(actor.userId),
+    };
+    if (dto.chiefComplaint !== undefined) patch.chiefComplaint = dto.chiefComplaint;
+    if (dto.subjectiveNotes !== undefined) patch.historyPresentIllness = dto.subjectiveNotes;
+    if (dto.objectiveNotes !== undefined) patch.physicalExamination = dto.objectiveNotes;
+    if (dto.assessmentNotes !== undefined) patch.assessment = dto.assessmentNotes;
+    if (dto.diagnosis !== undefined) patch.diagnosis = dto.diagnosis;
+    if (dto.planNotes !== undefined) {
+      patch.treatmentPlan = dto.planNotes;
+      patch.followUpInstructions = dto.planNotes;
+    }
+    if (Object.values(vitalSigns).some((value) => value !== undefined)) patch.vitalSigns = vitalSigns;
+    if (sign) {
+      patch.isSigned = true;
+      patch.signedAt = new Date();
+      patch.signedBy = new Types.ObjectId(actor.userId);
+    }
+
+    if (note) {
+      Object.assign(note, patch);
+      return note.save({ session });
+    }
+    const created = new this.soapNoteModel({
+      ...patch,
+      createdBy: new Types.ObjectId(actor.userId),
+      isSigned: sign,
+    });
+    return created.save({ session });
+  }
+
+  private async hydrateCanonicalSoap(visits: Visit[], branchId: string): Promise<void> {
+    if (visits.length === 0) return;
+    const visitIds = visits.map((visit) => visit._id);
+    const notes = await this.soapNoteModel
+      .find({
+        visitId: { $in: visitIds },
+        addendumTo: { $exists: false },
+        $or: [{ branchId: new Types.ObjectId(branchId) }, { branchId: { $exists: false } }],
+      })
+      .sort({ updatedAt: -1 })
+      .lean();
+    const byVisit = new Map<string, any>();
+    for (const note of notes) {
+      const key = note.visitId?.toString();
+      if (key && !byVisit.has(key)) byVisit.set(key, note);
+    }
+    for (const visit of visits) {
+      const note = byVisit.get(visit._id.toString());
+      if (!note) continue;
+      visit.subjectiveNotes = note.historyPresentIllness ?? visit.subjectiveNotes;
+      visit.objectiveNotes = note.physicalExamination ?? visit.objectiveNotes;
+      visit.assessmentNotes = note.assessment ?? visit.assessmentNotes;
+      visit.planNotes = note.treatmentPlan ?? visit.planNotes;
+      visit.diagnosis = note.diagnosis ?? visit.diagnosis;
+      visit.chiefComplaint = note.chiefComplaint ?? visit.chiefComplaint;
+      (visit as any).soapNoteId = note._id;
+      (visit as any).soapNoteSigned = note.isSigned === true;
+    }
   }
 
   private async findActiveInsuranceBlock(patientId?: string, memberNumber?: string, programCode?: string, branchId?: string) {
@@ -557,6 +698,8 @@ export class VisitsService {
         }),
       ]);
 
+    await this.hydrateCanonicalSoap(activePatients, requireBranchId(branchId));
+
     return {
       waitingQueue,
       activePatients,
@@ -669,6 +812,35 @@ export class VisitsService {
     this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:updated', savedVisit);
 
     return savedVisit;
+  }
+
+  async updateClinicalDraft(
+    id: string,
+    dto: ClinicalVisitDraftDto,
+    actor: ClinicalVisitActor,
+    branchId?: string,
+  ): Promise<{ visit: Visit; soapNote: SoapNote }> {
+    const requiredBranchId = requireBranchId(branchId);
+    const session = await this.visitModel.db.startSession();
+    let result: { visit: Visit; soapNote: SoapNote } | undefined;
+    try {
+      await session.withTransaction(async () => {
+        const visit = await this.visitModel
+          .findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId))
+          .session(session);
+        if (!visit) throw new NotFoundException('Visit not found');
+        this.assertClinicalVisitAccess(visit, actor);
+        this.applyClinicalVisitFields(visit, dto);
+        const soapNote = await this.persistCanonicalSoap(visit, dto, requiredBranchId, actor, session, false);
+        const savedVisit = await visit.save({ session });
+        result = { visit: savedVisit, soapNote };
+      });
+    } finally {
+      await session.endSession();
+    }
+    if (!result) throw new ConflictException('Clinical draft could not be saved');
+    this.realtimeGateway.emitToBranch(requiredBranchId, 'visit:updated', result.visit);
+    return result;
   }
 
   async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string, branchId?: string): Promise<Visit> {
@@ -1129,69 +1301,64 @@ export class VisitsService {
     return savedVisit;
   }
 
-  async complete(id: string, branchId?: string): Promise<Visit> {
+  async complete(
+    id: string,
+    dto: CompleteVisitDto,
+    actor: ClinicalVisitActor,
+    branchId?: string,
+  ): Promise<Visit> {
     const requiredBranchId = requireBranchId(branchId);
-    const visit = await this.visitModel.findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId));
-    if (!visit) {
-      throw new NotFoundException('Visit not found');
+    const session = await this.visitModel.db.startSession();
+    let savedVisit: Visit | undefined;
+    try {
+      await session.withTransaction(async () => {
+        const visit = await this.visitModel
+          .findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId))
+          .session(session);
+        if (!visit) throw new NotFoundException('Visit not found');
+        this.assertClinicalVisitAccess(visit, actor);
+        if (![VisitStatusEnum.IN_CONSULTATION, VisitStatusEnum.RESULTS_READY, VisitStatusEnum.AWAITING_DOCTOR_REVIEW].includes(visit.status)) {
+          throw new BadRequestException(`Visit cannot be completed from status '${visit.status}'`);
+        }
+
+        const linkedOrders = await this.visitModel.db
+          .model('Order')
+          .find(withBranch({
+            visitId: visit._id,
+            orderType: { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] },
+            status: { $ne: OrderStatusEnum.CANCELLED },
+          }, requiredBranchId))
+          .session(session)
+          .lean();
+        if (linkedOrders.some((order: any) => order.paymentStatus !== PaymentStatusEnum.PAID)) {
+          throw new BadRequestException('Visit has unpaid clinical orders');
+        }
+        if (linkedOrders.some((order: any) => order.orderType === OrderTypeEnum.LAB && order.status !== OrderStatusEnum.COMPLETED)) {
+          throw new BadRequestException('Visit has lab orders pending result release');
+        }
+        if (linkedOrders.some((order: any) => order.orderType === OrderTypeEnum.PHARMACY && order.status !== OrderStatusEnum.COMPLETED)) {
+          throw new BadRequestException('Visit has pharmacy orders pending dispensing');
+        }
+
+        this.applyClinicalVisitFields(visit, dto);
+        await this.persistCanonicalSoap(visit, dto, requiredBranchId, actor, session, true);
+        if (visit.room) {
+          await this.visitModel.db.model('Room').findOneAndUpdate(
+            withBranch({ name: visit.room }, requiredBranchId),
+            { status: 'available', currentVisitId: null, currentPatientName: null },
+            { session },
+          );
+        }
+        visit.status = VisitStatusEnum.COMPLETED;
+        visit.dischargedAt = new Date();
+        savedVisit = await visit.save({ session });
+      });
+    } finally {
+      await session.endSession();
     }
-
-    if (
-      ![
-        VisitStatusEnum.IN_CONSULTATION,
-        VisitStatusEnum.RESULTS_READY,
-        VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
-      ].includes(visit.status)
-    ) {
-      throw new BadRequestException(`Visit cannot be completed from status '${visit.status}'`);
-    }
-
-    const linkedOrders = await this.visitModel.db
-      .model('Order')
-      .find(withBranch({
-        visitId: visit._id,
-        orderType: { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] },
-        status: { $ne: OrderStatusEnum.CANCELLED },
-      }, requiredBranchId))
-      .lean();
-
-    const hasUnpaidOrders = linkedOrders.some(
-      (order: any) => order.paymentStatus !== PaymentStatusEnum.PAID,
-    );
-    if (hasUnpaidOrders) {
-      throw new BadRequestException('Visit has unpaid clinical orders');
-    }
-
-    const hasUnreleasedLab = linkedOrders.some(
-      (order: any) => order.orderType === OrderTypeEnum.LAB && order.status !== OrderStatusEnum.COMPLETED,
-    );
-    if (hasUnreleasedLab) {
-      throw new BadRequestException('Visit has lab orders pending result release');
-    }
-
-    const hasUndispensedPharmacy = linkedOrders.some(
-      (order: any) => order.orderType === OrderTypeEnum.PHARMACY && order.status !== OrderStatusEnum.COMPLETED,
-    );
-    if (hasUndispensedPharmacy) {
-      throw new BadRequestException('Visit has pharmacy orders pending dispensing');
-    }
-
-    if (visit.room) {
-      const RoomModel = this.visitModel.db.model('Room');
-      await RoomModel.findOneAndUpdate(
-        withBranch({ name: visit.room }, requiredBranchId),
-        { status: 'available', currentVisitId: null, currentPatientName: null },
-      ).exec();
-    }
-
-    visit.status = VisitStatusEnum.COMPLETED;
-    visit.dischargedAt = new Date();
-
-    const savedVisit = await visit.save();
+    if (!savedVisit) throw new ConflictException('Visit completion transaction did not commit');
     this.logger.log(`Visit completed: ${savedVisit.visitNumber}`);
-
     this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:completed', savedVisit);
-
     return savedVisit;
   }
 
