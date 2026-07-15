@@ -14,6 +14,8 @@ import { Result, ResultFlagEnum, ResultStatusEnum } from '../database/schemas/re
 import { TestCatalog } from '../database/schemas/test-catalog.schema';
 import { Branch, BranchDocument } from '../branches/branch.schema';
 import { Visit, VisitStatusEnum } from '../database/schemas/visit.schema';
+import { requireBranchId, withBranch } from '../common/utils/branch-scope';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class LisIntegrationService {
@@ -27,6 +29,7 @@ export class LisIntegrationService {
     @InjectModel(TestCatalog.name) private testCatalogModel: Model<TestCatalog>,
     @InjectModel(Branch.name) private branchModel: Model<BranchDocument>,
     @InjectModel(Visit.name) private visitModel: Model<Visit>,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {
     const baseURL = this.configService.get<string>('lis.baseUrl');
     const apiKey = this.configService.get<string>('lis.apiKey');
@@ -356,14 +359,14 @@ export class LisIntegrationService {
   }
 
   async fetchAndStoreResults(orderId: string, branchId?: string): Promise<any> {
-    const order = await this.orderModel.findById(orderId).lean();
+    const requiredBranchId = requireBranchId(branchId);
+    const order = await this.orderModel.findOne(withBranch({ _id: new Types.ObjectId(orderId) }, requiredBranchId)).lean();
     if (!order) throw new Error('Order not found');
     if (!order.lisExternalRequestId) {
       throw new Error('Order has not been synced to LIS');
     }
 
-    const effectiveBranchId = branchId || order.branchId?.toString();
-    const client = await this.createLisClient(effectiveBranchId) || this.client;
+    const client = await this.createLisClient(requiredBranchId) || this.client;
     if (!client) {
       throw new Error('LIS integration is not configured');
     }
@@ -429,6 +432,17 @@ export class LisIntegrationService {
         },
         { upsert: true },
       );
+
+      this.realtimeGateway.emitToBranch(requiredBranchId, 'result:created', {
+        branchId: requiredBranchId,
+        orderId,
+        testCode: normalizedTestCode,
+        testName: result.testName || catalogTest?.name || normalizedTestCode,
+        value: String(result.value),
+        unit: result.unit || catalogTest?.unit,
+        flag,
+        status: result.status || ResultStatusEnum.VERIFIED,
+      });
     }
 
     await this.orderModel.findByIdAndUpdate(orderId, {
@@ -440,9 +454,9 @@ export class LisIntegrationService {
 
     // Sync visit status so doctor sees results_ready
     if (order.visitId) {
-      const visit = await this.visitModel.findById(order.visitId);
+      const visit = await this.visitModel.findOne(withBranch({ _id: order.visitId }, requiredBranchId));
       if (visit && ![VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) {
-        const allOrders = await this.orderModel.find({ visitId: order.visitId }).lean();
+        const allOrders = await this.orderModel.find(withBranch({ visitId: order.visitId }, requiredBranchId)).lean();
         const allCompleted = allOrders.every((o: any) => o.status === OrderStatusEnum.COMPLETED || o.status === OrderStatusEnum.CANCELLED);
         if (allCompleted || response.data?.isComplete) {
           visit.status = VisitStatusEnum.RESULTS_READY;

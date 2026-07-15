@@ -32,6 +32,9 @@ export class Payment extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Patient', index: true })
   patientId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'InsuranceClaim', index: true })
+  insuranceClaimId?: Types.ObjectId;
+
   @Prop({ required: true, enum: Object.values(PaymentTypeEnum) })
   paymentType: PaymentTypeEnum;
 
@@ -49,6 +52,10 @@ export class Payment extends Document {
 
   @Prop({ default: false })
   isRefunded: boolean;
+
+  /** Insurance authorization is an account receivable until the claim is paid. */
+  @Prop({ default: false, index: true })
+  isReceivable: boolean;
 
   @Prop()
   refundReason?: string;

@@ -23,10 +23,11 @@ export class InsuranceClaimsService {
     private ordersService: OrdersService,
   ) {}
 
-  private async findActiveInsuranceBlock(patientId?: any, memberNumber?: string, programCode?: string) {
+  private async findActiveInsuranceBlock(patientId?: any, memberNumber?: string, programCode?: string, branchId?: string) {
     if (!programCode || (!patientId && !memberNumber)) return null;
 
     const query: any = {
+      ...withBranch({}, branchId),
       isActive: true,
       programCode,
       $or: [],
@@ -54,7 +55,7 @@ export class InsuranceClaimsService {
     const requiredBranchId = requireBranchId(branchId);
     const visit = await this.visitModel.findOne(withBranch({ _id: dto.visitId }, requiredBranchId));
     if (!visit) throw new NotFoundException('Visit not found');
-    this.assertNotBlocked(await this.findActiveInsuranceBlock(dto.patientId, dto.memberNumber, dto.programCode));
+    this.assertNotBlocked(await this.findActiveInsuranceBlock(dto.patientId, dto.memberNumber, dto.programCode, requiredBranchId));
 
     const items = dto.items.map(item => ({
       ...item,
@@ -174,8 +175,9 @@ export class InsuranceClaimsService {
     return claim.save();
   }
 
-  async updateStatus(id: string, dto: UpdateClaimStatusDto, branchId?: string): Promise<InsuranceClaim> {
-    const claim = await this.claimModel.findOne(withBranch({ _id: id }, branchId));
+  async updateStatus(id: string, dto: UpdateClaimStatusDto, branchId?: string, updatedBy?: string): Promise<InsuranceClaim> {
+    const requiredBranchId = requireBranchId(branchId);
+    const claim = await this.claimModel.findOne(withBranch({ _id: id }, requiredBranchId));
     if (!claim) throw new NotFoundException('Insurance claim not found');
 
     const validTransitions: Record<string, string[]> = {
@@ -191,18 +193,44 @@ export class InsuranceClaimsService {
       throw new BadRequestException(`Cannot transition from "${claim.status}" to "${dto.status}"`);
     }
 
-    claim.status = dto.status as ClaimStatusEnum;
+    let effectiveStatus = dto.status as ClaimStatusEnum;
+    if (dto.status === 'approved' || dto.status === 'partially_approved') {
+      const requestedApproved = dto.approvedAmount ?? claim.claimedAmount;
+      if (requestedApproved > claim.claimedAmount) {
+        throw new BadRequestException('Approved amount cannot exceed the claimed amount');
+      }
+      effectiveStatus = requestedApproved < claim.claimedAmount
+        ? ClaimStatusEnum.PARTIALLY_APPROVED
+        : ClaimStatusEnum.APPROVED;
+    }
+    claim.status = effectiveStatus;
+    claim.statusUpdatedAt = new Date();
+    if (updatedBy && Types.ObjectId.isValid(updatedBy)) claim.statusUpdatedBy = new Types.ObjectId(updatedBy);
+    if (dto.verificationReference) {
+      claim.verificationReference = dto.verificationReference.trim();
+      claim.verifiedAt = new Date();
+      if (updatedBy && Types.ObjectId.isValid(updatedBy)) claim.verifiedBy = new Types.ObjectId(updatedBy);
+    }
 
-    if (dto.status === 'submitted') {
+    if (effectiveStatus === ClaimStatusEnum.SUBMITTED) {
       claim.submittedAt = new Date();
-    } else if (dto.status === 'approved' || dto.status === 'partially_approved') {
+    } else if (effectiveStatus === ClaimStatusEnum.APPROVED || effectiveStatus === ClaimStatusEnum.PARTIALLY_APPROVED) {
       claim.approvedAt = new Date();
       claim.approvedAmount = dto.approvedAmount ?? claim.claimedAmount;
-    } else if (dto.status === 'paid') {
+      claim.patientAmount = Math.max(0, Math.round((claim.totalAmount - claim.approvedAmount) * 100) / 100);
+      await this.reconcileClaimOrderCoverage(claim, claim.approvedAmount, requiredBranchId);
+    } else if (effectiveStatus === ClaimStatusEnum.PAID) {
       claim.paidAt = new Date();
       claim.paidAmount = dto.paidAmount ?? dto.approvedAmount ?? claim.approvedAmount;
-    } else if (dto.status === 'rejected') {
+      await this.paymentModel.updateMany(
+        withBranch({ insuranceClaimId: claim._id, isRefunded: { $ne: true } }, requiredBranchId),
+        { $set: { isReceivable: false } },
+      );
+    } else if (effectiveStatus === ClaimStatusEnum.REJECTED) {
       claim.rejectionReason = dto.rejectionReason;
+      claim.approvedAmount = 0;
+      claim.patientAmount = claim.totalAmount;
+      await this.reconcileClaimOrderCoverage(claim, 0, requiredBranchId);
     }
 
     if (dto.notes) {
@@ -210,6 +238,27 @@ export class InsuranceClaimsService {
     }
 
     return claim.save();
+  }
+
+  private async reconcileClaimOrderCoverage(claim: InsuranceClaimDocument, approvedAmount: number, branchId: string) {
+    const coveredOrderItems = claim.items.filter(item =>
+      item.coveredByInsurance &&
+      (item.itemType === ClaimItemTypeEnum.LAB_ORDER || item.itemType === ClaimItemTypeEnum.PRESCRIPTION),
+    );
+    if (coveredOrderItems.length === 0) return;
+
+    const claimedOrderAmount = coveredOrderItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+    const allocationTotal = Math.min(approvedAmount, claimedOrderAmount);
+    let allocated = 0;
+    for (let index = 0; index < coveredOrderItems.length; index += 1) {
+      const item = coveredOrderItems[index];
+      const isLast = index === coveredOrderItems.length - 1;
+      const itemApproved = isLast
+        ? Math.max(0, Math.round((allocationTotal - allocated) * 100) / 100)
+        : Math.round((allocationTotal * (Number(item.totalAmount || 0) / claimedOrderAmount)) * 100) / 100;
+      allocated += itemApproved;
+      await this.ordersService.adjustInsurancePayment(item.itemId.toString(), claim._id.toString(), itemApproved, branchId);
+    }
   }
 
   async getStats(branchId?: string): Promise<any> {
@@ -238,7 +287,14 @@ export class InsuranceClaimsService {
     };
   }
 
-  async markOrderAsInsuranceCovered(orderId: string, createdBy?: string, branchId?: string): Promise<{ claim: InsuranceClaim; order: any }> {
+  async markOrderAsInsuranceCovered(
+    orderId: string,
+    requestedInsuranceAmount?: number,
+    createdBy?: string,
+    branchId?: string,
+    verificationReference?: string,
+    verificationNotes?: string,
+  ): Promise<{ claim: InsuranceClaim; order: any; patientBalance: number }> {
     const requiredBranchId = requireBranchId(branchId);
     const order = await this.orderModel.findOne(withBranch({ _id: orderId }, requiredBranchId)).populate('visitId');
     if (!order) throw new NotFoundException('Order not found');
@@ -254,21 +310,25 @@ export class InsuranceClaimsService {
       (order as any).patientId?._id || (order as any).patientId,
       visit.insurance.memberNumber,
       visit.insurance.programCode,
+      requiredBranchId,
     ));
 
     const orderTotal = Number((order as any).total || 0);
     const currentPaid = Number((order as any).amountPaid || 0);
-    const amountToClaim = Math.round((orderTotal - currentPaid) * 100) / 100;
+    const remainingBalance = Math.round((orderTotal - currentPaid) * 100) / 100;
+    const amountToClaim = requestedInsuranceAmount === undefined
+      ? remainingBalance
+      : Math.round(requestedInsuranceAmount * 100) / 100;
     if (orderTotal <= 0) {
       throw new BadRequestException('Order has no amount to bill');
     }
 
-    const existingClaim = await this.claimModel.findOne({
+    const existingClaim = await this.claimModel.findOne(withBranch({
       visitId: visit._id,
       'items.itemId': order._id,
-    });
+    }, requiredBranchId));
     if (existingClaim) {
-      return { claim: existingClaim, order };
+      return { claim: existingClaim, order, patientBalance: Number((order as any).balance || 0) };
     }
 
     if ((order as any).status === OrderStatusEnum.CANCELLED) {
@@ -281,13 +341,16 @@ export class InsuranceClaimsService {
     if (amountToClaim <= 0) {
       throw new BadRequestException('Order has no remaining balance to bill to insurance');
     }
+    if (amountToClaim > remainingBalance + 0.001) {
+      throw new BadRequestException(`Insurance amount (${amountToClaim}) exceeds remaining balance (${remainingBalance})`);
+    }
 
     // Create a submitted claim. Coverage is operationally authorized, while
     // insurer approval/payment remains visible in the claim lifecycle.
-    let claim = await this.claimModel.findOne({
+    let claim = await this.claimModel.findOne(withBranch({
       visitId: visit._id,
       status: { $in: [ClaimStatusEnum.SUBMITTED, ClaimStatusEnum.APPROVED] },
-    });
+    }, requiredBranchId));
 
     const description = (order as any).orderType === 'lab'
       ? `Lab order ${(order as any).orderNumber || ''}`
@@ -317,23 +380,38 @@ export class InsuranceClaimsService {
         items: [item],
         status: ClaimStatusEnum.SUBMITTED,
         submittedAt: new Date(),
+        verificationReference: verificationReference?.trim() || undefined,
+        verifiedAt: new Date(),
+        verifiedBy: createdBy ? new Types.ObjectId(createdBy) : undefined,
+        notes: verificationNotes?.trim() || undefined,
         createdBy: createdBy ? new Types.ObjectId(createdBy) : undefined,
       });
     }
+
+    if (verificationReference) claim.verificationReference = verificationReference.trim();
+    if (verificationNotes) claim.notes = [claim.notes, verificationNotes.trim()].filter(Boolean).join('\n');
+    claim.verifiedAt = new Date();
+    if (createdBy && Types.ObjectId.isValid(createdBy)) claim.verifiedBy = new Types.ObjectId(createdBy);
 
     claim.totalAmount = claim.items.reduce((sum, i) => sum + i.totalAmount, 0);
     claim.claimedAmount = claim.items.filter(i => i.coveredByInsurance).reduce((sum, i) => sum + i.totalAmount, 0);
     claim.patientAmount = claim.totalAmount - claim.claimedAmount;
     await claim.save();
 
-    const settledOrder = await this.ordersService.settleOrderBalance(orderId, {
-      branchId: requiredBranchId,
-      paymentMethod: 'insurance',
-      userId: createdBy,
+    const paymentResult = await this.ordersService.addPayment(orderId, {
+      amount: amountToClaim,
+      paymentMethod: 'insurance' as any,
       notes: `Insurance-covered: ${description} (claim ${claim._id})`,
-    });
+    }, createdBy, requiredBranchId);
+    paymentResult.payment.insuranceClaimId = claim._id as any;
+    paymentResult.payment.isReceivable = true;
+    await paymentResult.payment.save();
 
     this.logger.log(`Order ${orderId} marked as insurance-covered under claim ${claim._id}`);
-    return { claim, order: settledOrder };
+    return {
+      claim,
+      order: paymentResult.order,
+      patientBalance: Math.round((remainingBalance - amountToClaim) * 100) / 100,
+    };
   }
 }

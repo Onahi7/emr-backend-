@@ -8,7 +8,9 @@ import {
   OrderTypeEnum,
   PaymentStatusEnum,
 } from '../database/schemas/order.schema';
-import { LisIntegrationService } from '../lis-integration/lis-integration.service';
+import { IntegrationJobsService } from '../integration-jobs/integration-jobs.service';
+import { IntegrationJobType } from '../database/schemas/integration-job.schema';
+import { requireBranchId } from '../common/utils/branch-scope';
 
 const DEFAULT_POLL_INTERVAL_MS = 2 * 60 * 1000;
 const DEFAULT_BATCH_LIMIT = 25;
@@ -20,7 +22,7 @@ export class LisResultsPollerService {
 
   constructor(
     @InjectModel(Order.name) private readonly orderModel: Model<Order>,
-    private readonly lisIntegrationService: LisIntegrationService,
+    private readonly integrationJobs: IntegrationJobsService,
   ) {}
 
   @Interval(Number(process.env.LIS_RESULTS_POLL_INTERVAL_MS || DEFAULT_POLL_INTERVAL_MS))
@@ -43,36 +45,29 @@ export class LisResultsPollerService {
         })
         .sort({ lisResultsFetchedAt: 1, updatedAt: 1 })
         .limit(limit)
-        .select('_id orderNumber branchId')
+        .select('_id orderNumber branchId lisResultsFetchedAt')
         .lean();
 
       if (orders.length === 0) return;
 
-      let imported = 0;
-      let failed = 0;
+      let queued = 0;
 
       for (const order of orders) {
-        try {
-          const result = await this.lisIntegrationService.fetchAndStoreResults(
-            String(order._id),
-            order.branchId?.toString(),
-          );
-          imported += Number(result?.imported || 0);
-        } catch (error: any) {
-          failed += 1;
-          const message = error?.message || 'Unknown LIS result fetch error';
-          await this.orderModel.findByIdAndUpdate(order._id, {
-            lisSyncError: `Result fetch failed: ${message}`,
-          });
-          this.logger.warn(`LIS result fetch failed for ${order.orderNumber}: ${message}`);
-        }
+        const branchId = requireBranchId(order.branchId);
+        const fetchVersion = order.lisResultsFetchedAt
+          ? new Date(order.lisResultsFetchedAt).getTime()
+          : 'initial';
+        await this.integrationJobs.enqueue({
+          branchId,
+          type: IntegrationJobType.LIS_RESULT_IMPORT,
+          aggregateId: String(order._id),
+          idempotencyKey: `${IntegrationJobType.LIS_RESULT_IMPORT}:${String(order._id)}:${fetchVersion}`,
+          payload: { orderId: String(order._id), branchId },
+        });
+        queued += 1;
       }
 
-      if (imported > 0 || failed > 0) {
-        this.logger.log(
-          `LIS result poll checked ${orders.length} order(s), imported ${imported} result(s), failed ${failed}`,
-        );
-      }
+      this.logger.log(`Queued ${queued} background LIS result import job(s)`);
     } finally {
       this.running = false;
     }

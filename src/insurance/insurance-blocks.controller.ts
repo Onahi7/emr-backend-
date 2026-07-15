@@ -55,13 +55,13 @@ export class InsuranceBlocksController {
   }
 
   @Patch(':id/deactivate')
-  @Roles(UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   deactivate(@Param('id') id: string, @Req() req: any) {
     return this.service.deactivate(id, req.user?.branchId);
   }
 
   @Patch(':id/reactivate')
-  @Roles(UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   reactivate(@Param('id') id: string, @Req() req: any) {
     return this.service.reactivate(id, req.user?.branchId);
   }

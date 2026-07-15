@@ -94,6 +94,10 @@ export class UpdateClaimStatusDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  verificationReference?: string;
 }
 
 export class AddClaimItemDto {
@@ -128,6 +132,25 @@ export class MarkOrderItemsDto {
   @IsArray()
   @Type(() => OrderItemInsuranceDto)
   items: OrderItemInsuranceDto[];
+}
+
+export class MarkOrderInsuranceDto {
+  @IsString()
+  orderId: string;
+
+  /** Amount authorized/covered by insurance. Omit to cover the full balance. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  insuranceAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  verificationReference?: string;
+
+  @IsOptional()
+  @IsString()
+  verificationNotes?: string;
 }
 
 export class OrderItemInsuranceDto {

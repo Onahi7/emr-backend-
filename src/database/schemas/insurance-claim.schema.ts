@@ -102,6 +102,21 @@ export class InsuranceClaim extends Document {
   @Prop({ trim: true })
   notes?: string;
 
+  @Prop({ trim: true })
+  verificationReference?: string;
+
+  @Prop()
+  verifiedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  verifiedBy?: Types.ObjectId;
+
+  @Prop()
+  statusUpdatedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'Profile' })
+  statusUpdatedBy?: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   createdBy?: Types.ObjectId;
 

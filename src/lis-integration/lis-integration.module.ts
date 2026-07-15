@@ -6,6 +6,7 @@ import { Result, ResultSchema } from '../database/schemas/result.schema';
 import { TestCatalog, TestCatalogSchema } from '../database/schemas/test-catalog.schema';
 import { Branch, BranchSchema } from '../branches/branch.schema';
 import { Visit, VisitSchema } from '../database/schemas/visit.schema';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Visit, VisitSchema } from '../database/schemas/visit.schema';
       { name: Branch.name, schema: BranchSchema },
       { name: Visit.name, schema: VisitSchema },
     ]),
+    RealtimeModule,
   ],
   providers: [LisIntegrationService],
   exports: [LisIntegrationService],

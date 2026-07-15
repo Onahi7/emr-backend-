@@ -35,7 +35,7 @@ export class InsuranceController {
   }
 
   @Patch('programs/:id')
-  @Roles(UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   updateProgram(@Param('id') id: string, @Body() dto: UpdateInsuranceProgramDto) {
     return this.service.updateProgram(id, dto);
   }

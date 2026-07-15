@@ -83,6 +83,82 @@ export class VisitsService {
     return this.insuranceBlockModel.findOne(query).lean().exec();
   }
 
+  async getInsuranceEligibility(patientId: string, branchId?: string) {
+    const requiredBranchId = requireBranchId(branchId);
+    if (!Types.ObjectId.isValid(patientId)) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    const patient = await this.patientModel
+      .findOne(withBranch({ _id: patientId }, requiredBranchId))
+      .select('patientId firstName lastName insurance')
+      .lean();
+    if (!patient) throw new NotFoundException('Patient not found');
+
+    const insurance = (patient as any).insurance;
+    if (!insurance?.programCode) {
+      return {
+        patientId,
+        hasInsurance: false,
+        status: 'self_pay',
+        eligible: false,
+        reason: 'No insurance membership is recorded for this patient.',
+      };
+    }
+
+    const block = await this.findActiveInsuranceBlock(
+      patientId,
+      insurance.memberNumber,
+      insurance.programCode,
+      requiredBranchId,
+    );
+    if (block) {
+      return {
+        patientId,
+        hasInsurance: true,
+        status: 'blocked',
+        eligible: false,
+        insurance,
+        reason: (block as any).reasonDetail || (block as any).reason || 'Insurance coverage is blocked.',
+        block,
+      };
+    }
+
+    const lastCoveredVisit = await this.visitModel.findOne({
+      branchId: new Types.ObjectId(requiredBranchId),
+      patientId: new Types.ObjectId(patientId),
+      consultationCoverageType: ConsultationCoverageTypeEnum.INSURANCE,
+      status: { $ne: VisitStatusEnum.CANCELLED },
+    }).select('visitNumber createdAt').sort({ createdAt: -1 }).lean();
+
+    if (lastCoveredVisit?.createdAt) {
+      const nextEligibleAt = new Date(lastCoveredVisit.createdAt);
+      nextEligibleAt.setDate(nextEligibleAt.getDate() + 14);
+      if (nextEligibleAt.getTime() > Date.now()) {
+        return {
+          patientId,
+          hasInsurance: true,
+          status: 'waiting_period',
+          eligible: false,
+          insurance,
+          lastCoveredVisitAt: lastCoveredVisit.createdAt,
+          nextEligibleAt,
+          reason: 'Insurance consultation is still inside the 14-day interval.',
+        };
+      }
+    }
+
+    return {
+      patientId,
+      hasInsurance: true,
+      status: 'eligible',
+      eligible: true,
+      insurance,
+      lastCoveredVisitAt: lastCoveredVisit?.createdAt,
+      reason: 'Insurance consultation is eligible now.',
+    };
+  }
+
   async create(createVisitDto: CreateVisitDto, branchId?: string): Promise<Visit> {
     const requiredBranchId = requireBranchId(branchId);
     const { patientId, doctorId, visitType, consultationFee, chiefComplaint, notes, registeredBy, temperature, serviceType, specialistId, procedureType, rapidTestsRequested } = createVisitDto;
@@ -518,9 +594,7 @@ export class VisitsService {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const todayFilter: any = { createdAt: { $gte: today, $lt: tomorrow } };
-    if (branchId) todayFilter.branchId = branchId;
-
+    const todayFilter = withBranch({ createdAt: { $gte: today, $lt: tomorrow } }, branchId);
     const branchFilter = withBranch({}, branchId);
 
     const [
@@ -889,7 +963,8 @@ export class VisitsService {
   }
 
   async acceptPatient(id: string, doctorId: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) });
+    const requiredBranchId = requireBranchId(branchId);
+    const visit = await this.visitModel.findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId));
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -900,7 +975,7 @@ export class VisitsService {
 
     if (!visit.room) {
       const room: any = await this.visitModel.db.model('Room').findOneAndUpdate(
-        withBranch({ roomType: 'consultation', status: 'available' }, branchId),
+        withBranch({ roomType: 'consultation', status: 'available' }, requiredBranchId),
         { status: 'occupied', currentVisitId: visit._id, currentPatientName: visit._id },
         { sort: { name: 1 } },
       ).exec();
@@ -918,7 +993,7 @@ export class VisitsService {
     this.logger.log(`Doctor accepted visit: ${savedVisit.visitNumber}`);
 
     await this.queueModel.updateOne(
-      { visitId: new Types.ObjectId(id) },
+      withBranch({ visitId: new Types.ObjectId(id) }, requiredBranchId),
       {
         status: QueueStatusEnum.WITH_DOCTOR,
         doctorId: new Types.ObjectId(doctorId),
@@ -1055,7 +1130,8 @@ export class VisitsService {
   }
 
   async complete(id: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) });
+    const requiredBranchId = requireBranchId(branchId);
+    const visit = await this.visitModel.findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId));
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -1072,11 +1148,11 @@ export class VisitsService {
 
     const linkedOrders = await this.visitModel.db
       .model('Order')
-      .find({
+      .find(withBranch({
         visitId: visit._id,
         orderType: { $in: [OrderTypeEnum.LAB, OrderTypeEnum.PHARMACY] },
         status: { $ne: OrderStatusEnum.CANCELLED },
-      })
+      }, requiredBranchId))
       .lean();
 
     const hasUnpaidOrders = linkedOrders.some(
@@ -1103,7 +1179,7 @@ export class VisitsService {
     if (visit.room) {
       const RoomModel = this.visitModel.db.model('Room');
       await RoomModel.findOneAndUpdate(
-        withBranch({ name: visit.room }, branchId),
+        withBranch({ name: visit.room }, requiredBranchId),
         { status: 'available', currentVisitId: null, currentPatientName: null },
       ).exec();
     }

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { InsuranceClaimsService } from './insurance-claims.service';
-import { CreateInsuranceClaimDto, UpdateClaimStatusDto, AddClaimItemDto } from './dto/create-insurance-claim.dto';
+import { CreateInsuranceClaimDto, UpdateClaimStatusDto, AddClaimItemDto, MarkOrderInsuranceDto } from './dto/create-insurance-claim.dto';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
@@ -69,14 +69,21 @@ export class InsuranceClaimsController {
   }
 
   @Patch(':id/status')
-  @Roles(UserRoleEnum.ADMIN)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   updateStatus(@Param('id') id: string, @Body() dto: UpdateClaimStatusDto, @Req() req: any) {
-    return this.service.updateStatus(id, dto, req.user?.branchId);
+    return this.service.updateStatus(id, dto, req.user?.branchId, req.user?.userId);
   }
 
   @Post('mark-order-insurance')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  markOrderAsInsuranceCovered(@Body('orderId') orderId: string, @Req() req: any) {
-    return this.service.markOrderAsInsuranceCovered(orderId, req.user?.userId, req.user?.branchId);
+  markOrderAsInsuranceCovered(@Body() dto: MarkOrderInsuranceDto, @Req() req: any) {
+    return this.service.markOrderAsInsuranceCovered(
+      dto.orderId,
+      dto.insuranceAmount,
+      req.user?.userId,
+      req.user?.branchId,
+      dto.verificationReference,
+      dto.verificationNotes,
+    );
   }
 }

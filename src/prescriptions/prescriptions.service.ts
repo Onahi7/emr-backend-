@@ -436,7 +436,7 @@ export class PrescriptionsService {
     const filter = branchId ? { ...query, branchId } : query;
     return this.prescriptionModel
       .find(filter)
-      .populate('patientId', 'patientId firstName lastName')
+      .populate('patientId', 'patientId firstName lastName insurance')
       .populate('prescribedBy', 'fullName email')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: -1 })
@@ -467,7 +467,7 @@ export class PrescriptionsService {
     if (branchId) filter.branchId = branchId;
     return this.prescriptionModel
       .find(filter)
-      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('prescribedBy', 'fullName')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })

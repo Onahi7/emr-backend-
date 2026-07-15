@@ -733,8 +733,9 @@ export class ReportsService {
     ]);
 
     const laboratoryInfo: LaboratoryInfoDto = {
-      name: branch?.name || this.configService.get<string>('LAB_NAME', 'Clinical Laboratory'),
-      logo: branch?.logoUrl || this.configService.get<string>('LAB_LOGO_URL'),
+      // Results retain the LIS identity while contact details identify the EMR outlet.
+      name: this.configService.get<string>('LAB_NAME', 'Harbour Medical Diagnostic'),
+      logo: '/logo_resized.png',
       address: branch?.address || this.configService.get<string>('LAB_ADDRESS', ''),
       phone: branch?.phone || this.configService.get<string>('LAB_PHONE', ''),
       email: branch?.email || this.configService.get<string>('LAB_EMAIL', ''),

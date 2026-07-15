@@ -127,6 +127,12 @@ export class VisitsController {
     return this.visitsService.getStats(date, req?.user?.branchId);
   }
 
+  @Get('insurance-eligibility/:patientId')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
+  getInsuranceEligibility(@Param('patientId') patientId: string, @Request() req?: any) {
+    return this.visitsService.getInsuranceEligibility(patientId, req?.user?.branchId);
+  }
+
   @Get('patient/:patientId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
   findByPatient(@Param('patientId') patientId: string, @Request() req?: any) {
