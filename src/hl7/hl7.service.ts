@@ -595,7 +595,8 @@ export class Hl7Service {
 
     // Notify that order status changed
     if (order) {
-      this.realtimeGateway.notifyOrderStatusChanged(orderId.toString(), OrderStatusEnum.PROCESSING, order.orderNumber);
+      const branchIdStr = (order as any).branchId?.toString?.() || (order as any).branchId;
+      this.realtimeGateway.notifyOrderStatusChanged(orderId.toString(), OrderStatusEnum.PROCESSING, order.orderNumber, branchIdStr);
     }
 
     // Notify that machine received results
@@ -607,6 +608,7 @@ export class Hl7Service {
       autoMatched: true,
       orderId: orderId.toString(),
       orderNumber: order?.orderNumber,
+      branchId: (order as any)?.branchId?.toString?.() || (order as any)?.branchId,
     });
 
     return storedResults;

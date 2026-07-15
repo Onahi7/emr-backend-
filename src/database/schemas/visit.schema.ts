@@ -31,6 +31,15 @@ export enum VisitServiceTypeEnum {
   PROCEDURE = 'procedure',
 }
 
+/** How the consultation itself was covered. This is deliberately separate from
+ * the requested payment method so eligibility can be calculated consistently. */
+export enum ConsultationCoverageTypeEnum {
+  PENDING = 'pending',
+  PAID = 'paid',
+  FOLLOW_UP = 'follow_up',
+  INSURANCE = 'insurance',
+}
+
 @Schema({ _id: false, timestamps: false })
 export class RapidTestResult {
   @Prop({ required: true, enum: ['malaria', 'typhoid'] })
@@ -85,6 +94,12 @@ export class Visit extends Document {
 
   @Prop({ default: false })
   consultationPaid: boolean;
+
+  @Prop({ enum: Object.values(ConsultationCoverageTypeEnum), default: ConsultationCoverageTypeEnum.PENDING, index: true })
+  consultationCoverageType: ConsultationCoverageTypeEnum;
+
+  @Prop({ enum: ['cash', 'orange_money', 'afrimoney', 'wallet', 'card', 'insurance'], default: 'cash' })
+  consultationPaymentMethod?: string;
 
   /** Billable service picked at reception — drives downstream workflow
    *  (specialist routing, procedure prep, rapid test entry) */
@@ -267,3 +282,4 @@ VisitSchema.index({ doctorId: 1 });
 VisitSchema.index({ status: 1 });
 VisitSchema.index({ createdAt: -1 });
 VisitSchema.index({ consultationPaid: 1, status: 1 });
+VisitSchema.index({ branchId: 1, patientId: 1, consultationCoverageType: 1, createdAt: -1 });

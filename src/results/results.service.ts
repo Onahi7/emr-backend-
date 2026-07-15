@@ -405,7 +405,7 @@ export class ResultsService {
       if (visit && visit.status !== VisitStatusEnum.RESULTS_READY && visit.status !== VisitStatusEnum.COMPLETED) {
         visit.status = VisitStatusEnum.RESULTS_READY;
         await visit.save();
-        this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status: VisitStatusEnum.RESULTS_READY });
+        this.realtimeGateway.emitToBranch(visit.branchId?.toString(), 'visit:status_updated', { visitId: visit._id, status: VisitStatusEnum.RESULTS_READY });
       }
     }
 
@@ -578,13 +578,18 @@ export class ResultsService {
   /**
    * Find result by ID
    */
-  async findOne(id: string): Promise<Result> {
+  async findOne(id: string, branchId?: string): Promise<Result> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid result ID');
     }
 
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) {
+      query.branchId = new Types.ObjectId(branchId);
+    }
+
     const result = await this.resultModel
-      .findById(id)
+      .findOne(query)
       .populate('orderId', 'orderNumber patientId')
       .populate('orderTestId')
       .populate('resultedBy', 'fullName email')
@@ -605,12 +610,18 @@ export class ResultsService {
   async update(
     id: string,
     updateResultDto: UpdateResultDto,
+    branchId?: string,
   ): Promise<Result> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid result ID');
     }
 
-    const result = await this.resultModel.findById(id).exec();
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) {
+      query.branchId = new Types.ObjectId(branchId);
+    }
+
+    const result = await this.resultModel.findOne(query).exec();
     if (!result) {
       throw new NotFoundException(`Result with ID ${id} not found`);
     }
@@ -659,12 +670,17 @@ export class ResultsService {
   /**
    * Verify a result
    */
-  async verify(id: string, userId?: string): Promise<Result> {
+  async verify(id: string, userId?: string, branchId?: string): Promise<Result> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid result ID');
     }
 
-    const result = await this.resultModel.findById(id).exec();
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) {
+      query.branchId = new Types.ObjectId(branchId);
+    }
+
+    const result = await this.resultModel.findOne(query).exec();
     if (!result) {
       throw new NotFoundException(`Result with ID ${id} not found`);
     }
@@ -692,12 +708,18 @@ export class ResultsService {
     id: string,
     amendResultDto: AmendResultDto,
     userId?: string,
+    branchId?: string,
   ): Promise<Result> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid result ID');
     }
 
-    const originalResult = await this.resultModel.findById(id).exec();
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) {
+      query.branchId = new Types.ObjectId(branchId);
+    }
+
+    const originalResult = await this.resultModel.findOne(query).exec();
     if (!originalResult) {
       throw new NotFoundException(`Result with ID ${id} not found`);
     }
@@ -787,12 +809,17 @@ export class ResultsService {
   /**
    * Delete a result (admin only)
    */
-  async remove(id: string): Promise<void> {
+  async remove(id: string, branchId?: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid result ID');
     }
 
-    const result = await this.resultModel.findByIdAndDelete(id).exec();
+    const query: any = { _id: new Types.ObjectId(id) };
+    if (branchId) {
+      query.branchId = new Types.ObjectId(branchId);
+    }
+
+    const result = await this.resultModel.findOneAndDelete(query).exec();
     if (!result) {
       throw new NotFoundException(`Result with ID ${id} not found`);
     }

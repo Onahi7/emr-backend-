@@ -115,13 +115,13 @@ export class BranchesService {
 
   async testCafConfig(branchId: string): Promise<{ ok: boolean; message: string }> {
     const branch = await this.findByIdRaw(branchId);
-    const baseUrl = (branch.cafBaseUrl || this.configService.get<string>('caf.baseUrl') || '').replace(/\/$/, '');
-    const username = branch.cafUsername || this.configService.get<string>('caf.username') || '';
-    const password = branch.cafPassword || this.configService.get<string>('caf.password') || '';
-    const cafBranchId = branch.cafBranchId || this.configService.get<string>('caf.branchId') || '';
+    const baseUrl = (branch.cafBaseUrl || '').replace(/\/$/, '');
+    const username = branch.cafUsername || '';
+    const password = branch.cafPassword || '';
+    const cafBranchId = branch.cafBranchId || '';
 
     if (!baseUrl || !username || !password || !cafBranchId) {
-      throw new BadRequestException('CAF base URL, username, password, and branch ID are required');
+      throw new BadRequestException('CAF base URL, username, password, and branch ID are required. Configure these per-branch in Admin > Branches.');
     }
 
     try {

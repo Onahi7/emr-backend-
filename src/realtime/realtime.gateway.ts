@@ -48,13 +48,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   server: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
-  private connectedClients = new Map<string, { userId: string; roles: string[] }>();
+  private connectedClients = new Map<string, { userId: string; roles: string[]; branchId?: string }>();
 
   constructor(private jwtService: JwtService) {}
 
   async handleConnection(client: Socket) {
     try {
-      // Authenticate client
       const token = client.handshake.auth.token;
       
       if (!token) {
@@ -71,24 +70,29 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         : payload.role
           ? [payload.role]
           : [];
+      const branchId = payload.branchId || undefined;
 
       this.connectedClients.set(client.id, {
         userId: payload.sub,
         roles,
+        branchId,
       });
 
-      this.logger.log(`Client connected: ${client.id} (User: ${payload.sub}, Roles: ${roles.join(', ') || 'none'})`);
+      this.logger.log(`Client connected: ${client.id} (User: ${payload.sub}, Roles: ${roles.join(', ') || 'none'}, Branch: ${branchId || 'none'})`);
       
-      // Join every assigned role room so multi-role users receive all relevant updates.
-      roles.forEach((role) => client.join(`role:${role}`));
+      roles.forEach((role) => {
+        client.join(`role:${role}`);
+        if (branchId) client.join(`branch:${branchId}:role:${role}`);
+      });
+      if (branchId) {
+        client.join(`branch:${branchId}`);
+      }
       
-      // Send connection confirmation
       client.emit('connected', {
         message: 'Connected to real-time updates',
         clientId: client.id,
       });
 
-      // Broadcast updated client count
       this.server.emit('clients:count', { count: this.connectedClients.size });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -100,91 +104,105 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
     this.connectedClients.delete(client.id);
-    // Broadcast updated client count
     this.server.emit('clients:count', { count: this.connectedClients.size });
   }
 
-  // Emit to all clients
   emitToAll(event: string, data: any) {
     this.server.emit(event, data);
   }
 
-  // Emit to specific role
+  emitToBranch(branchId: string | undefined, event: string, data: any) {
+    if (!branchId) {
+      this.logger.warn(`Dropped ${event}: missing branch context`);
+      return;
+    }
+    this.server.to(`branch:${branchId}`).emit(event, data);
+  }
+
   emitToRole(role: string, event: string, data: any) {
     this.server.to(`role:${role}`).emit(event, data);
   }
 
-  // Order events
+  emitToBranchRole(branchId: string | undefined, role: string, event: string, data: any) {
+    if (!branchId) {
+      this.logger.warn(`Dropped ${event}: missing branch context`);
+      return;
+    }
+    this.server.to(`branch:${branchId}:role:${role}`).emit(event, data);
+  }
+
+  private extractBranchId(entity: any): string | undefined {
+    return entity?.branchId?.toString?.() || entity?.branchId || undefined;
+  }
+
   notifyOrderCreated(order: any) {
     this.logger.log(`Broadcasting order created: ${order.orderNumber}`);
-    this.emitToAll('order:created', order);
+    this.emitToBranch(this.extractBranchId(order), 'order:created', order);
   }
 
   notifyOrderUpdated(order: any) {
     this.logger.log(`Broadcasting order updated: ${order.orderNumber}`);
-    this.emitToAll('order:updated', order);
+    this.emitToBranch(this.extractBranchId(order), 'order:updated', order);
   }
 
-  notifyOrderStatusChanged(orderId: string, status: string, orderNumber: string) {
+  notifyOrderStatusChanged(orderId: string, status: string, orderNumber: string, branchId?: string) {
     this.logger.log(`Broadcasting order status changed: ${orderNumber} -> ${status}`);
-    this.emitToAll('order:status_changed', { orderId, status, orderNumber });
+    this.emitToBranch(branchId, 'order:status_changed', { orderId, status, orderNumber });
   }
 
-  // Result events
   notifyResultCreated(result: any) {
     this.logger.log(`Broadcasting result created: ${result.testCode}`);
-    this.emitToAll('result:created', result);
+    this.emitToBranch(this.extractBranchId(result), 'result:created', result);
     
-    // Send critical result alert to lab techs and admins
     if (result.flag === 'critical_high' || result.flag === 'critical_low') {
-      this.emitToRole('lab_tech', 'result:critical', result);
-      this.emitToRole('admin', 'result:critical', result);
+      const branchId = this.extractBranchId(result);
+      this.emitToBranchRole(branchId, 'lab_tech', 'result:critical', result);
+      this.emitToBranchRole(branchId, 'admin', 'result:critical', result);
     }
   }
 
   notifyResultVerified(result: any) {
     this.logger.log(`Broadcasting result verified: ${result.testCode}`);
-    this.emitToAll('result:verified', result);
+    this.emitToBranch(this.extractBranchId(result), 'result:verified', result);
   }
 
-  // Patient events
   notifyPatientCreated(patient: any) {
     this.logger.log(`Broadcasting patient created: ${patient.patientId}`);
-    this.emitToAll('patient:created', patient);
+    this.emitToBranch(this.extractBranchId(patient), 'patient:created', patient);
   }
 
-  // Sample events
   notifySampleCollected(sample: any) {
     this.logger.log(`Broadcasting sample collected`);
-    this.emitToRole('lab_tech', 'sample:collected', sample);
-    this.emitToRole('admin', 'sample:collected', sample);
+    const branchId = this.extractBranchId(sample);
+    this.emitToBranchRole(branchId, 'lab_tech', 'sample:collected', sample);
+    this.emitToBranchRole(branchId, 'admin', 'sample:collected', sample);
   }
 
-  // Machine events
   notifyMachineStatusChanged(machine: any) {
     this.logger.log(`Broadcasting machine status changed: ${machine.name} -> ${machine.status}`);
-    this.emitToAll('machine:updated', machine);
+    this.emitToBranch(this.extractBranchId(machine), 'machine:updated', machine);
   }
 
-  notifyMachineResultReceived(data: { machineId: string; machineName: string; resultCount: number; protocol: string; autoMatched?: boolean; orderId?: string; orderNumber?: string }) {
+  notifyMachineResultReceived(data: { machineId: string; machineName: string; resultCount: number; protocol: string; autoMatched?: boolean; orderId?: string; orderNumber?: string; branchId?: string }) {
     this.logger.log(`Broadcasting machine result received from ${data.machineName}: ${data.resultCount} results`);
-    this.emitToAll('machine:result_received', data);
+    this.emitToBranch(data.branchId, 'machine:result_received', data);
   }
 
   notifyCommunicationLog(log: any) {
     this.logger.log(`Broadcasting new communication log`);
-    this.emitToAll('communication-log:new', log);
+    this.emitToBranch(this.extractBranchId(log), 'communication-log:new', log);
   }
 
   notifyUnmatchedResult(result: any) {
     this.logger.log(`Broadcasting unmatched result from ${result.machineName}`);
-    this.emitToRole('lab_tech', 'result:unmatched', result);
-    this.emitToRole('admin', 'result:unmatched', result);
+    const branchId = this.extractBranchId(result);
+    this.emitToBranchRole(branchId, 'lab_tech', 'result:unmatched', result);
+    this.emitToBranchRole(branchId, 'admin', 'result:unmatched', result);
   }
 
-  notifyOrderSentToMachine(data: { orderId: string; orderNumber: string; machineName: string; success: boolean }) {
+  notifyOrderSentToMachine(data: { orderId: string; orderNumber: string; machineName: string; success: boolean; branchId?: string }) {
     this.logger.log(`Broadcasting order sent to machine: ${data.orderNumber} -> ${data.machineName}`);
-    this.emitToAll('order:sent_to_machine', data);
+    this.emitToBranch(data.branchId, 'order:sent_to_machine', data);
   }
 
   // Get connected clients count

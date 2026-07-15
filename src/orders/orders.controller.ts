@@ -146,8 +146,8 @@ export class OrdersController {
 
   @Get(':id/tests')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE)
-  async getOrderTests(@Param('id') id: string) {
-    return this.ordersService.getOrderTests(id);
+  async getOrderTests(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.getOrderTests(id, req.user?.branchId);
   }
 
   @Post(':id/sync-lis')
@@ -231,8 +231,8 @@ export class OrdersController {
 
   @Get(':id/payments')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
-  async getPaymentHistory(@Param('id') id: string) {
-    return this.ordersService.getPaymentHistory(id);
+  async getPaymentHistory(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.getPaymentHistory(id, req.user?.branchId);
   }
 
   @Post(':id/assign-doctor')

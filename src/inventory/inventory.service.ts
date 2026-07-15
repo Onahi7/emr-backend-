@@ -72,7 +72,7 @@ export class InventoryService {
     });
 
     this.logger.log(`Stock received: ${medication.name} +${dto.quantity} (batch: ${dto.batchNumber || 'N/A'})`);
-    this.realtimeGateway.emitToAll('inventory:stock_received', { medication, movement });
+    // Inventory has no branch key yet. Do not broadcast stock data across branches.
     return movement;
   }
 
@@ -102,7 +102,7 @@ export class InventoryService {
     });
 
     this.logger.log(`Stock adjusted: ${medication.name} ${dto.quantity > 0 ? '+' : ''}${dto.quantity} (${dto.reason})`);
-    this.realtimeGateway.emitToAll('inventory:stock_adjusted', { medication, movement });
+    // Inventory has no branch key yet. Do not broadcast stock data across branches.
     return movement;
   }
 

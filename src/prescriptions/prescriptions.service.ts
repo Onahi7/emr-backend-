@@ -55,7 +55,7 @@ export class PrescriptionsService {
     if ([VisitStatusEnum.COMPLETED, VisitStatusEnum.CANCELLED].includes(visit.status)) return;
     if (visit.status === status) return;
     await this.visitModel.findByIdAndUpdate(visitId, { $set: { status } });
-    this.realtimeGateway.emitToAll('visit:status_updated', { visitId, status });
+    this.realtimeGateway.emitToBranch(visit.branchId?.toString(), 'visit:status_updated', { visitId, status });
   }
 
   /**
@@ -428,7 +428,7 @@ export class PrescriptionsService {
     const savedPrescription = await prescription.save();
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_PHARMACY);
     const populatedPrescription = await this.findById(savedPrescription._id.toString(), requiredBranchId);
-    this.realtimeGateway.emitToAll('prescription:created', populatedPrescription);
+    this.realtimeGateway.emitToBranch(populatedPrescription.branchId?.toString(), 'prescription:created', populatedPrescription);
     return populatedPrescription;
   }
 
@@ -804,7 +804,7 @@ export class PrescriptionsService {
       this.logger.warn(`Failed to initialize administration tracking for ${prescription.prescriptionNumber}: ${err}`);
     }
 
-    this.realtimeGateway.emitToAll('prescription:dispensed', populatedPrescription);
+    this.realtimeGateway.emitToBranch(populatedPrescription.branchId?.toString(), 'prescription:dispensed', populatedPrescription);
     return populatedPrescription;
   }
 
@@ -836,7 +836,7 @@ export class PrescriptionsService {
 
     await this.moveVisitToStatus(savedPrescription.visitId, VisitStatusEnum.AWAITING_DISPENSING);
     const populatedPrescription = await this.findById(savedPrescription._id.toString(), branchId);
-    this.realtimeGateway.emitToAll('prescription:paid', populatedPrescription);
+    this.realtimeGateway.emitToBranch(populatedPrescription.branchId?.toString(), 'prescription:paid', populatedPrescription);
     return populatedPrescription;
   }
 
@@ -890,7 +890,7 @@ export class PrescriptionsService {
 
     const savedPrescription = await prescription.save();
     const populatedPrescription = await this.findById(savedPrescription._id.toString(), branchId);
-    this.realtimeGateway.emitToAll('prescription:updated', populatedPrescription);
+    this.realtimeGateway.emitToBranch(populatedPrescription.branchId?.toString(), 'prescription:updated', populatedPrescription);
     return populatedPrescription;
   }
 
@@ -906,7 +906,7 @@ export class PrescriptionsService {
     const savedPrescription = await prescription.save();
     await this.ordersService.recalculateVisitStatus(savedPrescription.visitId);
     const populatedPrescription = await this.findById(savedPrescription._id.toString(), branchId);
-    this.realtimeGateway.emitToAll('prescription:cancelled', populatedPrescription);
+    this.realtimeGateway.emitToBranch(populatedPrescription.branchId?.toString(), 'prescription:cancelled', populatedPrescription);
     return populatedPrescription;
   }
 
@@ -1022,7 +1022,7 @@ export class PrescriptionsService {
       await admission.save();
     }
 
-    this.realtimeGateway.emitToAll('prescription:administered', {
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'prescription:administered', {
       prescriptionId: saved._id,
       prescriptionNumber: saved.prescriptionNumber,
       medicationName: dto.medicationName,

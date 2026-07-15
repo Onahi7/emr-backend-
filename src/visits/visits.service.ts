@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Visit, VisitStatusEnum, VisitTypeEnum } from '../database/schemas/visit.schema';
+import { ConsultationCoverageTypeEnum, Visit, VisitStatusEnum, VisitTypeEnum } from '../database/schemas/visit.schema';
 import { Patient } from '../database/schemas/patient.schema';
 import { Doctor } from '../database/schemas/doctor.schema';
 import { IdSequence } from '../database/schemas/id-sequence.schema';
@@ -115,19 +115,8 @@ export class VisitsService {
       (rapidTestsRequested?.includes('typhoid') ? await this.servicePricesService.getPrice(branchId, ServicePriceCodeEnum.RAPID_TYPHOID) : 0);
     const configuredConsultationFee = Math.round((configuredBaseFee + configuredRapidFee) * 100) / 100;
 
-    // Consultation fee waiver: if patient had a paid consultation within 30 days, waive the fee
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recentPaidVisit = await this.visitModel.findOne({
-      branchId: new Types.ObjectId(requiredBranchId),
-      patientId: new Types.ObjectId(patientId),
-      consultationPaid: true,
-      createdAt: { $gte: thirtyDaysAgo },
-    }).sort({ createdAt: -1 }).lean();
-
-    const consultationFeeWaived = !!recentPaidVisit;
-
-    // Insurance patients get free consultation (unless selfPayOverride is set)
+    // Insurance visits are covered once every 14 days. A patient may still be
+    // registered earlier, but reception must explicitly select self-pay.
     const patientObj = patient.toObject ? patient.toObject() : patient;
     const hasInsurance = !!(patientObj as any).insurance?.programCode;
     const insuranceBlock = hasInsurance
@@ -143,7 +132,52 @@ export class VisitsService {
       throw new BadRequestException('Insurance coverage is blocked for this patient. Use self-pay override to register the visit.');
     }
 
-    const consultationCoveredByInsurance = hasInsurance && !insuranceBlock && !consultationFeeWaived && !createVisitDto.selfPayOverride;
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const recentInsuranceVisit = hasInsurance && !createVisitDto.selfPayOverride
+      ? await this.visitModel.findOne({
+        branchId: new Types.ObjectId(requiredBranchId),
+        patientId: new Types.ObjectId(patientId),
+        consultationCoverageType: ConsultationCoverageTypeEnum.INSURANCE,
+        status: { $ne: VisitStatusEnum.CANCELLED },
+        createdAt: { $gte: fourteenDaysAgo },
+      }).sort({ createdAt: -1 }).lean()
+      : null;
+
+    if (recentInsuranceVisit) {
+      throw new BadRequestException('Insurance covers one consultation every 14 days. Register this visit as self-pay to continue before the next eligible date.');
+    }
+
+    const consultationCoveredByInsurance = hasInsurance && !insuranceBlock && !createVisitDto.selfPayOverride;
+
+    // A paid normal consultation covers that visit plus one subsequent visit.
+    // Legacy paid visits are recognised by their non-zero consultation fee.
+    const paidEntitlement = !hasInsurance || createVisitDto.selfPayOverride
+      ? await this.visitModel.findOne({
+        branchId: new Types.ObjectId(requiredBranchId),
+        patientId: new Types.ObjectId(patientId),
+        status: { $ne: VisitStatusEnum.CANCELLED },
+        $or: [
+          { consultationCoverageType: ConsultationCoverageTypeEnum.PAID },
+          {
+            consultationCoverageType: { $exists: false },
+            consultationPaid: true,
+            consultationFee: { $gt: 0 },
+          },
+        ],
+      }).sort({ createdAt: -1 }).lean()
+      : null;
+    const visitsOnEntitlement = paidEntitlement
+      ? await this.visitModel.countDocuments({
+        branchId: new Types.ObjectId(requiredBranchId),
+        patientId: new Types.ObjectId(patientId),
+        status: { $ne: VisitStatusEnum.CANCELLED },
+        createdAt: { $gte: paidEntitlement.createdAt },
+      })
+      : 0;
+    const consultationFeeWaived = (!hasInsurance || !!createVisitDto.selfPayOverride)
+      && !!paidEntitlement
+      && visitsOnEntitlement < 2;
 
     const finalConsultationFee = (consultationFeeWaived || consultationCoveredByInsurance) ? 0 : (configuredConsultationFee || consultationFee);
 
@@ -159,6 +193,11 @@ export class VisitsService {
       temperature: temperature || undefined,
       status: (consultationFeeWaived || consultationCoveredByInsurance) ? VisitStatusEnum.AWAITING_TRIAGE : VisitStatusEnum.WAITING_PAYMENT,
       consultationPaid: consultationFeeWaived || consultationCoveredByInsurance,
+      consultationCoverageType: consultationCoveredByInsurance
+        ? ConsultationCoverageTypeEnum.INSURANCE
+        : consultationFeeWaived
+          ? ConsultationCoverageTypeEnum.FOLLOW_UP
+          : ConsultationCoverageTypeEnum.PENDING,
       registeredBy: registeredBy ? new Types.ObjectId(registeredBy) : undefined,
       serviceType,
       specialistId: specialistId ? new Types.ObjectId(specialistId) : undefined,
@@ -195,9 +234,9 @@ export class VisitsService {
         await savedVisit.save();
       }
     }
-    this.logger.log(`Visit created: ${savedVisit.visitNumber}${consultationFeeWaived ? ' (fee waived — recent paid visit within 30 days)' : ''}${consultationCoveredByInsurance ? ' (consultation covered by insurance)' : ''}`);
+    this.logger.log(`Visit created: ${savedVisit.visitNumber}${consultationFeeWaived ? ' (included follow-up visit)' : ''}${consultationCoveredByInsurance ? ' (consultation covered by insurance)' : ''}`);
 
-    // If fee was waived (or covered by insurance), auto-create queue entry (skipping the WAITING_PAYMENT step)
+    // Included follow-ups and covered insurance visits skip the payment step.
     if (consultationFeeWaived || consultationCoveredByInsurance) {
       try {
         const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
@@ -222,11 +261,11 @@ export class VisitsService {
         savedVisit.checkedInAt = new Date();
         await savedVisit.save();
       } catch (e) {
-        this.logger.warn(`Failed to auto-create queue entry for waived visit ${savedVisit.visitNumber}: ${e}`);
+        this.logger.warn(`Failed to auto-create queue entry for covered visit ${savedVisit.visitNumber}: ${e}`);
       }
     }
 
-    this.realtimeGateway.emitToAll('visit:created', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:created', savedVisit);
 
     // Attach waiver/insurance flags so the frontend can display them
     const result = savedVisit.toObject();
@@ -553,13 +592,14 @@ export class VisitsService {
     const savedVisit = await visit.save();
 
     this.logger.log(`Visit updated: ${savedVisit.visitNumber} - Status: ${savedVisit.status}`);
-    this.realtimeGateway.emitToAll('visit:updated', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:updated', savedVisit);
 
     return savedVisit;
   }
 
   async markConsultationPaid(id: string, paymentMethod = 'cash', receivedBy?: string, branchId?: string): Promise<Visit> {
-    const visit = await this.visitModel.findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) });
+    const requiredBranchId = requireBranchId(branchId);
+    const visit = await this.visitModel.findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId));
     if (!visit) {
       throw new NotFoundException('Visit not found');
     }
@@ -569,6 +609,8 @@ export class VisitsService {
     }
 
     visit.consultationPaid = true;
+    visit.consultationPaymentMethod = paymentMethod;
+    visit.consultationCoverageType = ConsultationCoverageTypeEnum.PAID;
     visit.status = VisitStatusEnum.AWAITING_TRIAGE;
     visit.checkedInAt = new Date();
 
@@ -580,7 +622,7 @@ export class VisitsService {
       paymentMethod,
       receivedBy: receivedBy ? new Types.ObjectId(receivedBy) : undefined,
       notes: `Consultation payment for visit ${visit.visitNumber}`,
-      branchId: branchId ? new Types.ObjectId(branchId) : undefined,
+      branchId: new Types.ObjectId(requiredBranchId),
     });
     this.logger.log(`Consultation paid for visit: ${savedVisit.visitNumber} (awaiting triage)`);
 
@@ -588,17 +630,17 @@ export class VisitsService {
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
       const queueCount = await this.queueModel.countDocuments({
-        branchId: new Types.ObjectId(requireBranchId(branchId)),
+        branchId: new Types.ObjectId(requiredBranchId),
         createdAt: {
           $gte: new Date(new Date().setHours(0, 0, 0, 0)),
           $lt: new Date(new Date().setHours(23, 59, 59, 999)),
         },
       });
-      const lastQueue = await this.queueModel.findOne({ branchId: new Types.ObjectId(requireBranchId(branchId)) }).sort({ queueOrder: -1 }).exec();
+      const lastQueue = await this.queueModel.findOne({ branchId: new Types.ObjectId(requiredBranchId) }).sort({ queueOrder: -1 }).exec();
       const queueOrder = lastQueue ? lastQueue.queueOrder + 1 : 1;
 
       await this.queueModel.create({
-        branchId: new Types.ObjectId(requireBranchId(branchId)),
+        branchId: new Types.ObjectId(requiredBranchId),
         queueNumber: `Q-${dateStr}-${String(queueCount + 1).padStart(4, '0')}`,
         patientId: savedVisit.patientId,
         visitId: savedVisit._id,
@@ -610,7 +652,7 @@ export class VisitsService {
       this.logger.warn(`Failed to auto-create queue entry for visit ${savedVisit.visitNumber}: ${queueErr}`);
     }
 
-    this.realtimeGateway.emitToAll('visit:consultation_paid', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:consultation_paid', savedVisit);
 
     return savedVisit;
   }
@@ -688,7 +730,7 @@ export class VisitsService {
       },
     );
 
-    this.realtimeGateway.emitToAll('visit:triage_completed', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:triage_completed', savedVisit);
     return savedVisit;
   }
 
@@ -726,7 +768,7 @@ export class VisitsService {
     this.logger.log(
       `Rapid ${data.testType} test (${data.result}) added to visit ${saved.visitNumber}`,
     );
-    this.realtimeGateway.emitToAll('visit:rapid_test_result_added', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'visit:rapid_test_result_added', saved);
     return saved;
   }
 
@@ -766,7 +808,7 @@ export class VisitsService {
         `from doctor ${previousDoctorId ?? 'unassigned'} → ${doctorId}`,
     );
 
-    this.realtimeGateway.emitToAll('visit:doctor_assigned', {
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:doctor_assigned', {
       visit: savedVisit,
       doctorId,
       assignedBy: nurseId,
@@ -809,7 +851,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
     this.logger.log(`Visit ${savedVisit.visitNumber} referred to specialist ${data.specialistId}`);
 
-    this.realtimeGateway.emitToAll('visit:referred', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:referred', savedVisit);
     return savedVisit;
   }
 
@@ -842,7 +884,7 @@ export class VisitsService {
 
     const savedVisit = await visit.save();
     this.logger.log(`Specialist accepted referral: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:accepted', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:accepted', savedVisit);
     return savedVisit;
   }
 
@@ -884,7 +926,7 @@ export class VisitsService {
       },
     );
 
-    this.realtimeGateway.emitToAll('visit:accepted', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:accepted', savedVisit);
 
     return savedVisit;
   }
@@ -903,7 +945,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
 
     this.logger.log(`Lab ordered for visit: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:lab_ordered', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:lab_ordered', savedVisit);
 
     return savedVisit;
   }
@@ -922,7 +964,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
 
     this.logger.log(`Medication prescribed for visit: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:pharmacy_ordered', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:pharmacy_ordered', savedVisit);
 
     return savedVisit;
   }
@@ -941,7 +983,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
 
     this.logger.log(`Lab paid for visit: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:lab_paid', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:lab_paid', savedVisit);
 
     return savedVisit;
   }
@@ -969,7 +1011,7 @@ export class VisitsService {
     });
 
     this.logger.log(`Pharmacy paid for visit: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:pharmacy_paid', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:pharmacy_paid', savedVisit);
 
     return savedVisit;
   }
@@ -988,7 +1030,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
 
     this.logger.log(`Drugs dispensed, awaiting doctor review: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:dispensed', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:dispensed', savedVisit);
 
     return savedVisit;
   }
@@ -1007,7 +1049,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
 
     this.logger.log(`Results released for visit: ${savedVisit.visitNumber}`);
-    this.realtimeGateway.emitToAll('visit:results_ready', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:results_ready', savedVisit);
 
     return savedVisit;
   }
@@ -1072,7 +1114,7 @@ export class VisitsService {
     const savedVisit = await visit.save();
     this.logger.log(`Visit completed: ${savedVisit.visitNumber}`);
 
-    this.realtimeGateway.emitToAll('visit:completed', savedVisit);
+    this.realtimeGateway.emitToBranch(savedVisit.branchId?.toString(), 'visit:completed', savedVisit);
 
     return savedVisit;
   }

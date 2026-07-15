@@ -1,4 +1,4 @@
-import { IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min, IsArray } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { VisitTypeEnum, VisitServiceTypeEnum } from '../../database/schemas/visit.schema';
 
 export class CreateVisitDto {
@@ -57,5 +57,6 @@ export class CreateVisitDto {
 
   /** When true, insurance is blocked for this patient — force self-pay */
   @IsOptional()
+  @IsBoolean()
   selfPayOverride?: boolean;
 }

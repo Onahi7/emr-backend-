@@ -52,7 +52,7 @@ export class RoomsService {
     }
     const room = await this.roomModel.findOneAndUpdate(withBranch({ _id: id }, branchId), updateRoomDto, { new: true }).exec();
     if (!room) throw new NotFoundException('Room not found');
-    this.realtimeGateway.emitToAll('room:updated', room);
+    this.realtimeGateway.emitToBranch(room.branchId?.toString(), 'room:updated', room);
     return room;
   }
 
@@ -101,7 +101,7 @@ export class RoomsService {
     visit.roomType = room.roomType;
     await visit.save();
 
-    this.realtimeGateway.emitToAll('room:assigned', { visitId, roomId: room._id, roomName: room.name });
+    this.realtimeGateway.emitToBranch(branchId, 'room:assigned', { visitId, roomId: room._id, roomName: room.name });
     return { room, visit };
   }
 
@@ -115,7 +115,7 @@ export class RoomsService {
     room.currentPatientName = null;
     await room.save();
 
-    this.realtimeGateway.emitToAll('room:released', { roomId: room._id, roomName: room.name });
+    this.realtimeGateway.emitToBranch(room.branchId?.toString(), 'room:released', { roomId: room._id, roomName: room.name });
     return room;
   }
 

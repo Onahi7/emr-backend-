@@ -72,7 +72,7 @@ export class AdmissionsService {
     }
 
     this.logger.log(`Admission created: ${saved.admissionNumber}`);
-    this.realtimeGateway.emitToAll('admission:created', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:created', saved);
     return saved;
   }
 
@@ -150,7 +150,7 @@ export class AdmissionsService {
   async update(id: string, data: any, branchId?: string): Promise<Admission> {
     const admission = await this.admissionModel.findOneAndUpdate(withBranch({ _id: id }, branchId), data, { new: true });
     if (!admission) throw new NotFoundException('Admission not found');
-    this.realtimeGateway.emitToAll('admission:updated', admission);
+    this.realtimeGateway.emitToBranch(admission.branchId?.toString(), 'admission:updated', admission);
     return admission;
   }
 
@@ -173,7 +173,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:vitals_recorded', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:vitals_recorded', saved);
     return saved;
   }
 
@@ -192,7 +192,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:medication_administered', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:medication_administered', saved);
     return saved;
   }
 
@@ -216,7 +216,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:fluid_recorded', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:fluid_recorded', saved);
     return saved;
   }
 
@@ -273,7 +273,7 @@ export class AdmissionsService {
       diagnosis: note.assessment,
       treatmentPlan: note.plan,
     });
-    this.realtimeGateway.emitToAll('admission:note_added', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:note_added', saved);
     return saved;
   }
 
@@ -296,7 +296,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:handover_added', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:handover_added', saved);
     return saved;
   }
 
@@ -314,7 +314,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:care_plan_updated', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:care_plan_updated', saved);
     return saved;
   }
 
@@ -328,7 +328,7 @@ export class AdmissionsService {
     if (evaluation) admission.carePlan[itemIndex].evaluation = evaluation;
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:care_plan_updated', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:care_plan_updated', saved);
     return saved;
   }
 
@@ -344,7 +344,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:incident_reported', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:incident_reported', saved);
     return saved;
   }
 
@@ -384,7 +384,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:oxygen_started', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:oxygen_started', saved);
     return saved;
   }
 
@@ -399,7 +399,7 @@ export class AdmissionsService {
     admission.oxygenTherapy[therapyIndex].stoppedBy = stoppedBy ? new Types.ObjectId(stoppedBy) : undefined;
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:oxygen_stopped', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:oxygen_stopped', saved);
     return saved;
   }
 
@@ -439,7 +439,7 @@ export class AdmissionsService {
     } as any);
 
     const saved = await admission.save();
-    this.realtimeGateway.emitToAll('admission:transferred', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:transferred', saved);
     return saved;
   }
 
@@ -473,7 +473,7 @@ export class AdmissionsService {
     }
 
     this.logger.log(`Admission discharged: ${saved.admissionNumber}`);
-    this.realtimeGateway.emitToAll('admission:discharged', saved);
+    this.realtimeGateway.emitToBranch(saved.branchId?.toString(), 'admission:discharged', saved);
     return saved;
   }
 

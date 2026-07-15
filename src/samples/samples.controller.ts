@@ -25,8 +25,8 @@ export class SamplesController {
 
   @Post()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  async create(@Body() createSampleDto: CreateSampleDto, @Request() req: any, @Query('branchId') branchId?: string) {
-    return this.samplesService.create(createSampleDto, req.user?.userId, branchId);
+  async create(@Body() createSampleDto: CreateSampleDto, @Request() req: any) {
+    return this.samplesService.create(createSampleDto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
@@ -37,23 +37,23 @@ export class SamplesController {
     @Query('status') status?: string,
     @Query('orderId') orderId?: string,
     @Query('patientId') patientId?: string,
-    @Query('branchId') branchId?: string,
+    @Request() req?: any,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.samplesService.findAll(pageNum, limitNum, status, orderId, patientId, branchId);
+    return this.samplesService.findAll(pageNum, limitNum, status, orderId, patientId, req.user?.branchId);
   }
 
   @Get('by-sample-id/:sampleId')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  async findBySampleId(@Param('sampleId') sampleId: string, @Query('branchId') branchId?: string) {
-    return this.samplesService.findBySampleId(sampleId, branchId);
+  async findBySampleId(@Param('sampleId') sampleId: string, @Request() req: any) {
+    return this.samplesService.findBySampleId(sampleId, req.user?.branchId);
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.LAB_TECH)
-  async findOne(@Param('id') id: string, @Query('branchId') branchId?: string) {
-    return this.samplesService.findOne(id, branchId);
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    return this.samplesService.findOne(id, req.user?.branchId);
   }
 
   @Patch(':id')
@@ -61,9 +61,9 @@ export class SamplesController {
   async update(
     @Param('id') id: string,
     @Body() updateSampleDto: UpdateSampleDto,
-    @Query('branchId') branchId?: string,
+    @Request() req: any,
   ) {
-    return this.samplesService.update(id, updateSampleDto, branchId);
+    return this.samplesService.update(id, updateSampleDto, req.user?.branchId);
   }
 
   @Post(':id/reject')
@@ -72,8 +72,7 @@ export class SamplesController {
     @Param('id') id: string,
     @Body() rejectSampleDto: RejectSampleDto,
     @Request() req: any,
-    @Query('branchId') branchId?: string,
   ) {
-    return this.samplesService.reject(id, rejectSampleDto, req.user?.userId, branchId);
+    return this.samplesService.reject(id, rejectSampleDto, req.user?.userId, req.user?.branchId);
   }
 }

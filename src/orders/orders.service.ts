@@ -638,13 +638,18 @@ export class OrdersService {
   /**
    * Get order tests
    */
-  async getOrderTests(orderId: string): Promise<OrderTest[]> {
+  async getOrderTests(orderId: string, branchId?: string): Promise<OrderTest[]> {
     if (!Types.ObjectId.isValid(orderId)) {
       throw new NotFoundException(`Order with ID ${orderId} not found`);
     }
 
+    const filter: any = { orderId: new Types.ObjectId(orderId) };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
     const tests = await this.orderTestModel
-      .find({ orderId: new Types.ObjectId(orderId) })
+      .find(filter)
       .populate('testId')
       .populate('machineId')
       .populate('sampleId')
@@ -838,6 +843,7 @@ export class OrdersService {
       order._id.toString(),
       order.status,
       order.orderNumber,
+      branchId,
     );
 
     return populatedOrder;
@@ -889,6 +895,7 @@ export class OrdersService {
       order._id.toString(),
       order.status,
       order.orderNumber,
+      branchId,
     );
 
     return populatedOrder;
@@ -1401,7 +1408,7 @@ export class OrdersService {
         performedBy: userId ? new Types.ObjectId(userId) : undefined,
         orderId: order._id,
       });
-      this.realtimeGateway.emitToAll('wallet:updated', {
+      this.realtimeGateway.emitToBranch(branchId, 'wallet:updated', {
         patientId: order.patientId.toString(),
         balance: patient.walletBalance,
         type: 'payment',
@@ -1460,13 +1467,18 @@ export class OrdersService {
   /**
    * Get full payment history for an order
    */
-  async getPaymentHistory(orderId: string): Promise<any[]> {
+  async getPaymentHistory(orderId: string, branchId?: string): Promise<any[]> {
     if (!Types.ObjectId.isValid(orderId)) {
       throw new NotFoundException(`Order with ID ${orderId} not found`);
     }
 
+    const filter: any = { orderId: new Types.ObjectId(orderId) };
+    if (branchId) {
+      filter.branchId = branchId;
+    }
+
     return this.paymentModel
-      .find({ orderId: new Types.ObjectId(orderId) })
+      .find(filter)
       .populate('receivedBy', 'fullName email')
       .sort({ createdAt: 1 })
       .exec();
@@ -1864,7 +1876,7 @@ export class OrdersService {
       this.logger.log(`Visit ${visit.visitNumber} status synced: ${visit.status} → ${newStatus}`);
       visit.status = newStatus;
       await visit.save();
-      this.realtimeGateway.emitToAll('visit:status_updated', { visitId: visit._id, status: newStatus });
+      this.realtimeGateway.emitToBranch(visit.branchId?.toString(), 'visit:status_updated', { visitId: visit._id, status: newStatus });
     }
   }
 

@@ -51,6 +51,17 @@ export class PatientsController {
     return this.patientsService.search(query, req.user?.branchId);
   }
 
+  @Get('check-duplicates')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
+  async checkDuplicates(
+    @Query('firstName') firstName?: string,
+    @Query('lastName') lastName?: string,
+    @Query('phone') phone?: string,
+    @Request() req?: any,
+  ) {
+    return this.patientsService.checkDuplicates(firstName, lastName, phone, req?.user?.branchId);
+  }
+
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async findOne(@Param('id') id: string, @Request() req: any) {

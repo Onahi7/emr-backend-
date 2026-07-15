@@ -287,15 +287,20 @@ export class ReportsService {
    * @param userId - User ID requesting the report (for audit logging)
    * @returns Formatted lab result report DTO
    */
-  async generateLabResultReport(orderId: string, userId?: string): Promise<LabResultReportDto> {
+  async generateLabResultReport(orderId: string, userId?: string, branchId?: string): Promise<LabResultReportDto> {
     // Validate order ID format
     if (!Types.ObjectId.isValid(orderId)) {
       throw new BadRequestException('Invalid order ID format');
     }
 
     // Fetch order with patient and ordering physician
+    const orderQuery: any = { _id: orderId };
+    if (branchId) {
+      orderQuery.branchId = new Types.ObjectId(branchId);
+    }
+
     const order = await this.orderModel
-      .findById(orderId)
+      .findOne(orderQuery)
       .populate('patientId')
       .populate('orderedBy')
       .exec();

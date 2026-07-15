@@ -108,6 +108,7 @@ export class ReportsController {
     @Req() req: any,
   ): Promise<LabResultReportDto> {
     const userId = req.user?.userId;
-    return this.reportsService.generateLabResultReport(orderId, userId);
+    const branchId = req.user?.branchId;
+    return this.reportsService.generateLabResultReport(orderId, userId, branchId);
   }
 }

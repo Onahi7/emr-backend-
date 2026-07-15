@@ -252,7 +252,7 @@ export class TreatmentPlansService {
     plan.status = TreatmentPlanStatusEnum.SENT_TO_RECEPTION;
     plan.sentToReceptionAt = new Date();
     await plan.save();
-    this.realtimeGateway.emitToAll('treatment-plan:sent', { planId: plan._id, planNumber: plan.planNumber });
+    this.realtimeGateway.emitToBranch(plan.branchId?.toString(), 'treatment-plan:sent', { planId: plan._id, planNumber: plan.planNumber });
     return this.findById(id, branchId);
   }
 
@@ -376,7 +376,7 @@ export class TreatmentPlansService {
           paymentMethod: 'wallet',
           performedBy: new Types.ObjectId(userId),
         });
-        this.realtimeGateway.emitToAll('wallet:updated', {
+        this.realtimeGateway.emitToBranch(effectiveBranchId, 'wallet:updated', {
           patientId: plan.patientId.toString(),
           balance: patient.walletBalance,
           type: 'payment',
@@ -421,7 +421,7 @@ export class TreatmentPlansService {
           notes: `Settled by treatment plan ${plan.planNumber}`,
         });
       }
-      this.realtimeGateway.emitToAll('treatment-plan:paid', { planId: plan._id, planNumber: plan.planNumber });
+      this.realtimeGateway.emitToBranch(plan.branchId?.toString(), 'treatment-plan:paid', { planId: plan._id, planNumber: plan.planNumber });
     } else {
       plan.paymentStatus = TreatmentPlanPaymentStatusEnum.PARTIAL;
     }

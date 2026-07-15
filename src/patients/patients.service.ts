@@ -190,6 +190,57 @@ export class PatientsService {
   }
 
   /**
+   * Check for potential duplicate patients by phone or name
+   */
+  async checkDuplicates(
+    firstName?: string,
+    lastName?: string,
+    phone?: string,
+    branchId?: string,
+  ): Promise<Array<{ patientId: string; firstName: string; lastName: string; phone?: string; createdAt: Date }>> {
+    const conditions: any[] = [];
+
+    if (phone) {
+      const digits = phone.replace(/\D/g, '');
+      const localDigits = digits.startsWith('232') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
+      if (localDigits) {
+        const normalizedPhone = `+232${localDigits}`;
+        conditions.push({ phone: { $regex: new RegExp(`^${normalizedPhone.replace('+', '\\+')}$`, 'i') } });
+      }
+    }
+
+    if (firstName && lastName) {
+      conditions.push({
+        firstName: { $regex: new RegExp(`^${firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        lastName: { $regex: new RegExp(`^${lastName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      });
+    }
+
+    if (conditions.length === 0) return [];
+
+    const filter: any = { $or: conditions };
+
+    if (branchId) {
+      const branchObjId = new Types.ObjectId(branchId);
+      filter.$and = [
+        { $or: conditions },
+        { $or: [{ branchId: branchObjId }, { branchId: branchId }] },
+      ];
+      delete filter.$or;
+    }
+
+    const matches = await this.patientModel
+      .find(filter)
+      .select('patientId firstName lastName phone createdAt')
+      .limit(5)
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    return matches;
+  }
+
+  /**
    * Search patients by name, ID, phone, or MRN
    */
   async search(query: string, branchId?: string): Promise<Patient[]> {
@@ -752,7 +803,7 @@ export class PatientsService {
     });
 
     const autoApplied = await this.applyWalletToOutstandingOrders(patient, userId, effectiveBranchId, notes);
-    this.realtimeGateway.emitToAll('wallet:updated', {
+    this.realtimeGateway.emitToBranch(effectiveBranchId, 'wallet:updated', {
       patientId,
       balance: patient.walletBalance,
       type: 'deposit',
@@ -869,7 +920,7 @@ export class PatientsService {
         .lean()
         .exec();
       this.realtimeGateway.notifyOrderUpdated(populatedOrder || order);
-      this.realtimeGateway.emitToAll('wallet:updated', {
+    this.realtimeGateway.emitToBranch(effectiveBranchId, 'wallet:updated', {
         patientId: patientObjectId.toString(),
         balance: patient.walletBalance,
         type: 'payment',
@@ -916,7 +967,7 @@ export class PatientsService {
       branchId,
       { notes, performedBy: userId },
     );
-    this.realtimeGateway.emitToAll('wallet:updated', { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes });
+    this.realtimeGateway.emitToBranch(branchId, 'wallet:updated', { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes });
     return { patientId, balance: patient.walletBalance, type: 'withdrawal', amount, notes, timestamp: new Date() };
   }
 

@@ -25,11 +25,6 @@ import { UserRoleEnum } from '../database/schemas/user-role.schema';
 export class ResultsController {
   constructor(private readonly resultsService: ResultsService) {}
 
-  /**
-   * Create a new result (manual entry)
-   * POST /results
-   * Requires: lab_tech or admin role
-   */
   @Post()
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   create(@Body() createResultDto: CreateResultDto, @Request() req: any) {
@@ -39,11 +34,6 @@ export class ResultsController {
     return this.resultsService.create(createResultDto, userId, userRoles, branchId);
   }
 
-  /**
-   * Create multiple results in bulk (much faster)
-   * POST /results/bulk
-   * Requires: lab_tech or admin role
-   */
   @Post('bulk')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   createBulk(@Body() createResultDtos: CreateResultDto[], @Request() req: any) {
@@ -53,11 +43,6 @@ export class ResultsController {
     return this.resultsService.createBulk(createResultDtos, userId, userRoles, branchId);
   }
 
-  /**
-   * Get all results with optional filters
-   * GET /results?orderId=xxx&testCode=xxx&status=xxx&flag=xxx&page=1&limit=10
-   * Requires: authenticated user
-   */
   @Get()
   findAll(
     @Query('orderId') orderId?: string,
@@ -79,11 +64,6 @@ export class ResultsController {
     });
   }
 
-  /**
-   * Get results pending verification
-   * GET /results/pending-verification?page=1&limit=10
-   * Requires: lab_tech or admin role
-   */
   @Get('pending-verification')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   findPendingVerification(
@@ -98,11 +78,6 @@ export class ResultsController {
     );
   }
 
-  /**
-   * Get critical results
-   * GET /results/critical?page=1&limit=10
-   * Requires: lab_tech or admin role
-   */
   @Get('critical')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   findCritical(
@@ -117,44 +92,25 @@ export class ResultsController {
     );
   }
 
-  /**
-   * Get a single result by ID
-   * GET /results/:id
-   * Requires: authenticated user
-   */
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.resultsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.resultsService.findOne(id, req.user?.branchId);
   }
 
-  /**
-   * Update a result
-   * PATCH /results/:id
-   * Requires: lab_tech or admin role
-   */
   @Patch(':id')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
-  update(@Param('id') id: string, @Body() updateResultDto: UpdateResultDto) {
-    return this.resultsService.update(id, updateResultDto);
+  update(@Param('id') id: string, @Body() updateResultDto: UpdateResultDto, @Request() req: any) {
+    return this.resultsService.update(id, updateResultDto, req.user?.branchId);
   }
 
-  /**
-   * Verify a result
-   * POST /results/:id/verify
-   * Requires: lab_tech or admin role
-   */
   @Post(':id/verify')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   verify(@Param('id') id: string, @Request() req: any) {
     const userId = req.user?.userId;
-    return this.resultsService.verify(id, userId);
+    const branchId = req.user?.branchId;
+    return this.resultsService.verify(id, userId, branchId);
   }
 
-  /**
-   * Amend a result with reason tracking
-   * POST /results/:id/amend
-   * Requires: lab_tech or admin role
-   */
   @Post(':id/amend')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   amend(
@@ -163,17 +119,13 @@ export class ResultsController {
     @Request() req: any,
   ) {
     const userId = req.user?.userId;
-    return this.resultsService.amend(id, amendResultDto, userId);
+    const branchId = req.user?.branchId;
+    return this.resultsService.amend(id, amendResultDto, userId, branchId);
   }
 
-  /**
-   * Delete a result
-   * DELETE /results/:id
-   * Requires: admin role only
-   */
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.resultsService.remove(id);
+  remove(@Param('id') id: string, @Request() req: any) {
+    return this.resultsService.remove(id, req.user?.branchId);
   }
 }

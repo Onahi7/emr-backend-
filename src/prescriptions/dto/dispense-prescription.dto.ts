@@ -78,7 +78,7 @@ export class DispensePrescriptionDto {
    * Payment method used by the patient — forwarded to CAF for the sale record.
    */
   @IsOptional()
-  @IsIn(['cash', 'card', 'orange_money', 'africell_money', 'qmoney', 'bank_transfer', 'insurance', 'credit'])
+  @IsIn(['cash', 'card', 'orange_money', 'afrimoney', 'qmoney', 'bank_transfer', 'insurance', 'credit'])
   paymentMethod?: string;
 
   /**

@@ -23,14 +23,14 @@ export class ReconciliationController {
 
   @Get('expected/:date')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async getExpectedAmounts(@Param('date') date: string, @Query('branchId') branchId?: string) {
-    return this.reconciliationService.getExpectedAmounts(new Date(date), branchId);
+  async getExpectedAmounts(@Param('date') date: string, @Request() req: any) {
+    return this.reconciliationService.getExpectedAmounts(new Date(date), req.user?.branchId);
   }
 
   @Get('daily-report/:date')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async getDailyReport(@Param('date') date: string, @Query('branchId') branchId?: string) {
-    return this.reconciliationService.getDailyReport(new Date(date), branchId);
+  async getDailyReport(@Param('date') date: string, @Request() req: any) {
+    return this.reconciliationService.getDailyReport(new Date(date), req.user?.branchId);
   }
 
   @Get('doctor-referral-report')
@@ -40,14 +40,14 @@ export class ReconciliationController {
     @Query('endDate') endDate?: string,
     @Query('doctor') doctor?: string,
     @Query('doctorId') doctorId?: string,
-    @Query('branchId') branchId?: string,
+    @Request() req?: any,
   ) {
     return this.reconciliationService.getDoctorReferralReport({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       doctor,
       doctorId,
-      branchId,
+      branchId: req.user?.branchId,
     });
   }
 
@@ -56,28 +56,27 @@ export class ReconciliationController {
   async create(
     @Body() createDto: CreateReconciliationDto,
     @Request() req: any,
-    @Query('branchId') branchId?: string,
   ) {
-    return this.reconciliationService.create(createDto, req.user?.userId, branchId);
+    return this.reconciliationService.create(createDto, req.user?.userId, req.user?.branchId);
   }
 
   @Get()
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async findAll(@Query('status') status?: string, @Query('branchId') branchId?: string) {
-    return this.reconciliationService.findAll(status, branchId);
+  async findAll(@Query('status') status?: string, @Request() req?: any) {
+    return this.reconciliationService.findAll(status, req.user?.branchId);
   }
 
   @Get('pending/count')
   @Roles(UserRoleEnum.ADMIN)
-  async getPendingCount(@Query('branchId') branchId?: string) {
-    const count = await this.reconciliationService.getPendingCount(branchId);
+  async getPendingCount(@Request() req: any) {
+    const count = await this.reconciliationService.getPendingCount(req.user?.branchId);
     return { count };
   }
 
   @Get(':id')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
-  async findOne(@Param('id') id: string, @Query('branchId') branchId?: string) {
-    return this.reconciliationService.findOne(id, branchId);
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    return this.reconciliationService.findOne(id, req.user?.branchId);
   }
 
   @Post(':id/review')
@@ -86,8 +85,7 @@ export class ReconciliationController {
     @Param('id') id: string,
     @Body() reviewDto: ReviewReconciliationDto,
     @Request() req: any,
-    @Query('branchId') branchId?: string,
   ) {
-    return this.reconciliationService.review(id, reviewDto, req.user?.userId, branchId);
+    return this.reconciliationService.review(id, reviewDto, req.user?.userId, req.user?.branchId);
   }
 }

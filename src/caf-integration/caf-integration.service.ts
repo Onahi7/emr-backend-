@@ -79,14 +79,32 @@ export class CafIntegrationService implements OnModuleInit {
       return null;
     }
 
-    const baseUrl = (branch?.cafBaseUrl || this.baseUrl || '').replace(/\/$/, '');
-    const username = branch?.cafUsername || this.username || '';
-    const password = branch?.cafPassword || this.password || '';
-    const cafBranchId = branch?.cafBranchId || this.branchId || '';
-    const terminalId = branch?.cafTerminalId || 'emr-integration';
+    let baseUrl: string;
+    let username: string;
+    let password: string;
+    let cafBranchId: string;
+    let terminalId: string;
 
-    if (!baseUrl || !username || !password || !cafBranchId) {
-      return null;
+    if (branch) {
+      baseUrl = (branch.cafBaseUrl || '').replace(/\/$/, '');
+      username = branch.cafUsername || '';
+      password = branch.cafPassword || '';
+      cafBranchId = branch.cafBranchId || '';
+      terminalId = branch.cafTerminalId || 'emr-integration';
+
+      if (!baseUrl || !username || !password || !cafBranchId) {
+        return null;
+      }
+    } else {
+      baseUrl = (this.baseUrl || '').replace(/\/$/, '');
+      username = this.username || '';
+      password = this.password || '';
+      cafBranchId = this.branchId || '';
+      terminalId = 'emr-integration';
+
+      if (!baseUrl || !username || !password || !cafBranchId) {
+        return null;
+      }
     }
 
     return {
