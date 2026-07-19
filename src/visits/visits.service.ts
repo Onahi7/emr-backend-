@@ -72,7 +72,7 @@ export class VisitsService {
     return `VIS-${datePart}-${paddedValue}`;
   }
 
-  private assertClinicalVisitAccess(visit: Visit, actor: ClinicalVisitActor): void {
+  private async assertClinicalVisitAccess(visit: Visit, actor: ClinicalVisitActor): Promise<void> {
     if (!visit.consultationPaid) {
       throw new ForbiddenException('Consultation payment or coverage is required before clinical documentation');
     }
@@ -80,9 +80,25 @@ export class VisitsService {
       throw new ConflictException('Closed visits cannot be clinically edited');
     }
     if (actor.roles?.includes(UserRoleEnum.ADMIN)) return;
-    if (!actor.doctorId || !visit.doctorId || visit.doctorId.toString() !== actor.doctorId) {
-      throw new ForbiddenException('This visit belongs to another treating doctor');
-    }
+    if (!visit.doctorId) throw new ForbiddenException('This visit has no treating doctor assigned');
+
+    const assignedDoctorId = visit.doctorId.toString();
+    // Some legacy encounters were assigned directly to the authenticated Profile ID
+    // because the account did not yet have a linked Doctor record. Keep those usable
+    // without allowing a different authenticated user to claim them.
+    if (assignedDoctorId === actor.doctorId || assignedDoctorId === actor.userId) return;
+
+    // Resolve the current link at write time as well as trusting the signed JWT. This
+    // keeps a doctor productive after an administrator links their Doctor record while
+    // an older access token is still active, and remains strictly branch-scoped.
+    const linkedDoctor = await this.doctorModel
+      .findOne(withBranch({ userId: new Types.ObjectId(actor.userId), isActive: true }, visit.branchId.toString()))
+      .select('_id')
+      .lean()
+      .exec();
+    if (linkedDoctor?._id?.toString() === assignedDoctorId) return;
+
+    throw new ForbiddenException('This visit belongs to another treating doctor');
   }
 
   private applyClinicalVisitFields(visit: Visit, dto: ClinicalVisitDraftDto): void {
@@ -829,7 +845,7 @@ export class VisitsService {
           .findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId))
           .session(session);
         if (!visit) throw new NotFoundException('Visit not found');
-        this.assertClinicalVisitAccess(visit, actor);
+        await this.assertClinicalVisitAccess(visit, actor);
         this.applyClinicalVisitFields(visit, dto);
         const soapNote = await this.persistCanonicalSoap(visit, dto, requiredBranchId, actor, session, false);
         const savedVisit = await visit.save({ session });
@@ -1316,7 +1332,7 @@ export class VisitsService {
           .findOne(withBranch({ _id: new Types.ObjectId(id) }, requiredBranchId))
           .session(session);
         if (!visit) throw new NotFoundException('Visit not found');
-        this.assertClinicalVisitAccess(visit, actor);
+        await this.assertClinicalVisitAccess(visit, actor);
         if (![VisitStatusEnum.IN_CONSULTATION, VisitStatusEnum.RESULTS_READY, VisitStatusEnum.AWAITING_DOCTOR_REVIEW].includes(visit.status)) {
           throw new BadRequestException(`Visit cannot be completed from status '${visit.status}'`);
         }

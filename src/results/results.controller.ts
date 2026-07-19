@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { ResultsService } from './results.service';
 import { CreateResultDto } from './dto/create-result.dto';
@@ -37,6 +38,9 @@ export class ResultsController {
   @Post('bulk')
   @Roles(UserRoleEnum.LAB_TECH, UserRoleEnum.ADMIN)
   createBulk(@Body() createResultDtos: CreateResultDto[], @Request() req: any) {
+    if (!Array.isArray(createResultDtos)) {
+      throw new BadRequestException('Request body must be an array of results');
+    }
     const userId = req.user?.userId;
     const userRoles = req.user?.roles || [];
     const branchId = req.user?.branchId;

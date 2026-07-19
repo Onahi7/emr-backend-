@@ -8,6 +8,7 @@ import {
   Param,
   UseGuards,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import { PanelInterpretationsService } from './panel-interpretations.service';
@@ -56,6 +57,9 @@ export class PanelInterpretationsController {
     @Body() body: { orderId: string; panel: PanelResults },
     @Req() req: AuthenticatedRequest,
   ) {
+    if (!body?.orderId || !body?.panel || !Array.isArray(body.panel.results)) {
+      throw new BadRequestException('orderId and a panel with results are required');
+    }
     const interpretation = await this.aiInterpretationService.generateInterpretation(
       body.orderId,
       body.panel,
@@ -87,6 +91,9 @@ export class PanelInterpretationsController {
     @Body() body: { orderId: string; panels: PanelResults[] },
     @Req() req: AuthenticatedRequest,
   ) {
+    if (!body?.orderId || !Array.isArray(body?.panels)) {
+      throw new BadRequestException('orderId and panels are required');
+    }
     const results = [];
     for (const panel of body.panels) {
       try {

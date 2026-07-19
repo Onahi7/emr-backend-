@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { QueueService } from './queue.service';
 import { CreateQueueDto } from './dto/create-queue.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -31,6 +31,9 @@ export class QueueController {
   @Patch('reorder')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST, UserRoleEnum.NURSE)
   reorderQueue(@Body() body: { queueIds: string[] }, @Request() req: any) {
+    if (!Array.isArray(body?.queueIds)) {
+      throw new BadRequestException('queueIds must be an array');
+    }
     return this.queueService.reorderQueue(body.queueIds, req.user?.branchId);
   }
 

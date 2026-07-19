@@ -11,6 +11,7 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
@@ -48,7 +49,10 @@ export class PatientsController {
   @Get('search')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.PHARMACIST, UserRoleEnum.LAB_TECH, UserRoleEnum.RECEPTIONIST)
   async search(@Query('q') query: string, @Request() req: any) {
-    return this.patientsService.search(query, req.user?.branchId);
+    if (typeof query !== 'string' || !query.trim()) {
+      throw new BadRequestException('Search query q is required');
+    }
+    return this.patientsService.search(query.trim(), req.user?.branchId);
   }
 
   @Get('check-duplicates')

@@ -66,8 +66,7 @@ export class LoggingInterceptor implements NestInterceptor {
 
           // Log response data in debug mode (truncate if too large)
           if (data) {
-            const responseData =
-              typeof data === 'object' ? JSON.stringify(data) : String(data);
+            const responseData = this.serializeResponse(data);
             const truncatedData =
               responseData.length > 500
                 ? responseData.substring(0, 500) + '...'
@@ -85,6 +84,15 @@ export class LoggingInterceptor implements NestInterceptor {
         },
       }),
     );
+  }
+
+  private serializeResponse(data: any): string {
+    if (typeof data !== 'object') return String(data);
+    try {
+      return JSON.stringify(data);
+    } catch {
+      return `[${data?.constructor?.name || 'Object'} response omitted from logs]`;
+    }
   }
 
   /**

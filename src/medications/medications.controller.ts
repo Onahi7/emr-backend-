@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Logger, Request } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Logger, Request } from '@nestjs/common';
 import { MedicationsService } from './medications.service';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
@@ -99,15 +99,19 @@ export class MedicationsController {
   @Get('search')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async search(@Query('q') searchTerm: string, @Request() req: any) {
+    if (typeof searchTerm !== 'string' || !searchTerm.trim()) {
+      throw new BadRequestException('Search query q is required');
+    }
     const branchId = req.user?.branchId;
-    const localResults = await this.medicationsService.search(searchTerm);
+    const normalizedSearchTerm = searchTerm.trim();
+    const localResults = await this.medicationsService.search(normalizedSearchTerm);
 
     if (await this.cafIntegrationService.isConfiguredForBranch(branchId)) {
       try {
-        const cafProducts = await this.cafIntegrationService.searchProducts(searchTerm, branchId);
+        const cafProducts = await this.cafIntegrationService.searchProducts(normalizedSearchTerm, branchId);
         if (cafProducts.length > 0) {
           const cafMeds = cafProducts.map((p) => this.normalizeCafMedication(p, branchId));
-          this.logger.log(`Search merged ${cafMeds.length} CAF + ${localResults.length} local results for "${searchTerm}"`);
+          this.logger.log(`Search merged ${cafMeds.length} CAF + ${localResults.length} local results for "${normalizedSearchTerm}"`);
           return [...cafMeds, ...localResults];
         }
       } catch (error: any) {

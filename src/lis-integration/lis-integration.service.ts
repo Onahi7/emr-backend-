@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import axios, { AxiosInstance } from 'axios';
@@ -361,14 +361,14 @@ export class LisIntegrationService {
   async fetchAndStoreResults(orderId: string, branchId?: string): Promise<any> {
     const requiredBranchId = requireBranchId(branchId);
     const order = await this.orderModel.findOne(withBranch({ _id: new Types.ObjectId(orderId) }, requiredBranchId)).lean();
-    if (!order) throw new Error('Order not found');
+    if (!order) throw new NotFoundException('Order not found');
     if (!order.lisExternalRequestId) {
-      throw new Error('Order has not been synced to LIS');
+      throw new BadRequestException('Order has not been synced to LIS');
     }
 
     const client = await this.createLisClient(requiredBranchId) || this.client;
     if (!client) {
-      throw new Error('LIS integration is not configured');
+      throw new ServiceUnavailableException('LIS integration is not configured');
     }
 
     const response = await client.get(

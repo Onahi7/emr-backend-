@@ -9,6 +9,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -94,6 +95,9 @@ export class ReportTemplatesController {
     }),
   )
   uploadLogo(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Logo file is required');
+    }
     return {
       url: `/uploads/logos/${file.filename}`,
       filename: file.filename,
