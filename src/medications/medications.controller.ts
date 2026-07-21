@@ -69,6 +69,7 @@ export class MedicationsController {
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.PHARMACIST, UserRoleEnum.INVENTORY_MANAGER, UserRoleEnum.DOCTOR, UserRoleEnum.SPECIALIST, UserRoleEnum.NURSE, UserRoleEnum.RECEPTIONIST)
   async findAll(@Query('category') category: MedicationCategoryEnum | undefined, @Query('lowStock') lowStock: boolean | undefined, @Request() req: any) {
     const branchId = req.user?.branchId;
+    this.logger.log(`GET /medications — branchId: ${branchId || 'NONE'} roles: ${JSON.stringify(req.user?.roles)}`);
     if (lowStock) {
       return this.medicationsService.findLowStock();
     }
@@ -76,7 +77,9 @@ export class MedicationsController {
     const localMeds = await this.medicationsService.findAll(query);
 
     // Merge CAF products when configured
-    if (await this.cafIntegrationService.isConfiguredForBranch(branchId)) {
+    const cafConfigured = await this.cafIntegrationService.isConfiguredForBranch(branchId);
+    this.logger.log(`GET /medications — CAF configured for branch ${branchId || 'NONE'}: ${cafConfigured}`);
+    if (cafConfigured) {
       try {
         const cafParams: any = { page: 1, limit: 500 };
         if (category) cafParams.category = category;

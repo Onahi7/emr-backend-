@@ -76,6 +76,7 @@ export class CafIntegrationService implements OnModuleInit {
       : null;
 
     if (branch && branch.cafEnabled === false && !branch.cafBranchId) {
+      this.logger.warn(`CAF resolveConfig: branch ${branchId} has cafEnabled=false and no cafBranchId — skipping`);
       return null;
     }
 
@@ -86,15 +87,25 @@ export class CafIntegrationService implements OnModuleInit {
     let terminalId: string;
 
     if (branch) {
-      baseUrl = (branch.cafBaseUrl || '').replace(/\/$/, '');
-      username = branch.cafUsername || '';
-      password = branch.cafPassword || '';
-      cafBranchId = branch.cafBranchId || '';
+      // Branch-specific CAF config, with global env var fallback for missing fields
+      baseUrl = (branch.cafBaseUrl || this.baseUrl || '').replace(/\/$/, '');
+      username = branch.cafUsername || this.username || '';
+      password = branch.cafPassword || this.password || '';
+      cafBranchId = branch.cafBranchId || this.branchId || '';
       terminalId = branch.cafTerminalId || 'emr-integration';
 
       if (!baseUrl || !username || !password || !cafBranchId) {
+        const missing: string[] = [];
+        if (!baseUrl) missing.push('cafBaseUrl');
+        if (!username) missing.push('cafUsername');
+        if (!password) missing.push('cafPassword');
+        if (!cafBranchId) missing.push('cafBranchId');
+        this.logger.warn(`CAF resolveConfig: branch ${branchId} has incomplete CAF config (missing: ${missing.join(', ')}), no global fallback available`);
         return null;
       }
+    } else if (branchId) {
+      this.logger.warn(`CAF resolveConfig: branch ${branchId} not found in database`);
+      return null;
     } else {
       baseUrl = (this.baseUrl || '').replace(/\/$/, '');
       username = this.username || '';
@@ -103,6 +114,7 @@ export class CafIntegrationService implements OnModuleInit {
       terminalId = 'emr-integration';
 
       if (!baseUrl || !username || !password || !cafBranchId) {
+        this.logger.warn(`CAF resolveConfig: no branchId provided and global env vars not configured`);
         return null;
       }
     }
