@@ -957,6 +957,7 @@ export class VisitsService {
       doctorId?: string;
       triageAlert?: boolean;
       triageAlerts?: string[];
+      rapidTestsRequested?: ('malaria' | 'typhoid')[];
     },
     nurseId?: string,
     branchId?: string,
@@ -997,6 +998,27 @@ export class VisitsService {
     this.logger.log(
       `Triage complete for visit: ${savedVisit.visitNumber} - assigned to doctor ${doctorId}`,
     );
+
+    // If nurse selected rapid tests, record them on the visit and add fees
+    if (data.rapidTestsRequested && data.rapidTestsRequested.length > 0) {
+      const requiredBranchId = branchId?.toString() || savedVisit.branchId?.toString();
+      let rdtFee = 0;
+      for (const testType of data.rapidTestsRequested) {
+        const priceCode = testType === 'malaria'
+          ? ServicePriceCodeEnum.RAPID_MALARIA
+          : ServicePriceCodeEnum.RAPID_TYPHOID;
+        const price = requiredBranchId
+          ? await this.servicePricesService.getPrice(requiredBranchId, priceCode)
+          : (testType === 'malaria' ? 50 : 50);
+        rdtFee += price;
+      }
+      savedVisit.rapidTestsRequested = data.rapidTestsRequested;
+      savedVisit.consultationFee = Math.round(((savedVisit.consultationFee || 0) + rdtFee) * 100) / 100;
+      await savedVisit.save();
+      this.logger.log(
+        `Rapid tests [${data.rapidTestsRequested.join(', ')}] added to visit ${savedVisit.visitNumber} (+Le ${rdtFee})`,
+      );
+    }
 
     const triagePriority =
       data.triagePriority && (data.triagePriority === 'urgent' || data.triagePriority === 'emergency' || data.triagePriority === 'high')
