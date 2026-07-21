@@ -69,6 +69,7 @@ describe('VisitsService clinical integrity', () => {
       realtime as any,
       {} as any,
       {} as any,
+      {} as any, // insuranceClaimsService
     );
     return { service, visit, visitModel, soapModel, noteSave, session, realtime, doctorModel };
   };

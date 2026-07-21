@@ -288,8 +288,20 @@ export class PatientsService {
         query.branchId = new Types.ObjectId(branchId);
       }
 
+      // Allow clearing insurance by sending null (uncheck on patient edit form).
+      const dto: any = { ...updatePatientDto };
+      const updateOps: any = { $set: {} };
+      if (Object.prototype.hasOwnProperty.call(dto, 'insurance') && (dto.insurance === null || dto.insurance === undefined)) {
+        delete dto.insurance;
+        updateOps.$unset = { insurance: 1 };
+      }
+      for (const [key, value] of Object.entries(dto)) {
+        if (value !== undefined) updateOps.$set[key] = value;
+      }
+      if (Object.keys(updateOps.$set).length === 0) delete updateOps.$set;
+
       const patient = await this.patientModel
-        .findOneAndUpdate(query, updatePatientDto, { new: true })
+        .findOneAndUpdate(query, updateOps, { new: true })
         .populate('registeredBy', 'fullName email')
         .exec();
 

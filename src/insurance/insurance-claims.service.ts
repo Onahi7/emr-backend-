@@ -241,24 +241,54 @@ export class InsuranceClaimsService {
   }
 
   private async reconcileClaimOrderCoverage(claim: InsuranceClaimDocument, approvedAmount: number, branchId: string) {
-    const coveredOrderItems = claim.items.filter(item =>
-      item.coveredByInsurance &&
-      (item.itemType === ClaimItemTypeEnum.LAB_ORDER || item.itemType === ClaimItemTypeEnum.PRESCRIPTION),
-    );
-    if (coveredOrderItems.length === 0) return;
+    const coveredItems = claim.items.filter(item => item.coveredByInsurance);
+    if (coveredItems.length === 0) return;
 
-    const claimedOrderAmount = coveredOrderItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
-    const allocationTotal = Math.min(approvedAmount, claimedOrderAmount);
+    const claimedTotal = coveredItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+    const allocationTotal = Math.min(approvedAmount, claimedTotal);
     let allocated = 0;
-    for (let index = 0; index < coveredOrderItems.length; index += 1) {
-      const item = coveredOrderItems[index];
-      const isLast = index === coveredOrderItems.length - 1;
+
+    for (let index = 0; index < coveredItems.length; index += 1) {
+      const item = coveredItems[index];
+      const isLast = index === coveredItems.length - 1;
       const itemApproved = isLast
         ? Math.max(0, Math.round((allocationTotal - allocated) * 100) / 100)
-        : Math.round((allocationTotal * (Number(item.totalAmount || 0) / claimedOrderAmount)) * 100) / 100;
+        : claimedTotal > 0
+          ? Math.round((allocationTotal * (Number(item.totalAmount || 0) / claimedTotal)) * 100) / 100
+          : 0;
       allocated += itemApproved;
-      await this.ordersService.adjustInsurancePayment(item.itemId.toString(), claim._id.toString(), itemApproved, branchId);
+
+      if (item.itemType === ClaimItemTypeEnum.LAB_ORDER || item.itemType === ClaimItemTypeEnum.PRESCRIPTION) {
+        await this.ordersService.adjustInsurancePayment(item.itemId.toString(), claim._id.toString(), itemApproved, branchId);
+      } else if (item.itemType === ClaimItemTypeEnum.CONSULTATION) {
+        await this.adjustConsultationInsurancePayment(claim._id.toString(), item.itemId.toString(), itemApproved, branchId);
+      }
     }
+  }
+
+  private async adjustConsultationInsurancePayment(
+    claimId: string,
+    visitId: string,
+    approvedAmount: number,
+    branchId: string,
+  ) {
+    const payment = await this.paymentModel.findOne({
+      ...withBranch({}, branchId),
+      visitId: new Types.ObjectId(visitId),
+      insuranceClaimId: new Types.ObjectId(claimId),
+      paymentType: PaymentTypeEnum.CONSULTATION,
+      paymentMethod: 'insurance',
+      isRefunded: { $ne: true },
+    }).exec();
+
+    if (!payment) {
+      this.logger.warn(`Consultation insurance payment not found for visit ${visitId}, claim ${claimId}`);
+      return;
+    }
+
+    payment.amount = Math.max(0, Math.round(approvedAmount * 100) / 100);
+    payment.notes = `${payment.notes || 'Insurance consultation'}; approved amount adjusted to Le ${payment.amount}`;
+    await payment.save();
   }
 
   async getStats(branchId?: string): Promise<any> {
@@ -285,6 +315,97 @@ export class InsuranceClaimsService {
       byProgram: programCounts,
       totals: totals[0] || { totalClaims: 0, totalClaimed: 0, totalPaid: 0, totalPatient: 0 },
     };
+  }
+
+  /**
+   * Record consultation coverage as a submitted claim item + receivable Payment.
+   * Called when a visit is created with consultationCoverageType = insurance.
+   */
+  async recordConsultationInsuranceCoverage(
+    visit: any,
+    amount: number,
+    createdBy?: string,
+    branchId?: string,
+  ): Promise<InsuranceClaim | null> {
+    const requiredBranchId = requireBranchId(branchId || visit?.branchId?.toString());
+    const claimAmount = Math.round(Number(amount || 0) * 100) / 100;
+    if (claimAmount <= 0) return null;
+    if (!visit?.insurance?.programCode) {
+      throw new BadRequestException('Visit has no insurance snapshot for consultation claim');
+    }
+
+    const visitId = visit._id || visit.id;
+    const existing = await this.claimModel.findOne(withBranch({
+      visitId: new Types.ObjectId(visitId.toString()),
+      'items.itemType': ClaimItemTypeEnum.CONSULTATION,
+      'items.itemId': new Types.ObjectId(visitId.toString()),
+    }, requiredBranchId));
+    if (existing) return existing;
+
+    this.assertNotBlocked(await this.findActiveInsuranceBlock(
+      visit.patientId,
+      visit.insurance.memberNumber,
+      visit.insurance.programCode,
+      requiredBranchId,
+    ));
+
+    const item = {
+      itemType: ClaimItemTypeEnum.CONSULTATION,
+      itemId: new Types.ObjectId(visitId.toString()),
+      description: `Consultation ${visit.visitNumber || ''}`.trim(),
+      quantity: 1,
+      unitPrice: claimAmount,
+      totalAmount: claimAmount,
+      coveredByInsurance: true,
+    };
+
+    let claim = await this.claimModel.findOne(withBranch({
+      visitId: new Types.ObjectId(visitId.toString()),
+      status: ClaimStatusEnum.SUBMITTED,
+    }, requiredBranchId));
+
+    if (claim) {
+      claim.items.push(item as any);
+      claim.totalAmount = claim.items.reduce((sum, i) => sum + i.totalAmount, 0);
+      claim.claimedAmount = claim.items.filter(i => i.coveredByInsurance).reduce((sum, i) => sum + i.totalAmount, 0);
+      claim.patientAmount = claim.totalAmount - claim.claimedAmount;
+      await claim.save();
+    } else {
+      claim = await this.claimModel.create({
+        visitId: new Types.ObjectId(visitId.toString()),
+        patientId: new Types.ObjectId((visit.patientId?._id || visit.patientId).toString()),
+        branchId: new Types.ObjectId(requiredBranchId),
+        programCode: visit.insurance.programCode,
+        subEntityCode: visit.insurance.subEntityCode,
+        memberNumber: visit.insurance.memberNumber,
+        memberName: visit.insurance.memberName,
+        items: [item],
+        totalAmount: claimAmount,
+        claimedAmount: claimAmount,
+        patientAmount: 0,
+        status: ClaimStatusEnum.SUBMITTED,
+        submittedAt: new Date(),
+        verifiedAt: new Date(),
+        verifiedBy: createdBy && Types.ObjectId.isValid(createdBy) ? new Types.ObjectId(createdBy) : undefined,
+        createdBy: createdBy && Types.ObjectId.isValid(createdBy) ? new Types.ObjectId(createdBy) : undefined,
+      });
+    }
+
+    await this.paymentModel.create({
+      visitId: new Types.ObjectId(visitId.toString()),
+      patientId: new Types.ObjectId((visit.patientId?._id || visit.patientId).toString()),
+      paymentType: PaymentTypeEnum.CONSULTATION,
+      amount: claimAmount,
+      paymentMethod: 'insurance',
+      insuranceClaimId: claim._id,
+      isReceivable: true,
+      receivedBy: createdBy && Types.ObjectId.isValid(createdBy) ? new Types.ObjectId(createdBy) : undefined,
+      notes: `Insurance-covered consultation for visit ${visit.visitNumber} (claim ${claim._id})`,
+      branchId: new Types.ObjectId(requiredBranchId),
+    });
+
+    this.logger.log(`Consultation insurance claim ${claim._id} created for visit ${visit.visitNumber} (Le ${claimAmount})`);
+    return claim;
   }
 
   async markOrderAsInsuranceCovered(
@@ -345,11 +466,10 @@ export class InsuranceClaimsService {
       throw new BadRequestException(`Insurance amount (${amountToClaim}) exceeds remaining balance (${remainingBalance})`);
     }
 
-    // Create a submitted claim. Coverage is operationally authorized, while
-    // insurer approval/payment remains visible in the claim lifecycle.
+    // Only append to an open submitted claim. Approved claims must not gain new items.
     let claim = await this.claimModel.findOne(withBranch({
       visitId: visit._id,
-      status: { $in: [ClaimStatusEnum.SUBMITTED, ClaimStatusEnum.APPROVED] },
+      status: ClaimStatusEnum.SUBMITTED,
     }, requiredBranchId));
 
     const description = (order as any).orderType === 'lab'

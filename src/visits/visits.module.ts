@@ -13,6 +13,7 @@ import { SoapNote, SoapNoteSchema } from '../database/schemas/soap-note.schema';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { OrdersModule } from '../orders/orders.module';
 import { ServicePricesModule } from '../service-prices/service-prices.module';
+import { InsuranceModule } from '../insurance/insurance.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { ServicePricesModule } from '../service-prices/service-prices.module';
     RealtimeModule,
     OrdersModule,
     ServicePricesModule,
+    InsuranceModule,
   ],
   controllers: [VisitsController],
   providers: [VisitsService],

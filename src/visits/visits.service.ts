@@ -20,6 +20,7 @@ import { requireBranchId, branchFilter, branchFilterOptional, withBranch } from 
 import { SoapNote, SoapNoteTypeEnum } from '../database/schemas/soap-note.schema';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { ClinicalVisitDraftDto, CompleteVisitDto } from './dto/clinical-visit-draft.dto';
+import { InsuranceClaimsService } from '../insurance/insurance-claims.service';
 
 interface ClinicalVisitActor {
   userId: string;
@@ -43,6 +44,7 @@ export class VisitsService {
     private realtimeGateway: RealtimeGateway,
     private ordersService: OrdersService,
     private servicePricesService: ServicePricesService,
+    private insuranceClaimsService: InsuranceClaimsService,
   ) {}
 
   private async isSystemDoctor(doctorId: string): Promise<boolean> {
@@ -412,7 +414,11 @@ export class VisitsService {
       && !!paidEntitlement
       && visitsOnEntitlement < 2;
 
-    const finalConsultationFee = (consultationFeeWaived || consultationCoveredByInsurance) ? 0 : (configuredConsultationFee || consultationFee);
+    // Follow-up waive zeros the fee. Insurance keeps the configured fee for AR/claim tracking
+    // (patient still pays nothing — consultationPaid + coverageType handle that).
+    const finalConsultationFee = consultationFeeWaived
+      ? 0
+      : (configuredConsultationFee || consultationFee || 0);
 
     const visitData: any = {
       branchId: new Types.ObjectId(requiredBranchId),
@@ -426,6 +432,7 @@ export class VisitsService {
       temperature: temperature || undefined,
       status: (consultationFeeWaived || consultationCoveredByInsurance) ? VisitStatusEnum.AWAITING_TRIAGE : VisitStatusEnum.WAITING_PAYMENT,
       consultationPaid: consultationFeeWaived || consultationCoveredByInsurance,
+      consultationPaymentMethod: consultationCoveredByInsurance ? 'insurance' : undefined,
       consultationCoverageType: consultationCoveredByInsurance
         ? ConsultationCoverageTypeEnum.INSURANCE
         : consultationFeeWaived
@@ -439,8 +446,9 @@ export class VisitsService {
       rapidTestResults: [],
     };
 
-    // Snapshot patient insurance onto visit
-    if (patientObj.insurance && patientObj.insurance.programCode && !createVisitDto.selfPayOverride) {
+    // Always snapshot patient insurance so labs/pharmacy can still be billed to
+    // insurance even when the consultation itself is self-pay / waiting-period.
+    if (patientObj.insurance && patientObj.insurance.programCode) {
       visitData.insurance = {
         programCode: patientObj.insurance.programCode,
         subEntityCode: patientObj.insurance.subEntityCode,
@@ -468,6 +476,20 @@ export class VisitsService {
       }
     }
     this.logger.log(`Visit created: ${savedVisit.visitNumber}${consultationFeeWaived ? ' (included follow-up visit)' : ''}${consultationCoveredByInsurance ? ' (consultation covered by insurance)' : ''}`);
+
+    // Create claim + receivable payment so consultation AR is trackable.
+    if (consultationCoveredByInsurance && finalConsultationFee > 0) {
+      try {
+        await this.insuranceClaimsService.recordConsultationInsuranceCoverage(
+          savedVisit,
+          finalConsultationFee,
+          registeredBy,
+          requiredBranchId,
+        );
+      } catch (e) {
+        this.logger.warn(`Failed to create consultation insurance claim for ${savedVisit.visitNumber}: ${e}`);
+      }
+    }
 
     // Included follow-ups and covered insurance visits skip the payment step.
     if (consultationFeeWaived || consultationCoveredByInsurance) {
@@ -509,7 +531,7 @@ export class VisitsService {
     const filter = branchId ? { ...query, branchId } : query;
     return this.visitModel
       .find(filter)
-      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('doctorId', 'fullName')
       .populate('registeredBy', 'fullName')
       .sort({ createdAt: -1 })
@@ -555,7 +577,7 @@ export class VisitsService {
 
     return this.visitModel
       .find(query)
-      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('doctorId', 'fullName department')
       .sort({ triagedAt: 1, createdAt: 1 })
       .exec();
@@ -564,7 +586,7 @@ export class VisitsService {
   async getAwaitingLabPayment(branchId?: string): Promise<Visit[]> {
     return this.visitModel
       .find({ status: VisitStatusEnum.AWAITING_LAB, ...(branchId ? { branchId } : {}) })
-      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
@@ -573,7 +595,7 @@ export class VisitsService {
   async getAwaitingPharmacyPayment(branchId?: string): Promise<Visit[]> {
     return this.visitModel
       .find({ status: VisitStatusEnum.AWAITING_PHARMACY, ...(branchId ? { branchId } : {}) })
-      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
@@ -582,7 +604,7 @@ export class VisitsService {
   async getAwaitingDispensing(branchId?: string): Promise<Visit[]> {
     return this.visitModel
       .find({ status: VisitStatusEnum.AWAITING_DISPENSING, ...(branchId ? { branchId } : {}) })
-      .populate('patientId', 'patientId firstName lastName age gender phone')
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('doctorId', 'fullName')
       .sort({ createdAt: 1 })
       .exec();
@@ -642,47 +664,47 @@ export class VisitsService {
       await Promise.all([
         this.visitModel
           .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ triagedAt: 1, createdAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: { $in: openEncounterStatuses }, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
+          .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions insurance')
           .sort({ updatedAt: -1, consultationStartedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.AWAITING_LAB, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.AWAITING_RESULTS, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.AWAITING_PHARMACY, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.AWAITING_DISPENSING, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.AWAITING_DOCTOR_REVIEW, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.ADMITTED, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
           .find({ status: VisitStatusEnum.RESULTS_READY, ...doctorFilter, ...branchFilter })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .sort({ updatedAt: 1 })
           .exec(),
         this.visitModel
@@ -691,7 +713,7 @@ export class VisitsService {
             status: VisitStatusEnum.REFERRED,
             ...branchFilter,
           })
-          .populate('patientId', 'patientId firstName lastName age gender phone')
+          .populate('patientId', 'patientId firstName lastName age gender phone insurance')
           .populate('doctorId', 'fullName department')
           .sort({ referredAt: -1 })
           .exec(),
@@ -770,24 +792,24 @@ export class VisitsService {
     ] = await Promise.all([
       this.visitModel
         .find({ status: VisitStatusEnum.WAITING_PAYMENT, ...branchFilter })
-        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('patientId', 'patientId firstName lastName age gender phone insurance')
         .sort({ createdAt: 1 })
         .exec(),
       this.visitModel
         .find({ status: VisitStatusEnum.AWAITING_LAB, ...branchFilter })
-        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('patientId', 'patientId firstName lastName age gender phone insurance')
         .populate('doctorId', 'fullName')
         .sort({ createdAt: 1 })
         .exec(),
       this.visitModel
         .find({ status: VisitStatusEnum.AWAITING_PHARMACY, ...branchFilter })
-        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('patientId', 'patientId firstName lastName age gender phone insurance')
         .populate('doctorId', 'fullName')
         .sort({ createdAt: 1 })
         .exec(),
       this.visitModel
         .find({ status: VisitStatusEnum.IN_QUEUE, consultationPaid: true, ...branchFilter })
-        .populate('patientId', 'patientId firstName lastName age gender phone')
+        .populate('patientId', 'patientId firstName lastName age gender phone insurance')
         .populate('doctorId', 'fullName')
         .sort({ createdAt: 1 })
         .exec(),
@@ -1083,7 +1105,7 @@ export class VisitsService {
     const query: any = withBranch({ status: VisitStatusEnum.AWAITING_TRIAGE }, branchId);
     return this.visitModel
       .find(query)
-      .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
+      .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions insurance')
       .sort({ createdAt: 1 })
       .exec();
   }
@@ -1124,7 +1146,7 @@ export class VisitsService {
         status: VisitStatusEnum.REFERRED,
         ...(branchId ? { branchId } : {}),
       })
-      .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions')
+      .populate('patientId', 'patientId firstName lastName age gender phone allergies chronicConditions insurance')
       .populate('doctorId', 'fullName department')
       .sort({ referredAt: -1 })
       .exec();
@@ -1546,6 +1568,7 @@ export class VisitsService {
         address: '$patient.address',
         allergies: '$patient.allergies',
         chronicConditions: '$patient.chronicConditions',
+        insurance: '$patient.insurance',
         lastVisitId: 1,
         lastVisitNumber: 1,
         lastVisitStatus: 1,
