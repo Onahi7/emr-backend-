@@ -134,6 +134,21 @@ export class MedicationsController {
     return this.cafIntegrationService.getProducts({ search, category, branchId: req.user?.branchId });
   }
 
+  @Get('my-caf-status')
+  async myCafStatus(@Request() req: any) {
+    const branchId = req.user?.branchId || null;
+    const configured = await this.cafIntegrationService.isConfiguredForBranch(branchId || undefined);
+    return {
+      jwtBranchId: branchId,
+      cafConfigured: configured,
+      hint: configured
+        ? 'CAF is configured for your branch. If drugs are missing, check backend logs for CAF API errors.'
+        : branchId
+        ? 'CAF is NOT configured for your branch. An admin must configure cafBaseUrl, cafUsername, cafPassword, cafBranchId in Admin > Branches.'
+        : 'Your JWT has no branchId. Ask an admin to assign you to a branch.',
+    };
+  }
+
   @Get('caf-status')
   @Roles(UserRoleEnum.ADMIN)
   async cafStatus() {
