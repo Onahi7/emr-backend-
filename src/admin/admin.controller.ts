@@ -43,8 +43,9 @@ export class AdminController {
   getManagementKpis(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.adminService.getManagementKpis(startDate, endDate);
+    return this.adminService.getManagementKpis(startDate, endDate, req.user?.branchId);
   }
 
   /**
@@ -55,10 +56,11 @@ export class AdminController {
   getRevenueReport(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req: any,
   ) {
     const start = startDate || new Date().toISOString().split('T')[0];
     const end = endDate || new Date().toISOString().split('T')[0];
-    return this.adminService.getRevenueReport(start, end);
+    return this.adminService.getRevenueReport(start, end, req.user?.branchId);
   }
 
   /**
@@ -69,8 +71,9 @@ export class AdminController {
   getStaffReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.adminService.getStaffReport(startDate, endDate);
+    return this.adminService.getStaffReport(startDate, endDate, req.user?.branchId);
   }
 
   /**
@@ -81,7 +84,8 @@ export class AdminController {
   getPatientStats(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.adminService.getPatientStats(startDate, endDate);
+    return this.adminService.getPatientStats(startDate, endDate, req.user?.branchId);
   }
 }

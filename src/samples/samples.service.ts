@@ -28,11 +28,11 @@ export class SamplesService {
   /**
    * Generate unique sample ID in format: SMP-YYYYMMDD-XXXX
    */
-  private async generateSampleId(): Promise<string> {
+  private async generateSampleId(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-
-    const sequenceId = `sample_id_${datePart}`;
+    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const sequenceId = `sample_id_${branchPart}_${datePart}`;
 
     // Find and increment the sequence atomically
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
@@ -86,7 +86,7 @@ export class SamplesService {
     }
 
     // Generate sample ID
-    const sampleId = await this.generateSampleId();
+    const sampleId = await this.generateSampleId(branchId);
 
     // Create sample
     const sampleData: any = {

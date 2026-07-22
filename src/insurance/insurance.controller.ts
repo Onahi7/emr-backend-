@@ -2,12 +2,13 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@n
 import { InsuranceService } from './insurance.service';
 import { CreateInsuranceProgramDto, UpdateInsuranceProgramDto } from './dto/create-insurance-program.dto';
 import { CreateInsuranceSubEntityDto, UpdateInsuranceSubEntityDto } from './dto/create-insurance-sub-entity.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 
 @Controller('insurance')
-@UseGuards(RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class InsuranceController {
   constructor(private readonly service: InsuranceService) {}
 

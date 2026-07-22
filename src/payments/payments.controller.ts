@@ -62,7 +62,7 @@ export class PaymentsController {
 
   @Patch(':id/refund')
   @Roles(UserRoleEnum.ADMIN)
-  refund(@Param('id') id: string, @Body() body: { reason: string }) {
-    return this.paymentsService.refund(id, body.reason);
+  refund(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
+    return this.paymentsService.refund(id, body.reason, req.user?.branchId);
   }
 }

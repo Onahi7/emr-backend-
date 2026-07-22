@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -20,6 +20,7 @@ export class AuditController {
     @Query('endDate') endDate?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     const filters: any = {
       userId,
@@ -27,6 +28,7 @@ export class AuditController {
       action,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
+      branchId: req.user?.branchId,
     };
 
     if (startDate) {

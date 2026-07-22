@@ -22,6 +22,7 @@ export class AuditService {
     newData?: any;
     ipAddress?: string;
     userAgent?: string;
+    branchId?: string;
   }): Promise<AuditLog> {
     const auditLog = new this.auditLogModel({
       userId: new Types.ObjectId(data.userId),
@@ -32,6 +33,7 @@ export class AuditService {
       newData: data.newData,
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
+      branchId: data.branchId ? new Types.ObjectId(data.branchId) : undefined,
     });
 
     return auditLog.save();
@@ -48,9 +50,13 @@ export class AuditService {
     endDate?: Date;
     page?: number;
     limit?: number;
+    branchId?: string;
   }): Promise<{ logs: AuditLog[]; total: number }> {
     const query: any = {};
 
+    if (filters.branchId) {
+      query.branchId = new Types.ObjectId(filters.branchId);
+    }
     if (filters.userId) {
       query.userId = new Types.ObjectId(filters.userId);
     }

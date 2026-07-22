@@ -37,11 +37,11 @@ export class PatientsService {
   /**
    * Generate unique patient ID in format: PAT-YYYYMMDD-XXXX
    */
-  private async generatePatientId(): Promise<string> {
+  private async generatePatientId(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-
-    const sequenceId = `patient_id_${datePart}`;
+    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const sequenceId = `patient_id_${branchPart}_${datePart}`;
 
     // Find and increment the sequence atomically
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
@@ -66,7 +66,7 @@ export class PatientsService {
     branchId?: string,
   ): Promise<Patient> {
     try {
-      const patientId = await this.generatePatientId();
+      const patientId = await this.generatePatientId(branchId);
 
       const patient = new this.patientModel({
         ...createPatientDto,

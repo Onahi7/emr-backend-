@@ -12,6 +12,9 @@ export class AuditLog extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Profile' })
   userId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ required: true, enum: Object.values(AuditActionEnum) })
   action: AuditActionEnum;
 
@@ -40,5 +43,6 @@ export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);
 
 // Indexes
 AuditLogSchema.index({ userId: 1 });
+AuditLogSchema.index({ branchId: 1, createdAt: -1 });
 AuditLogSchema.index({ tableName: 1 });
 AuditLogSchema.index({ createdAt: -1 });

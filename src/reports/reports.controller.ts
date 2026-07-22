@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Param, Req } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, Req, Request } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -16,10 +16,11 @@ export class ReportsController {
   async getDashboardStats(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.reportsService.getDashboardStats(start, end);
+    return this.reportsService.getDashboardStats(start, end, req?.user?.branchId);
   }
 
   @Get('test-volume')
@@ -27,10 +28,11 @@ export class ReportsController {
   async getTestVolumeReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.reportsService.getTestVolumeReport(start, end);
+    return this.reportsService.getTestVolumeReport(start, end, req?.user?.branchId);
   }
 
   @Get('turnaround-time')
@@ -38,10 +40,11 @@ export class ReportsController {
   async getTurnaroundTimeReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.reportsService.getTurnaroundTimeReport(start, end);
+    return this.reportsService.getTurnaroundTimeReport(start, end, req?.user?.branchId);
   }
 
   @Get('revenue')
@@ -49,10 +52,11 @@ export class ReportsController {
   async getRevenueReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.reportsService.getRevenueReport(start, end);
+    return this.reportsService.getRevenueReport(start, end, req?.user?.branchId);
   }
 
   @Get('machine-utilization')
@@ -60,10 +64,11 @@ export class ReportsController {
   async getMachineUtilizationReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.reportsService.getMachineUtilizationReport(start, end);
+    return this.reportsService.getMachineUtilizationReport(start, end, req?.user?.branchId);
   }
 
   @Get('test-distribution')
@@ -71,10 +76,11 @@ export class ReportsController {
   async getTestDistributionByCategory(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.reportsService.getTestDistributionByCategory(start, end);
+    return this.reportsService.getTestDistributionByCategory(start, end, req?.user?.branchId);
   }
 
   /**

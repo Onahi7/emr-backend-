@@ -1016,7 +1016,8 @@ export class ReportsService {
   /**
    * Get dashboard statistics
    */
-  async getDashboardStats(startDate?: Date, endDate?: Date) {
+  async getDashboardStats(startDate?: Date, endDate?: Date, branchId?: string) {
+    const bf = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.createdAt = {};
@@ -1034,20 +1035,21 @@ export class ReportsService {
       activeMachines,
       totalSamples,
     ] = await Promise.all([
-      this.orderModel.countDocuments(dateFilter),
-      this.orderModel.countDocuments({ ...dateFilter, status: 'awaiting_payment' }),
-      this.orderModel.countDocuments({ ...dateFilter, status: 'completed' }),
+      this.orderModel.countDocuments({ ...dateFilter, ...bf }),
+      this.orderModel.countDocuments({ ...dateFilter, ...bf, status: 'awaiting_payment' }),
+      this.orderModel.countDocuments({ ...dateFilter, ...bf, status: 'completed' }),
       this.orderModel.aggregate([
-        { $match: { ...dateFilter, paymentStatus: 'paid' } },
+        { $match: { ...dateFilter, ...bf, paymentStatus: 'paid' } },
         { $group: { _id: null, total: { $sum: '$total' } } },
       ]),
-      this.resultModel.countDocuments({ ...dateFilter, status: 'preliminary' }),
+      this.resultModel.countDocuments({ ...dateFilter, ...bf, status: 'preliminary' }),
       this.resultModel.countDocuments({
         ...dateFilter,
+        ...bf,
         flag: { $in: ['critical_low', 'critical_high'] },
       }),
-      this.machineModel.countDocuments({ status: 'online' }),
-      this.sampleModel.countDocuments(dateFilter),
+      this.machineModel.countDocuments({ ...bf, status: 'online' }),
+      this.sampleModel.countDocuments({ ...dateFilter, ...bf }),
     ]);
 
     return {
@@ -1065,7 +1067,8 @@ export class ReportsService {
   /**
    * Get test volume report
    */
-  async getTestVolumeReport(startDate?: Date, endDate?: Date) {
+  async getTestVolumeReport(startDate?: Date, endDate?: Date, branchId?: string) {
+    const bf = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.createdAt = {};
@@ -1074,7 +1077,7 @@ export class ReportsService {
     }
 
     const testVolume = await this.resultModel.aggregate([
-      { $match: dateFilter },
+      { $match: { ...dateFilter, ...bf } },
       {
         $group: {
           _id: '$testCode',
@@ -1086,7 +1089,7 @@ export class ReportsService {
       { $limit: 20 },
     ]);
 
-    const totalTests = await this.resultModel.countDocuments(dateFilter);
+    const totalTests = await this.resultModel.countDocuments({ ...dateFilter, ...bf });
 
     return {
       testVolume,
@@ -1097,7 +1100,8 @@ export class ReportsService {
   /**
    * Get turnaround time report
    */
-  async getTurnaroundTimeReport(startDate?: Date, endDate?: Date) {
+  async getTurnaroundTimeReport(startDate?: Date, endDate?: Date, branchId?: string) {
+    const bf = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.createdAt = {};
@@ -1109,6 +1113,7 @@ export class ReportsService {
       {
         $match: {
           ...dateFilter,
+          ...bf,
           status: 'completed',
           collectedAt: { $exists: true },
         },
@@ -1148,7 +1153,8 @@ export class ReportsService {
   /**
    * Get revenue report
    */
-  async getRevenueReport(startDate?: Date, endDate?: Date) {
+  async getRevenueReport(startDate?: Date, endDate?: Date, branchId?: string) {
+    const bf = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.createdAt = {};
@@ -1157,7 +1163,7 @@ export class ReportsService {
     }
 
     const revenueByPaymentMethod = await this.orderModel.aggregate([
-      { $match: { ...dateFilter, paymentStatus: 'paid' } },
+      { $match: { ...dateFilter, ...bf, paymentStatus: 'paid' } },
       {
         $group: {
           _id: '$paymentMethod',
@@ -1169,7 +1175,7 @@ export class ReportsService {
     ]);
 
     const revenueByStatus = await this.orderModel.aggregate([
-      { $match: dateFilter },
+      { $match: { ...dateFilter, ...bf } },
       {
         $group: {
           _id: '$paymentStatus',
@@ -1180,7 +1186,7 @@ export class ReportsService {
     ]);
 
     const dailyRevenue = await this.orderModel.aggregate([
-      { $match: { ...dateFilter, paymentStatus: 'paid' } },
+      { $match: { ...dateFilter, ...bf, paymentStatus: 'paid' } },
       {
         $group: {
           _id: {
@@ -1203,7 +1209,8 @@ export class ReportsService {
   /**
    * Get machine utilization report
    */
-  async getMachineUtilizationReport(startDate?: Date, endDate?: Date) {
+  async getMachineUtilizationReport(startDate?: Date, endDate?: Date, branchId?: string) {
+    const bf = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.resultedAt = {};
@@ -1215,6 +1222,7 @@ export class ReportsService {
       {
         $match: {
           ...dateFilter,
+          ...bf,
           machineId: { $exists: true },
           source: 'automated',
         },
@@ -1247,11 +1255,13 @@ export class ReportsService {
 
     const totalAutomatedTests = await this.resultModel.countDocuments({
       ...dateFilter,
+      ...bf,
       source: 'automated',
     });
 
     const totalManualTests = await this.resultModel.countDocuments({
       ...dateFilter,
+      ...bf,
       source: 'manual',
     });
 
@@ -1265,7 +1275,8 @@ export class ReportsService {
   /**
    * Get test distribution by category
    */
-  async getTestDistributionByCategory(startDate?: Date, endDate?: Date) {
+  async getTestDistributionByCategory(startDate?: Date, endDate?: Date, branchId?: string) {
+    const bf = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.createdAt = {};
@@ -1276,7 +1287,7 @@ export class ReportsService {
     // This would require joining with test catalog
     // For now, return a simplified version
     const distribution = await this.resultModel.aggregate([
-      { $match: dateFilter },
+      { $match: { ...dateFilter, ...bf } },
       {
         $group: {
           _id: '$testCode',

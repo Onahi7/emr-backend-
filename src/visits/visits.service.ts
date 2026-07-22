@@ -56,10 +56,11 @@ export class VisitsService {
     }
   }
 
-  private async generateVisitNumber(): Promise<string> {
+  private async generateVisitNumber(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const sequenceId = `visit_number_${datePart}`;
+    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const sequenceId = `visit_number_${branchPart}_${datePart}`;
 
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
       sequenceId,
@@ -334,7 +335,7 @@ export class VisitsService {
       }
     }
 
-    const visitNumber = await this.generateVisitNumber();
+    const visitNumber = await this.generateVisitNumber(branchId);
 
     // When reception books a specialist consultation, default the visit's doctor
     // assignment to that specialist so they show up in their queue automatically.
@@ -1605,11 +1606,13 @@ export class VisitsService {
     return { patients, total, page, limit };
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, branchId?: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Visit with ID ${id} not found`);
     }
-    const result = await this.visitModel.findByIdAndDelete(id).exec();
+    const query: any = { _id: id };
+    if (branchId) query.branchId = branchId;
+    const result = await this.visitModel.findOneAndDelete(query).exec();
     if (!result) {
       throw new NotFoundException(`Visit with ID ${id} not found`);
     }

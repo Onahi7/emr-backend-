@@ -21,10 +21,11 @@ export class QcService {
   /**
    * Generate QC sample ID (QC-YYYYMMDD-XXXX)
    */
-  private async generateQcSampleId(): Promise<string> {
+  private async generateQcSampleId(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const sequenceId = `qc_sample_${datePart}`;
+    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const sequenceId = `qc_sample_${branchPart}_${datePart}`;
 
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
       sequenceId,
@@ -42,8 +43,9 @@ export class QcService {
   async createQcSample(
     createQcSampleDto: CreateQcSampleDto,
     userId: string,
+    branchId?: string,
   ): Promise<QcSample> {
-    const qcSampleId = await this.generateQcSampleId();
+    const qcSampleId = await this.generateQcSampleId(branchId);
 
     const qcSample = new this.qcSampleModel({
       ...createQcSampleDto,

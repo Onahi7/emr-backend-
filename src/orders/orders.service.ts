@@ -155,11 +155,11 @@ export class OrdersService {
   /**
    * Generate unique order number in format: ORD-YYYYMMDD-XXXX
    */
-  private async generateOrderNumber(): Promise<string> {
+  private async generateOrderNumber(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-
-    const sequenceId = `order_number_${datePart}`;
+    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const sequenceId = `order_number_${branchPart}_${datePart}`;
 
     // Find and increment the sequence atomically
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
@@ -367,7 +367,7 @@ export class OrdersService {
     );
 
     // Generate order number
-    const orderNumber = await this.generateOrderNumber();
+    const orderNumber = await this.generateOrderNumber(branchId);
 
     // Preserve clinician-selected LIS orderable codes (panel/test) exactly as requested.
     const lisRequestedCodes = Array.from(

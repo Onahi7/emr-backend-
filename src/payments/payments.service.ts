@@ -156,8 +156,10 @@ export class PaymentsService {
       .exec();
   }
 
-  async refund(paymentId: string, reason: string): Promise<Payment> {
-    const payment = await this.paymentModel.findById(paymentId);
+  async refund(paymentId: string, reason: string, branchId?: string): Promise<Payment> {
+    const query: any = { _id: paymentId };
+    if (branchId) query.branchId = branchId;
+    const payment = await this.paymentModel.findOne(query);
     if (!payment) throw new NotFoundException('Payment not found');
     if (payment.isRefunded) throw new BadRequestException('Payment already refunded');
 

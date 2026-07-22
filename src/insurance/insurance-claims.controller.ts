@@ -1,12 +1,13 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { InsuranceClaimsService } from './insurance-claims.service';
 import { CreateInsuranceClaimDto, UpdateClaimStatusDto, AddClaimItemDto, MarkOrderInsuranceDto } from './dto/create-insurance-claim.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 
 @Controller('insurance-claims')
-@UseGuards(RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class InsuranceClaimsController {
   constructor(private readonly service: InsuranceClaimsService) {}
 

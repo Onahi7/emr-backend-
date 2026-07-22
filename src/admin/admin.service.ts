@@ -94,13 +94,14 @@ export class AdminService {
     };
   }
 
-  async getManagementKpis(startDate?: string, endDate?: string): Promise<any> {
+  async getManagementKpis(startDate?: string, endDate?: string, branchId?: string): Promise<any> {
+    const bf = branchId ? { branchId } : {};
     const { start, end } = this.getDateRange(startDate, endDate);
-    const rangeFilter = { createdAt: { $gte: start, $lte: end } };
+    const rangeFilter = { createdAt: { $gte: start, $lte: end }, ...bf };
     const previousStart = new Date(start);
     previousStart.setTime(start.getTime() - (end.getTime() - start.getTime()) - 1);
     const previousEnd = new Date(start.getTime() - 1);
-    const previousFilter = { createdAt: { $gte: previousStart, $lte: previousEnd } };
+    const previousFilter = { createdAt: { $gte: previousStart, $lte: previousEnd }, ...bf };
 
     const [
       visits,
@@ -117,9 +118,9 @@ export class AdminService {
       this.patientModel.countDocuments(rangeFilter),
       this.paymentModel.find(rangeFilter).lean(),
       this.orderModel.find(rangeFilter).lean(),
-      this.appointmentModel.find({ date: { $gte: start, $lte: end } }).lean(),
-      this.medicationModel.countDocuments({ isActive: true, $expr: { $lte: ['$stockQuantity', '$reorderLevel'] } }),
-      this.medicationModel.countDocuments({ isActive: true, expiryDate: { $lte: new Date(end.getTime() + 90 * 24 * 60 * 60 * 1000) } }),
+      this.appointmentModel.find({ date: { $gte: start, $lte: end }, ...bf }).lean(),
+      this.medicationModel.countDocuments({ isActive: true, $expr: { $lte: ['$stockQuantity', '$reorderLevel'] }, ...bf }),
+      this.medicationModel.countDocuments({ isActive: true, expiryDate: { $lte: new Date(end.getTime() + 90 * 24 * 60 * 60 * 1000) }, ...bf }),
     ]);
 
     const totalPatientsSeen = visits.length;
@@ -326,12 +327,13 @@ export class AdminService {
   /**
    * Revenue report — breakdown by date range and department
    */
-  async getRevenueReport(startDate: string, endDate: string): Promise<any> {
+  async getRevenueReport(startDate: string, endDate: string, branchId?: string): Promise<any> {
     const start = new Date(startDate);
     start.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
-    const cashCollectionMatch = { createdAt: { $gte: start, $lte: end }, paymentMethod: { $ne: 'wallet' } };
+    const branchMatch = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
+    const cashCollectionMatch = { createdAt: { $gte: start, $lte: end }, paymentMethod: { $ne: 'wallet' }, ...branchMatch };
 
     const [dailyRevenue, revenueByType, revenueByMethod, topPayingPatients] = await Promise.all([
       // Daily revenue breakdown
@@ -413,9 +415,10 @@ export class AdminService {
   /**
    * Staff performance report
    */
-  async getStaffReport(startDate?: string, endDate?: string): Promise<any> {
+  async getStaffReport(startDate?: string, endDate?: string, branchId?: string): Promise<any> {
     const start = startDate ? new Date(startDate) : new Date(new Date().setHours(0, 0, 0, 0));
     const end = endDate ? new Date(endDate) : new Date(new Date().setHours(23, 59, 59, 999));
+    const branchMatch = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
 
     const [doctorActivity, receptionActivity] = await Promise.all([
       // Doctor activity — visits accepted and completed
@@ -424,6 +427,7 @@ export class AdminService {
           $match: {
             doctorId: { $exists: true },
             createdAt: { $gte: start, $lte: end },
+            ...branchMatch,
           },
         },
         {
@@ -460,6 +464,7 @@ export class AdminService {
             receivedBy: { $exists: true },
             createdAt: { $gte: start, $lte: end },
             paymentMethod: { $ne: 'wallet' },
+            ...branchMatch,
           },
         },
         {
@@ -499,7 +504,9 @@ export class AdminService {
   /**
    * Patient statistics
    */
-  async getPatientStats(startDate?: string, endDate?: string): Promise<any> {
+  async getPatientStats(startDate?: string, endDate?: string, branchId?: string): Promise<any> {
+    const bf = branchId ? { branchId } : {};
+    const branchMatch = branchId ? { branchId: new Types.ObjectId(branchId) } : {};
     const start = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
     const end = endDate ? new Date(endDate) : new Date();
 
@@ -510,16 +517,18 @@ export class AdminService {
       patientsByGender,
       visitTrend,
     ] = await Promise.all([
-      this.patientModel.countDocuments({ isActive: true }),
-      this.patientModel.countDocuments({ createdAt: { $gte: start, $lte: end } }),
+      this.patientModel.countDocuments({ isActive: true, ...bf }),
+      this.patientModel.countDocuments({ createdAt: { $gte: start, $lte: end }, ...bf }),
       this.patientModel.aggregate([
+        ...(branchId ? [{ $match: branchMatch }] : []),
         { $group: { _id: '$patientCategory', count: { $sum: 1 } } },
       ]),
       this.patientModel.aggregate([
+        ...(branchId ? [{ $match: branchMatch }] : []),
         { $group: { _id: '$gender', count: { $sum: 1 } } },
       ]),
       this.visitModel.aggregate([
-        { $match: { createdAt: { $gte: start, $lte: end } } },
+        { $match: { createdAt: { $gte: start, $lte: end }, ...branchMatch } },
         {
           $group: {
             _id: {

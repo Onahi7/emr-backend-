@@ -1,10 +1,13 @@
-import { Body, Controller, Get, Param, Put, Query, Request } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Query, Request, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRoleEnum } from '../database/schemas/user-role.schema';
 import { ServicePricesService } from './service-prices.service';
 import { UpdateServicePricesDto } from './dto/update-service-prices.dto';
 
 @Controller('service-prices')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ServicePricesController {
   constructor(private readonly servicePricesService: ServicePricesService) {}
 

@@ -28,9 +28,10 @@ export class AdmissionsService {
     private servicePricesService: ServicePricesService,
   ) {}
 
-  private async generateAdmissionNumber(): Promise<string> {
+  private async generateAdmissionNumber(branchId?: string): Promise<string> {
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const sequenceId = `admission_number_${datePart}`;
+    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const sequenceId = `admission_number_${branchPart}_${datePart}`;
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
       sequenceId,
       { $inc: { currentValue: 1 }, $setOnInsert: { prefix: 'ADM', datePart } },
@@ -48,7 +49,7 @@ export class AdmissionsService {
       throw new BadRequestException('Patient already has an active admission');
     }
 
-    const admissionNumber = await this.generateAdmissionNumber();
+    const admissionNumber = await this.generateAdmissionNumber(branchId);
 
     const admission = new this.admissionModel({
       ...dto,

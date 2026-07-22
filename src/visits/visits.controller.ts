@@ -309,7 +309,7 @@ export class VisitsController {
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    await this.visitsService.remove(id);
+  async remove(@Param('id') id: string, @Request() req: any) {
+    await this.visitsService.remove(id, req.user?.branchId);
   }
 }

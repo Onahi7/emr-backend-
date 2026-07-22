@@ -29,7 +29,7 @@ export class QcController {
     @Body() createQcSampleDto: CreateQcSampleDto,
     @Request() req: any,
   ) {
-    return this.qcService.createQcSample(createQcSampleDto, req.user.userId);
+    return this.qcService.createQcSample(createQcSampleDto, req.user.userId, req.user?.branchId);
   }
 
   @Get('samples')
