@@ -4,7 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Doctor } from '../database/schemas/doctor.schema';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
-import { requireBranchId, withBranch, branchFilterOptional } from '../common/utils/branch-scope';
+import { requireBranchId, withBranch } from '../common/utils/branch-scope';
 
 @Injectable()
 export class DoctorsService {
@@ -51,7 +51,10 @@ export class DoctorsService {
   }
 
   async findAll(search?: string, activeOnly: boolean = true, branchId?: string) {
-    const filter: any = branchFilterOptional(branchId);
+    const filter: any = {};
+    if (branchId) {
+      filter.branchId = { $in: [new Types.ObjectId(branchId), null] };
+    }
     if (activeOnly) filter.isActive = true;
     if (search) {
       filter.fullName = { $regex: search, $options: 'i' };
