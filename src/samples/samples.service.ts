@@ -31,7 +31,7 @@ export class SamplesService {
   private async generateSampleId(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const branchPart = branchId ? branchId.toString() : 'global';
     const sequenceId = `sample_id_${branchPart}_${datePart}`;
 
     // Find and increment the sequence atomically

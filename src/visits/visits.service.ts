@@ -59,7 +59,7 @@ export class VisitsService {
   private async generateVisitNumber(branchId?: string): Promise<string> {
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const branchPart = branchId ? branchId.toString() : 'global';
     const sequenceId = `visit_number_${branchPart}_${datePart}`;
 
     const sequence = await this.idSequenceModel.findByIdAndUpdate(

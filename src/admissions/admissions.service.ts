@@ -30,7 +30,7 @@ export class AdmissionsService {
 
   private async generateAdmissionNumber(branchId?: string): Promise<string> {
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const branchPart = branchId ? branchId.toString().slice(0, 8) : 'global';
+    const branchPart = branchId ? branchId.toString() : 'global';
     const sequenceId = `admission_number_${branchPart}_${datePart}`;
     const sequence = await this.idSequenceModel.findByIdAndUpdate(
       sequenceId,
