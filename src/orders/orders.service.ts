@@ -506,13 +506,19 @@ export class OrdersService {
     this.realtimeGateway.notifyOrderCreated(populatedOrder);
 
     if (savedOrder.orderType === OrderTypeEnum.LAB) {
-      const job = savedOrder.paymentStatus === PaymentStatusEnum.PAID
-        ? await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, savedOrder, {
-            amount: savedOrder.amountPaid || savedOrder.total,
-            paymentMethod: savedOrder.paymentMethod || PaymentMethodEnum.CASH,
-          })
-        : await this.enqueueLisJob(IntegrationJobType.LIS_ORDER_SYNC, savedOrder);
-      void this.executeLisJob(job).catch(err => this.logger.warn(`LIS job queued for retry: ${err?.message}`));
+      // Skip LIS sync for RDT orders (RAPID_MALARIA, RAPID_TYPHOID)
+      const isRdtOrder = expandedTests.some((t: any) => (t.testCode || '').startsWith('RAPID_'));
+      if (!isRdtOrder) {
+        const job = savedOrder.paymentStatus === PaymentStatusEnum.PAID
+          ? await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, savedOrder, {
+              amount: savedOrder.amountPaid || savedOrder.total,
+              paymentMethod: savedOrder.paymentMethod || PaymentMethodEnum.CASH,
+            })
+          : await this.enqueueLisJob(IntegrationJobType.LIS_ORDER_SYNC, savedOrder);
+        void this.executeLisJob(job).catch(err => this.logger.warn(`LIS job queued for retry: ${err?.message}`));
+      } else {
+        this.logger.log(`RDT order ${savedOrder.orderNumber} — skipping LIS sync`);
+      }
     }
 
     return populatedOrder;
@@ -1461,11 +1467,21 @@ export class OrdersService {
     }
 
     if (order.orderType === OrderTypeEnum.LAB && order.paymentStatus === PaymentStatusEnum.PAID) {
-      const job = await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, order, {
-        amount: order.amountPaid,
-        paymentMethod: addPaymentDto.paymentMethod,
-      });
-      void this.executeLisJob(job).catch(err => this.logger.warn(`LIS payment job queued for retry: ${err?.message}`));
+      // Check if this is an RDT order (rapid tests) — skip LIS sync for those
+      const orderTests = await this.orderTestModel.find({ orderId: order._id }).lean();
+      const isRdtOrder = orderTests.some((t: any) => (t.testCode || '').startsWith('RAPID_'));
+      if (!isRdtOrder) {
+        const job = await this.enqueueLisJob(IntegrationJobType.LIS_PAYMENT_SYNC, order, {
+          amount: order.amountPaid,
+          paymentMethod: addPaymentDto.paymentMethod,
+        });
+        void this.executeLisJob(job).catch(err => this.logger.warn(`LIS payment job queued for retry: ${err?.message}`));
+      }
+
+      // When an RDT order is paid, update the visit's rapidTestsRequested
+      if (order.visitId) {
+        await this.syncRdtToVisit(order.visitId as Types.ObjectId, orderTests);
+      }
     }
 
     return { order: populatedOrder, payment };
@@ -1880,6 +1896,35 @@ export class OrdersService {
       category: item.category || 'lab',
       panelComponents: item.panelComponents || [],
     }));
+  }
+
+  /**
+   * When an RDT order is paid, sync the rapidTestsRequested to the visit document
+   * so the nurse knows which bedside tests to perform.
+   */
+  private async syncRdtToVisit(visitId: Types.ObjectId, orderTests: any[]): Promise<void> {
+    const rdtCodeToType: Record<string, 'malaria' | 'typhoid'> = {
+      RAPID_MALARIA: 'malaria',
+      RAPID_TYPHOID: 'typhoid',
+    };
+    const rapidTests: ('malaria' | 'typhoid')[] = [];
+    for (const t of orderTests) {
+      const code = (t.testCode || '').toUpperCase();
+      if (rdtCodeToType[code] && !rapidTests.includes(rdtCodeToType[code])) {
+        rapidTests.push(rdtCodeToType[code]);
+      }
+    }
+    if (rapidTests.length === 0) return;
+
+    const visit = await this.visitModel.findById(visitId);
+    if (!visit) return;
+
+    // Merge with existing rapidTestsRequested (don't overwrite if nurse already added some)
+    const existing = visit.rapidTestsRequested || [];
+    const merged = Array.from(new Set([...existing, ...rapidTests]));
+    visit.rapidTestsRequested = merged as ('malaria' | 'typhoid')[];
+    await visit.save();
+    this.logger.log(`RDT order paid — visit ${visit.visitNumber} rapidTestsRequested updated: [${merged.join(', ')}]`);
   }
 
   /**
