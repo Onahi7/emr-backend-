@@ -540,9 +540,10 @@ export class VisitsService {
   }
 
   /**
-   * Paid/covered visits that a nurse may use when creating a clinical order.
+   * Clinically active visits that a nurse may use when creating an order.
    * This intentionally does not depend on a queue entry: the visit is the
-   * clinical source of truth, and a failed queue write must not hide a patient.
+   * clinical source of truth, and a failed queue write or stale payment flag
+   * must not hide a patient who has already passed the payment/coverage stage.
    */
   async getNurseOrderCandidates(branchId?: string): Promise<Visit[]> {
     const requiredBranchId = requireBranchId(branchId);
@@ -550,7 +551,6 @@ export class VisitsService {
     return this.visitModel
       .find({
         branchId: requiredBranchId,
-        consultationPaid: true,
         status: {
           $nin: [
             VisitStatusEnum.WAITING_PAYMENT,
