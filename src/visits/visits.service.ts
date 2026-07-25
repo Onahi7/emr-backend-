@@ -539,6 +539,33 @@ export class VisitsService {
       .exec();
   }
 
+  /**
+   * Paid/covered visits that a nurse may use when creating a clinical order.
+   * This intentionally does not depend on a queue entry: the visit is the
+   * clinical source of truth, and a failed queue write must not hide a patient.
+   */
+  async getNurseOrderCandidates(branchId?: string): Promise<Visit[]> {
+    const requiredBranchId = requireBranchId(branchId);
+
+    return this.visitModel
+      .find({
+        branchId: requiredBranchId,
+        consultationPaid: true,
+        status: {
+          $nin: [
+            VisitStatusEnum.WAITING_PAYMENT,
+            VisitStatusEnum.COMPLETED,
+            VisitStatusEnum.CANCELLED,
+          ],
+        },
+      })
+      .populate('patientId', 'patientId firstName lastName age gender phone insurance')
+      .populate('doctorId', 'fullName department')
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .exec();
+  }
+
   async findById(id: string, branchId?: string): Promise<Visit> {
     const visit = await this.visitModel
       .findOne({ _id: new Types.ObjectId(id), ...branchFilterOptional(branchId) })

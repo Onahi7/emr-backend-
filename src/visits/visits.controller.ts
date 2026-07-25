@@ -90,6 +90,12 @@ export class VisitsController {
     return this.visitsService.getAwaitingTriage(req?.user?.branchId);
   }
 
+  @Get('nurse-order-candidates')
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.NURSE)
+  getNurseOrderCandidates(@Request() req?: any) {
+    return this.visitsService.getNurseOrderCandidates(req?.user?.branchId);
+  }
+
   @Get('reception-dashboard')
   @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RECEPTIONIST)
   getReceptionDashboard(@Request() req?: any) {
