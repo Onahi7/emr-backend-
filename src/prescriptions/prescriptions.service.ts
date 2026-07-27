@@ -44,6 +44,7 @@ export class PrescriptionsService {
     return roles.some((role) => [
       UserRoleEnum.DOCTOR,
       UserRoleEnum.SPECIALIST,
+      UserRoleEnum.NURSE,
       UserRoleEnum.ADMIN,
     ].includes(role as UserRoleEnum));
   }

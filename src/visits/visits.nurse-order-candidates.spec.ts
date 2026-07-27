@@ -3,9 +3,12 @@ import { VisitStatusEnum } from '../database/schemas/visit.schema';
 import { VisitsService } from './visits.service';
 
 describe('VisitsService nurse order candidates', () => {
-  it('uses active visit status and branch scope without depending on queue or payment flags', async () => {
+  it('includes queued and in-consultation visits without depending on queue or payment flags', async () => {
     const branchId = new Types.ObjectId().toString();
-    const visits = [{ visitNumber: 'VIS-20260725-0007', status: VisitStatusEnum.IN_QUEUE }];
+    const visits = [
+      { visitNumber: 'VIS-20260725-0007', status: VisitStatusEnum.IN_QUEUE },
+      { visitNumber: 'VIS-20260725-0008', status: VisitStatusEnum.IN_CONSULTATION },
+    ];
     const query = {
       populate: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
@@ -32,10 +35,18 @@ describe('VisitsService nurse order candidates', () => {
     expect(visitModel.find).toHaveBeenCalledWith({
       branchId,
       status: {
-        $nin: [
-          VisitStatusEnum.WAITING_PAYMENT,
-          VisitStatusEnum.COMPLETED,
-          VisitStatusEnum.CANCELLED,
+        $in: [
+          VisitStatusEnum.AWAITING_TRIAGE,
+          VisitStatusEnum.IN_QUEUE,
+          VisitStatusEnum.IN_CONSULTATION,
+          VisitStatusEnum.AWAITING_LAB,
+          VisitStatusEnum.AWAITING_RESULTS,
+          VisitStatusEnum.RESULTS_READY,
+          VisitStatusEnum.AWAITING_PHARMACY,
+          VisitStatusEnum.AWAITING_DISPENSING,
+          VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
+          VisitStatusEnum.ADMITTED,
+          VisitStatusEnum.REFERRED,
         ],
       },
     });

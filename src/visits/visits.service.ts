@@ -547,17 +547,24 @@ export class VisitsService {
    */
   async getNurseOrderCandidates(branchId?: string): Promise<Visit[]> {
     const requiredBranchId = requireBranchId(branchId);
+    const triagedStatuses = [
+      VisitStatusEnum.AWAITING_TRIAGE,
+      VisitStatusEnum.IN_QUEUE,
+      VisitStatusEnum.IN_CONSULTATION,
+      VisitStatusEnum.AWAITING_LAB,
+      VisitStatusEnum.AWAITING_RESULTS,
+      VisitStatusEnum.RESULTS_READY,
+      VisitStatusEnum.AWAITING_PHARMACY,
+      VisitStatusEnum.AWAITING_DISPENSING,
+      VisitStatusEnum.AWAITING_DOCTOR_REVIEW,
+      VisitStatusEnum.ADMITTED,
+      VisitStatusEnum.REFERRED,
+    ];
 
     return this.visitModel
       .find({
         branchId: requiredBranchId,
-        status: {
-          $nin: [
-            VisitStatusEnum.WAITING_PAYMENT,
-            VisitStatusEnum.COMPLETED,
-            VisitStatusEnum.CANCELLED,
-          ],
-        },
+        status: { $in: triagedStatuses },
       })
       .populate('patientId', 'patientId firstName lastName age gender phone insurance')
       .populate('doctorId', 'fullName department')
