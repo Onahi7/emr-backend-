@@ -794,12 +794,14 @@ export class VisitsService {
 
   async getReceptionDashboard(branchId?: string): Promise<{
     pendingConsultationPayments: Visit[];
+    awaitingTriage: Visit[];
     pendingLabPayments: Visit[];
     pendingPharmacyPayments: Visit[];
     doctorQueue: Visit[];
     todayStats: {
       totalVisits: number;
       consultationsPaid: number;
+      awaitingTriage: number;
       awaitingLab: number;
       awaitingPharmacy: number;
       completed: number;
@@ -815,11 +817,13 @@ export class VisitsService {
 
     const [
       pendingConsultationPayments,
+      awaitingTriageVisits,
       pendingLabPayments,
       pendingPharmacyPayments,
       doctorQueue,
       totalVisits,
       consultationsPaid,
+      awaitingTriageCount,
       awaitingLab,
       awaitingPharmacy,
       completed,
@@ -828,6 +832,12 @@ export class VisitsService {
       this.visitModel
         .find({ status: VisitStatusEnum.WAITING_PAYMENT, ...branchFilter })
         .populate('patientId', 'patientId firstName lastName age gender phone insurance')
+        .sort({ createdAt: 1 })
+        .exec(),
+      this.visitModel
+        .find({ status: VisitStatusEnum.AWAITING_TRIAGE, ...branchFilter })
+        .populate('patientId', 'patientId firstName lastName age gender phone insurance')
+        .populate('doctorId', 'fullName')
         .sort({ createdAt: 1 })
         .exec(),
       this.visitModel
@@ -850,6 +860,7 @@ export class VisitsService {
         .exec(),
       this.visitModel.countDocuments(todayFilter),
       this.visitModel.countDocuments({ ...todayFilter, consultationPaid: true }),
+      this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.AWAITING_TRIAGE }),
       this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.AWAITING_LAB }),
       this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.AWAITING_PHARMACY }),
       this.visitModel.countDocuments({ ...todayFilter, status: VisitStatusEnum.COMPLETED }),
@@ -858,12 +869,14 @@ export class VisitsService {
 
     return {
       pendingConsultationPayments,
+      awaitingTriage: awaitingTriageVisits,
       pendingLabPayments,
       pendingPharmacyPayments,
       doctorQueue,
       todayStats: {
         totalVisits,
         consultationsPaid,
+        awaitingTriage: awaitingTriageCount,
         awaitingLab,
         awaitingPharmacy,
         completed,
