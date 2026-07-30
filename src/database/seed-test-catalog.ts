@@ -2102,6 +2102,16 @@ async function seedTestCatalog() {
       isActive: true,
       description: 'Microscopic examination of stool for parasites and ova',
     },
+    {
+      code: 'SFA',
+      name: 'Seamen Fluid Analysis (SFA)',
+      category: 'microbiology',
+      price: 250,
+      sampleType: 'other',
+      turnaroundTime: 120,
+      isActive: true,
+      description: 'Descriptive fluid analysis with free-text laboratory observations',
+    },
   ];
 
   // Insert all tests

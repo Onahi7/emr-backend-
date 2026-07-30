@@ -28,6 +28,7 @@
     "update:rft-ranges": "ts-node -r tsconfig-paths/register src/database/update-rft-ranges.ts",
     "check:serology": "ts-node -r tsconfig-paths/register src/database/check-serology-report.ts",
     "add:blood-grouping": "ts-node -r tsconfig-paths/register src/database/add-blood-grouping.ts",
+    "add:sfa": "ts-node -r tsconfig-paths/register src/database/add-seamen-fluid-analysis.ts",
     "update:glucose-ranges": "ts-node -r tsconfig-paths/register src/database/update-glucose-ranges.ts",
     "update:urine-sg-range": "ts-node -r tsconfig-paths/register src/database/update-urine-sg-range.ts",
     "update:urine-protein-subcategory": "ts-node -r tsconfig-paths/register src/database/update-urine-protein-subcategory.ts",
